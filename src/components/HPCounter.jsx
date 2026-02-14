@@ -88,7 +88,9 @@ const HPCounter = () => {
       if (p.id === playerId) {
         const stats = { ...p.commanderStats };
         const newHP = Math.max(0, Math.min(stats.maxHP, stats.currentHP + delta));
+        const isDead = newHP === 0 && stats.revives === 0;
         stats.currentHP = newHP;
+        stats.isDead = isDead;
         return { ...p, commanderStats: stats };
       }
       return p;
@@ -104,9 +106,7 @@ const HPCounter = () => {
             stats.revives -= 1;
             stats.maxHP = Math.floor(stats.maxHP / 2);
             stats.currentHP = stats.maxHP;
-            if (stats.revives === 0 && stats.currentHP === 0) {
-              stats.isDead = true;
-            }
+            stats.isDead = false; // Reset isDead when reviving
           }
           return { ...p, commanderStats: stats };
         } else {
@@ -210,7 +210,7 @@ const HPCounter = () => {
           overflow-x: hidden;
         }
       `}</style>
-      <div style={{ maxWidth: '2200px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
         <h1 style={{
           fontSize: '3rem',
           fontWeight: 'bold',

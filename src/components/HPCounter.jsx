@@ -11,6 +11,130 @@ const FACTIONS = {
   'Uncivilized': ['Kronk']
 };
 
+// Commander stats data
+const COMMANDER_STATS = {
+  'Lord Fantastic': {
+    walk: '6"',
+    run: '12"',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    rollToHit: '2+',
+    rollToBlock: '2+',
+    attacksPerHit: '4x',
+    meleeDamage: '5hp',
+    rollToHeal: '2+',
+    special: '4"/2hp'
+  },
+  'The Gray': {
+    walk: '6"',
+    run: '12"',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    rollToHit: '4+',
+    rollToBlock: '5+',
+    attacksPerHit: '2x',
+    meleeDamage: '2hp',
+    rollToHeal: '5+',
+    special: '6"/2hp'
+  },
+  'Prisma K': {
+    walk: '5"',
+    run: '12"',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    rollToHit: '2+',
+    rollToBlock: '2+',
+    attacksPerHit: '4x',
+    meleeDamage: '5hp',
+    rollToHeal: '2+',
+    special: '4"/2hp'
+  },
+  'Murder Bot 9000': {
+    walk: '4"',
+    run: '12"',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    rollToHit: '3+',
+    rollToBlock: '2+',
+    attacksPerHit: '4x',
+    meleeDamage: '4hp',
+    rollToHeal: '3+',
+    special: '4"/2hp'
+  },
+  'Ganj the Squatch': {
+    walk: '8"',
+    run: '12"',
+    shootRange: '16"',
+    shootDamage: '1hp',
+    rollToHit: '3+',
+    rollToBlock: '4+',
+    attacksPerHit: '2x',
+    meleeDamage: '3hp',
+    rollToHeal: '4+',
+    special: '8"/2hp'
+  },
+  'Selfcentrica Space Pony Princess': {
+    walk: '8"',
+    run: '24"',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    rollToHit: '3+',
+    rollToBlock: '3+',
+    attacksPerHit: '2x',
+    meleeDamage: '4hp',
+    rollToHeal: '4+',
+    special: '4"/2hp'
+  },
+  'Kronk': {
+    walk: '8"',
+    run: '12"',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    rollToHit: '3+',
+    rollToBlock: '3+',
+    attacksPerHit: '2x',
+    meleeDamage: '4hp',
+    rollToHeal: '4+',
+    special: '4"/2hp'
+  },
+  'Queen of Fandom': {
+    walk: '6"',
+    run: '12"',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    rollToHit: '2+',
+    rollToBlock: '3+',
+    attacksPerHit: '4x',
+    meleeDamage: '4hp',
+    rollToHeal: '3+',
+    special: '6"/2hp'
+  },
+  'Kandu Krow': {
+    walk: '6"',
+    run: '18"',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    rollToHit: '2+',
+    rollToBlock: '4+',
+    attacksPerHit: '2x',
+    meleeDamage: '3hp',
+    rollToHeal: '4+',
+    special: '6"/2hp'
+  },
+  'The Glitch': {
+    walk: '8"',
+    run: '16"',
+    shootRange: '16"',
+    shootDamage: '1hp',
+    rollToHit: '4+',
+    rollToBlock: '5+',
+    attacksPerHit: '2x',
+    meleeDamage: '2hp',
+    rollToHeal: '5+',
+    special: '8"/2hp'
+  }
+};
+
 const HPCounter = () => {
   const [players, setPlayers] = useState([]);
 
@@ -24,7 +148,8 @@ const HPCounter = () => {
       currentHP: 15,
       maxHP: 15,
       revives: 2,
-      isDead: false
+      isDead: false,
+      cooldown: false
     },
     subUnits: Array(5).fill(null).map((_, idx) => ({
       id: `${Date.now()}-${idx}`,
@@ -33,7 +158,8 @@ const HPCounter = () => {
       currentHP: 8,
       maxHP: 8,
       revives: 2,
-      isDead: false
+      isDead: false,
+      cooldown: false
     }))
   });
 
@@ -50,16 +176,48 @@ const HPCounter = () => {
             currentHP: 15,
             maxHP: 15,
             revives: 2,
-            isDead: false
+            isDead: false,
+            cooldown: false
           },
           subUnits: p.subUnits.map(unit => ({
             ...unit,
             currentHP: 8,
             maxHP: 8,
             revives: 2,
-            isDead: false
+            isDead: false,
+            cooldown: false
           }))
         };
+      }
+      return p;
+    }));
+  };
+
+  const toggleCommanderCooldown = (playerId) => {
+    setPlayers(players.map(p => {
+      if (p.id === playerId) {
+        return {
+          ...p,
+          commanderStats: {
+            ...p.commanderStats,
+            cooldown: !p.commanderStats.cooldown
+          }
+        };
+      }
+      return p;
+    }));
+  };
+
+  const toggleSubUnitCooldown = (playerId, subUnitId) => {
+    setPlayers(players.map(p => {
+      if (p.id === playerId) {
+        const subUnits = p.subUnits.map(unit => {
+          if (unit.id === subUnitId) {
+            return { ...unit, cooldown: !unit.cooldown };
+          }
+          return unit;
+        });
+        return { ...p, subUnits };
       }
       return p;
     }));
@@ -370,13 +528,58 @@ const HPCounter = () => {
                   opacity: player.commanderStats.isDead ? 0.4 : 1,
                   border: '2px solid #6b4423'
                 }}>
-                  <h3 style={{
-                    fontSize: '1.5rem',
-                    fontWeight: 'bold',
-                    color: '#d4af37',
-                    marginBottom: '1rem',
-                    textShadow: '1px 1px 2px rgba(0,0,0,0.8)'
-                  }}>⚔️ {player.commander}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <h3 style={{
+                      fontSize: '1.5rem',
+                      fontWeight: 'bold',
+                      color: '#d4af37',
+                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                      margin: 0
+                    }}>⚔️ {player.commander}</h3>
+                    
+                    {/* Commander Stats */}
+                    {COMMANDER_STATS[player.commander] && (
+                      <div style={{
+                        background: '#1a0f0a',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid #4a3322',
+                        flex: 1,
+                        marginLeft: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {/* Row 1: Movement & Combat */}
+                        <div style={{
+                          display: 'flex',
+                          gap: '0.5rem',
+                          marginBottom: '0.25rem',
+                          fontSize: '0.875rem',
+                          color: '#d4af37'
+                        }}>
+                          <span style={{ minWidth: '2.5rem' }}>🚶{COMMANDER_STATS[player.commander].walk}</span>
+                          <span style={{ minWidth: '3rem' }}>🏃{COMMANDER_STATS[player.commander].run}</span>
+                          <span style={{ minWidth: '4.5rem' }}>🎯{COMMANDER_STATS[player.commander].shootRange}/{COMMANDER_STATS[player.commander].shootDamage}</span>
+                          <span style={{ minWidth: '2.5rem' }}>⚔️{COMMANDER_STATS[player.commander].rollToHit}</span>
+                          <span style={{ minWidth: '2.5rem' }}>🛡️{COMMANDER_STATS[player.commander].rollToBlock}</span>
+                        </div>
+                        {/* Row 2: Damage & Healing */}
+                        <div style={{
+                          display: 'flex',
+                          gap: '0.5rem',
+                          fontSize: '0.875rem',
+                          color: '#d4af37'
+                        }}>
+                          <span style={{ minWidth: '2.5rem' }}>💥{COMMANDER_STATS[player.commander].attacksPerHit}</span>
+                          <span style={{ minWidth: '3rem' }}>🗡️{COMMANDER_STATS[player.commander].meleeDamage}</span>
+                          <span style={{ minWidth: '4.5rem' }}>⚡{COMMANDER_STATS[player.commander].special}</span>
+                          <span style={{ minWidth: '2.5rem' }}>💚{COMMANDER_STATS[player.commander].rollToHeal}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   
                   {/* HP Bar */}
                   <div style={{ marginBottom: '1rem' }}>
@@ -419,6 +622,20 @@ const HPCounter = () => {
                         }}
                       />
                     ))}
+                    {/* Cooldown Token (non-clickable) */}
+                    <div
+                      style={{
+                        width: '2rem',
+                        height: '2rem',
+                        borderRadius: '999px',
+                        border: '3px solid',
+                        borderColor: player.commanderStats.cooldown ? '#eab308' : '#4a3322',
+                        background: player.commanderStats.cooldown ? 
+                          'radial-gradient(circle, #fbbf24, #eab308)' : '#1a0f0a',
+                        transition: 'all 0.3s',
+                        boxShadow: player.commanderStats.cooldown ? '0 0 10px #eab308' : 'none'
+                      }}
+                    />
                   </div>
 
                   {/* Controls */}
@@ -479,6 +696,27 @@ const HPCounter = () => {
                       }}
                     >
                       ⟲ Revive
+                    </button>
+                    <button
+                      onClick={() => toggleCommanderCooldown(player.id)}
+                      style={{
+                        background: player.commanderStats.cooldown ? 
+                          'linear-gradient(to bottom, #ca8a04, #a16207)' : 
+                          'linear-gradient(to bottom, #78716c, #57534e)',
+                        color: player.commanderStats.cooldown ? '#fef3c7' : '#d6d3d1',
+                        padding: '0.75rem 1rem',
+                        borderRadius: '8px',
+                        fontWeight: '600',
+                        border: '2px solid',
+                        borderColor: player.commanderStats.cooldown ? '#eab308' : '#78716c',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                        fontFamily: '"Cinzel", Georgia, serif',
+                        fontSize: '1rem',
+                        boxShadow: player.commanderStats.cooldown ? '0 0 10px #eab308' : 'none'
+                      }}
+                    >
+                      ⏱ Cooldown
                     </button>
                   </div>
                 </div>

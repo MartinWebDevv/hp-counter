@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Faction data
 const FACTIONS = {
@@ -23,7 +23,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '4x',
     meleeDamage: '5hp',
     rollToHeal: '2+',
-    special: '4"/2hp'
+    special: '4"/2hp',
+    shootAbility: '⛔',
+    specialAbility: '💔'
   },
   'The Gray': {
     walk: '6"',
@@ -35,7 +37,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '2x',
     meleeDamage: '2hp',
     rollToHeal: '5+',
-    special: '6"/2hp'
+    special: '6"/2hp',
+    shootAbility: '',
+    specialAbility: ''
   },
   'Prisma K': {
     walk: '5"',
@@ -47,7 +51,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '4x',
     meleeDamage: '5hp',
     rollToHeal: '2+',
-    special: '4"/2hp'
+    special: '4"/2hp',
+    shootAbility: '⛔',
+    specialAbility: '💔'
   },
   'Murder Bot 9000': {
     walk: '4"',
@@ -59,7 +65,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '4x',
     meleeDamage: '4hp',
     rollToHeal: '3+',
-    special: '4"/2hp'
+    special: '4"/2hp',
+    shootAbility: '⛔',
+    specialAbility: '💔'
   },
   'Ganj the Squatch': {
     walk: '8"',
@@ -71,7 +79,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '2x',
     meleeDamage: '3hp',
     rollToHeal: '4+',
-    special: '8"/2hp'
+    special: '8"/2hp',
+    shootAbility: '',
+    specialAbility: '💔'
   },
   'Selfcentrica Space Pony Princess': {
     walk: '8"',
@@ -83,7 +93,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '2x',
     meleeDamage: '4hp',
     rollToHeal: '4+',
-    special: '4"/2hp'
+    special: '4"/2hp',
+    shootAbility: '⛔',
+    specialAbility: '💔'
   },
   'Kronk': {
     walk: '8"',
@@ -95,7 +107,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '2x',
     meleeDamage: '4hp',
     rollToHeal: '4+',
-    special: '4"/2hp'
+    special: '4"/2hp',
+    shootAbility: '⛔',
+    specialAbility: '⛔'
   },
   'Queen of Fandom': {
     walk: '6"',
@@ -107,7 +121,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '4x',
     meleeDamage: '4hp',
     rollToHeal: '3+',
-    special: '6"/2hp'
+    special: '6"/2hp',
+    shootAbility: '⛔',
+    specialAbility: '💔'
   },
   'Kandu Krow': {
     walk: '6"',
@@ -119,7 +135,9 @@ const COMMANDER_STATS = {
     attacksPerHit: '2x',
     meleeDamage: '3hp',
     rollToHeal: '4+',
-    special: '6"/2hp'
+    special: '6"/2hp',
+    shootAbility: '',
+    specialAbility: '⛔'
   },
   'The Glitch': {
     walk: '8"',
@@ -131,12 +149,141 @@ const COMMANDER_STATS = {
     attacksPerHit: '2x',
     meleeDamage: '2hp',
     rollToHeal: '5+',
+    special: '8"/2hp',
+    shootAbility: '',
+    specialAbility: ''
+  }
+};
+
+// Faction stats data
+const FACTION_STATS = {
+  'Red Rovers': {
+    walk: '6"',
+    run: '12"',
+    rollToHit: '4+',
+    rollToBlock: '4+',
+    rollToHeal: '4+',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '6"/2hp'
+  },
+  'Space Aliens': {
+    walk: '6"',
+    run: '12"',
+    rollToHit: '3+',
+    rollToBlock: '5+',
+    rollToHeal: '4+',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '6"/2hp'
+  },
+  'NoLobe Zombies': {
+    walk: '4"',
+    run: '12"',
+    rollToHit: '6+',
+    rollToBlock: '3+',
+    rollToHeal: '2+',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '4"/2hp'
+  },
+  'Murder Bots': {
+    walk: '4"',
+    run: '12"',
+    rollToHit: '5+',
+    rollToBlock: '3+',
+    rollToHeal: '3+',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '4"/2hp'
+  },
+  'Monster': {
+    walk: '8"',
+    run: '12"',
+    rollToHit: '3+',
+    rollToBlock: '5+',
+    rollToHeal: '5+',
+    shootRange: '16"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
     special: '8"/2hp'
+  },
+  'Space Pony': {
+    walk: '8"',
+    run: '12"',
+    rollToHit: '2+',
+    rollToBlock: '5+',
+    rollToHeal: '6+',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '8"/2hp'
+  },
+  'Uncivilized': {
+    caveman: {
+      walk: '6"',
+      run: '12"',
+      rollToHit: '5+',
+      rollToBlock: '3+',
+      rollToHeal: '5+',
+      shootRange: '8"',
+      shootDamage: '1hp',
+      attacksPerHit: '2x',
+      meleeDamage: '1hp',
+      special: '4"/2hp',
+      specialAbility: '⛔'
+    },
+    dinosaur: {
+      walk: '8"',
+      run: '16"',
+      rollToHit: '5+',
+      rollToBlock: '3+',
+      rollToHeal: '5+',
+      shootRange: '8"',
+      shootDamage: '1hp',
+      attacksPerHit: '2x',
+      meleeDamage: '1hp',
+      special: '4"/1hp',
+      specialAbility: '💔'
+    }
   }
 };
 
 const HPCounter = () => {
   const [players, setPlayers] = useState([]);
+  const [turnCounter, setTurnCounter] = useState(1);
+
+  // Auto-disable cooldowns after 1 turn has passed
+  useEffect(() => {
+    setPlayers(prevPlayers => prevPlayers.map(p => {
+      // Check if commander cooldown should be disabled
+      const shouldDisableCooldown = p.commanderStats.cooldown && 
+                                      p.commanderStats.cooldownTurn !== null && 
+                                      turnCounter > p.commanderStats.cooldownTurn + 1;
+      
+      if (shouldDisableCooldown) {
+        return {
+          ...p,
+          commanderStats: {
+            ...p.commanderStats,
+            cooldown: false,
+            cooldownTurn: null
+          }
+        };
+      }
+      return p;
+    }));
+  }, [turnCounter]);
 
   const createNewPlayer = () => ({
     id: Date.now(),
@@ -149,7 +296,8 @@ const HPCounter = () => {
       maxHP: 15,
       revives: 2,
       isDead: false,
-      cooldown: false
+      cooldown: false,
+      cooldownTurn: null // Track which turn cooldown was activated
     },
     subUnits: Array(5).fill(null).map((_, idx) => ({
       id: `${Date.now()}-${idx}`,
@@ -177,7 +325,8 @@ const HPCounter = () => {
             maxHP: 15,
             revives: 2,
             isDead: false,
-            cooldown: false
+            cooldown: false,
+            cooldownTurn: null
           },
           subUnits: p.subUnits.map(unit => ({
             ...unit,
@@ -196,11 +345,13 @@ const HPCounter = () => {
   const toggleCommanderCooldown = (playerId) => {
     setPlayers(players.map(p => {
       if (p.id === playerId) {
+        const newCooldown = !p.commanderStats.cooldown;
         return {
           ...p,
           commanderStats: {
             ...p.commanderStats,
-            cooldown: !p.commanderStats.cooldown
+            cooldown: newCooldown,
+            cooldownTurn: newCooldown ? turnCounter : null
           }
         };
       }
@@ -373,11 +524,76 @@ const HPCounter = () => {
           fontSize: '3rem',
           fontWeight: 'bold',
           color: '#d4af37',
-          marginBottom: '2rem',
+          marginBottom: '1rem',
           textAlign: 'center',
           textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
           letterSpacing: '2px'
         }}>⚔️ HP COUNTER ⚔️</h1>
+
+        {/* Turn Counter */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '1rem',
+          marginBottom: '2rem',
+          background: 'linear-gradient(145deg, #3d2817, #2a1810)',
+          padding: '1rem',
+          borderRadius: '12px',
+          border: '2px solid #6b4423',
+          maxWidth: '400px',
+          margin: '0 auto 2rem auto'
+        }}>
+          <button
+            onClick={() => setTurnCounter(Math.max(1, turnCounter - 1))}
+            style={{
+              background: 'linear-gradient(to bottom, #991b1b, #7f1d1d)',
+              color: '#fecaca',
+              padding: '0.75rem 1.5rem',
+              borderRadius: '8px',
+              fontWeight: '600',
+              border: '2px solid #dc2626',
+              cursor: 'pointer',
+              fontSize: '1.25rem',
+              fontFamily: '"Cinzel", Georgia, serif',
+              transition: 'all 0.3s'
+            }}
+            onMouseEnter={(e) => e.target.style.background = 'linear-gradient(to bottom, #7f1d1d, #991b1b)'}
+            onMouseLeave={(e) => e.target.style.background = 'linear-gradient(to bottom, #991b1b, #7f1d1d)'}
+          >
+            -
+          </button>
+          <div style={{
+            fontSize: '2rem',
+            fontWeight: 'bold',
+            color: '#d4af37',
+            textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+            fontFamily: '"Cinzel", Georgia, serif',
+            minWidth: '150px',
+            textAlign: 'center'
+          }}>
+            Turn {turnCounter}
+          </div>
+          <button
+            onClick={() => setTurnCounter(turnCounter + 1)}
+            style={{
+              background: 'linear-gradient(to bottom, #15803d, #14532d)',
+              color: '#86efac',
+              padding: '0.75rem 1.5rem',
+              borderRadius: '8px',
+              fontWeight: '600',
+              border: '2px solid #16a34a',
+              cursor: 'pointer',
+              fontSize: '1.25rem',
+              fontFamily: '"Cinzel", Georgia, serif',
+              transition: 'all 0.3s'
+            }}
+            onMouseEnter={(e) => e.target.style.background = 'linear-gradient(to bottom, #14532d, #15803d)'}
+            onMouseLeave={(e) => e.target.style.background = 'linear-gradient(to bottom, #15803d, #14532d)'}
+          >
+            +
+          </button>
+        </div>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
           {players.map((player) => (
@@ -561,7 +777,10 @@ const HPCounter = () => {
                         }}>
                           <span style={{ minWidth: '2.5rem' }}>🚶{COMMANDER_STATS[player.commander].walk}</span>
                           <span style={{ minWidth: '3rem' }}>🏃{COMMANDER_STATS[player.commander].run}</span>
-                          <span style={{ minWidth: '4.5rem' }}>🎯{COMMANDER_STATS[player.commander].shootRange}/{COMMANDER_STATS[player.commander].shootDamage}</span>
+                          <span style={{ minWidth: '5.5rem' }}>
+                            🎯{COMMANDER_STATS[player.commander].shootRange}/{COMMANDER_STATS[player.commander].shootDamage}
+                            {COMMANDER_STATS[player.commander].shootAbility && ` ${COMMANDER_STATS[player.commander].shootAbility}`}
+                          </span>
                           <span style={{ minWidth: '2.5rem' }}>⚔️{COMMANDER_STATS[player.commander].rollToHit}</span>
                           <span style={{ minWidth: '2.5rem' }}>🛡️{COMMANDER_STATS[player.commander].rollToBlock}</span>
                         </div>
@@ -574,7 +793,10 @@ const HPCounter = () => {
                         }}>
                           <span style={{ minWidth: '2.5rem' }}>💥{COMMANDER_STATS[player.commander].attacksPerHit}</span>
                           <span style={{ minWidth: '3rem' }}>🗡️{COMMANDER_STATS[player.commander].meleeDamage}</span>
-                          <span style={{ minWidth: '4.5rem' }}>⚡{COMMANDER_STATS[player.commander].special}</span>
+                          <span style={{ minWidth: '5.5rem' }}>
+                            ⚡{COMMANDER_STATS[player.commander].special}
+                            {COMMANDER_STATS[player.commander].specialAbility && ` ${COMMANDER_STATS[player.commander].specialAbility}`}
+                          </span>
                           <span style={{ minWidth: '2.5rem' }}>💚{COMMANDER_STATS[player.commander].rollToHeal}</span>
                         </div>
                       </div>
@@ -724,19 +946,174 @@ const HPCounter = () => {
 
               {/* Sub Units */}
               {player.commander && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem' }}>
-                  {player.subUnits.map((unit) => (
+                <div>
+                  {/* Faction Name Header */}
+                  <h4 style={{
+                    fontSize: '1.25rem',
+                    fontWeight: 'bold',
+                    color: '#d4af37',
+                    marginBottom: '0.75rem',
+                    textAlign: 'center',
+                    textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                    fontFamily: '"Cinzel", Georgia, serif'
+                  }}>
+                    {player.faction}
+                  </h4>
+
+                  {/* Faction Stats */}
+                  {player.faction && FACTION_STATS[player.faction] && (
+                    <div style={{
+                      background: '#1a0f0a',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      marginBottom: '0.75rem',
+                      border: '1px solid #4a3322'
+                    }}>
+                      {player.faction === 'Uncivilized' ? (
+                        // Special handling for Uncivilized - show both Caveman and Dinosaur stats
+                        <>
+                          {/* Caveman Stats */}
+                          <div style={{ marginBottom: '0.5rem' }}>
+                            <div style={{
+                              fontSize: '0.75rem',
+                              color: '#d4af37',
+                              fontWeight: 'bold',
+                              marginBottom: '0.25rem',
+                              fontFamily: '"Cinzel", Georgia, serif',
+                              textAlign: 'center'
+                            }}>
+                              🦴 Caveman
+                            </div>
+                            <div style={{
+                              display: 'flex',
+                              gap: '0.5rem',
+                              marginBottom: '0.25rem',
+                              fontSize: '0.75rem',
+                              color: '#d4af37',
+                              justifyContent: 'center'
+                            }}>
+                              <span style={{ minWidth: '2rem' }}>🚶{FACTION_STATS['Uncivilized'].caveman.walk}</span>
+                              <span style={{ minWidth: '2.5rem' }}>🏃{FACTION_STATS['Uncivilized'].caveman.run}</span>
+                              <span style={{ minWidth: '3.5rem' }}>🎯{FACTION_STATS['Uncivilized'].caveman.shootRange}/{FACTION_STATS['Uncivilized'].caveman.shootDamage}</span>
+                              <span style={{ minWidth: '2rem' }}>⚔️{FACTION_STATS['Uncivilized'].caveman.rollToHit}</span>
+                              <span style={{ minWidth: '2rem' }}>🛡️{FACTION_STATS['Uncivilized'].caveman.rollToBlock}</span>
+                            </div>
+                            <div style={{
+                              display: 'flex',
+                              gap: '0.5rem',
+                              fontSize: '0.75rem',
+                              color: '#d4af37',
+                              justifyContent: 'center'
+                            }}>
+                              <span style={{ minWidth: '2rem' }}>💥{FACTION_STATS['Uncivilized'].caveman.attacksPerHit}</span>
+                              <span style={{ minWidth: '2.5rem' }}>🗡️{FACTION_STATS['Uncivilized'].caveman.meleeDamage}</span>
+                              <span style={{ minWidth: '3.5rem' }}>⚡{FACTION_STATS['Uncivilized'].caveman.special} {FACTION_STATS['Uncivilized'].caveman.specialAbility}</span>
+                              <span style={{ minWidth: '2rem' }}>💚{FACTION_STATS['Uncivilized'].caveman.rollToHeal}</span>
+                            </div>
+                          </div>
+                          {/* Dinosaur Stats */}
+                          <div>
+                            <div style={{
+                              fontSize: '0.75rem',
+                              color: '#d4af37',
+                              fontWeight: 'bold',
+                              marginBottom: '0.25rem',
+                              fontFamily: '"Cinzel", Georgia, serif',
+                              textAlign: 'center'
+                            }}>
+                              🦖 Dinosaur
+                            </div>
+                            <div style={{
+                              display: 'flex',
+                              gap: '0.5rem',
+                              marginBottom: '0.25rem',
+                              fontSize: '0.75rem',
+                              color: '#d4af37',
+                              justifyContent: 'center'
+                            }}>
+                              <span style={{ minWidth: '2rem' }}>🚶{FACTION_STATS['Uncivilized'].dinosaur.walk}</span>
+                              <span style={{ minWidth: '2.5rem' }}>🏃{FACTION_STATS['Uncivilized'].dinosaur.run}</span>
+                              <span style={{ minWidth: '3.5rem' }}>🎯{FACTION_STATS['Uncivilized'].dinosaur.shootRange}/{FACTION_STATS['Uncivilized'].dinosaur.shootDamage}</span>
+                              <span style={{ minWidth: '2rem' }}>⚔️{FACTION_STATS['Uncivilized'].dinosaur.rollToHit}</span>
+                              <span style={{ minWidth: '2rem' }}>🛡️{FACTION_STATS['Uncivilized'].dinosaur.rollToBlock}</span>
+                            </div>
+                            <div style={{
+                              display: 'flex',
+                              gap: '0.5rem',
+                              fontSize: '0.75rem',
+                              color: '#d4af37',
+                              justifyContent: 'center'
+                            }}>
+                              <span style={{ minWidth: '2rem' }}>💥{FACTION_STATS['Uncivilized'].dinosaur.attacksPerHit}</span>
+                              <span style={{ minWidth: '2.5rem' }}>🗡️{FACTION_STATS['Uncivilized'].dinosaur.meleeDamage}</span>
+                              <span style={{ minWidth: '3.5rem' }}>⚡{FACTION_STATS['Uncivilized'].dinosaur.special} {FACTION_STATS['Uncivilized'].dinosaur.specialAbility}</span>
+                              <span style={{ minWidth: '2rem' }}>💚{FACTION_STATS['Uncivilized'].dinosaur.rollToHeal}</span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        // Regular faction stats
+                        <>
+                          <div style={{
+                            display: 'flex',
+                            gap: '0.5rem',
+                            marginBottom: '0.25rem',
+                            fontSize: '0.75rem',
+                            color: '#d4af37',
+                            justifyContent: 'center'
+                          }}>
+                            <span style={{ minWidth: '2rem' }}>🚶{FACTION_STATS[player.faction].walk}</span>
+                            <span style={{ minWidth: '2.5rem' }}>🏃{FACTION_STATS[player.faction].run}</span>
+                            <span style={{ minWidth: '3.5rem' }}>🎯{FACTION_STATS[player.faction].shootRange}/{FACTION_STATS[player.faction].shootDamage}</span>
+                            <span style={{ minWidth: '2rem' }}>⚔️{FACTION_STATS[player.faction].rollToHit}</span>
+                            <span style={{ minWidth: '2rem' }}>🛡️{FACTION_STATS[player.faction].rollToBlock}</span>
+                          </div>
+                          <div style={{
+                            display: 'flex',
+                            gap: '0.5rem',
+                            fontSize: '0.75rem',
+                            color: '#d4af37',
+                            justifyContent: 'center'
+                          }}>
+                            <span style={{ minWidth: '2rem' }}>💥{FACTION_STATS[player.faction].attacksPerHit}</span>
+                            <span style={{ minWidth: '2.5rem' }}>🗡️{FACTION_STATS[player.faction].meleeDamage}</span>
+                            <span style={{ minWidth: '3.5rem' }}>⚡{FACTION_STATS[player.faction].special}</span>
+                            <span style={{ minWidth: '2rem' }}>💚{FACTION_STATS[player.faction].rollToHeal}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem' }}>
+                  {player.subUnits.map((unit, index) => (
                     <div
                       key={unit.id}
                       style={{
-                        background: 'linear-gradient(145deg, #2a1810, #1f120c)',
+                        background: index === 0 
+                          ? 'linear-gradient(145deg, #3d2f1a, #2a1f10)' 
+                          : 'linear-gradient(145deg, #2a1810, #1f120c)',
                         borderRadius: '8px',
                         padding: '0.75rem',
                         transition: 'opacity 0.3s',
                         opacity: unit.isDead ? 0.4 : 1,
-                        border: '2px solid #6b4423'
+                        border: index === 0 ? '2px solid #d4af37' : '2px solid #6b4423',
+                        position: 'relative',
+                        boxShadow: index === 0 ? '0 0 10px rgba(212, 175, 55, 0.3)' : 'none'
                       }}
                     >
+                      {/* Gold star for special soldier */}
+                      {index === 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '0.25rem',
+                          right: '0.25rem',
+                          fontSize: '1rem',
+                          filter: 'drop-shadow(0 0 3px rgba(212, 175, 55, 0.8))'
+                        }}>
+                          ⭐
+                        </div>
+                      )}
                       <input
                         type="text"
                         placeholder="Name"
@@ -897,6 +1274,7 @@ const HPCounter = () => {
                       </div>
                     </div>
                   ))}
+                </div>
                 </div>
               )}
             </div>

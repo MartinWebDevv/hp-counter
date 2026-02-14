@@ -506,11 +506,17 @@ const HPCounter = () => {
     <div style={{
       minHeight: '100vh',
       width: '100vw',
-      background: 'linear-gradient(to bottom, #1a0f0f, #2d1810)',
+      background: 'linear-gradient(to bottom, #0a0604, #1a0f0a, #0a0604)',
       padding: '2rem',
       fontFamily: '"Cinzel", Georgia, serif',
       margin: 0,
-      boxSizing: 'border-box'
+      boxSizing: 'border-box',
+      backgroundImage: `
+        radial-gradient(circle at 20% 50%, rgba(139, 92, 46, 0.05) 0%, transparent 50%), 
+        radial-gradient(circle at 80% 80%, rgba(139, 92, 46, 0.05) 0%, transparent 50%),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.1) 2px, rgba(0, 0, 0, 0.1) 4px)
+      `,
+      position: 'relative'
     }}>
       <style>{`
         body {
@@ -518,17 +524,27 @@ const HPCounter = () => {
           padding: 0;
           overflow-x: hidden;
         }
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=MedievalSharp&display=swap');
       `}</style>
       <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
         <h1 style={{
-          fontSize: '3rem',
+          fontSize: '3.5rem',
           fontWeight: 'bold',
-          color: '#d4af37',
+          color: '#c9a961',
           marginBottom: '1rem',
           textAlign: 'center',
-          textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-          letterSpacing: '2px'
-        }}>⚔️ HP COUNTER ⚔️</h1>
+          textShadow: '4px 4px 8px rgba(0,0,0,1), 0 0 30px rgba(201, 169, 97, 0.4), 0 0 10px rgba(0,0,0,0.8)',
+          letterSpacing: '6px',
+          fontFamily: '"Cinzel", Georgia, serif',
+          borderBottom: '4px double #c9a961',
+          borderTop: '4px double #c9a961',
+          paddingBottom: '1rem',
+          paddingTop: '1rem',
+          position: 'relative',
+          background: 'linear-gradient(to bottom, rgba(26, 15, 10, 0.8), rgba(15, 8, 5, 0.9))',
+          borderRadius: '8px',
+          boxShadow: 'inset 0 0 20px rgba(0,0,0,0.8)'
+        }}>⚔ SPACE WARS ⚔</h1>
 
         {/* Turn Counter */}
         <div style={{
@@ -537,12 +553,14 @@ const HPCounter = () => {
           justifyContent: 'center',
           gap: '1rem',
           marginBottom: '2rem',
-          background: 'linear-gradient(145deg, #3d2817, #2a1810)',
-          padding: '1rem',
+          background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
+          padding: '1.5rem',
           borderRadius: '12px',
-          border: '2px solid #6b4423',
-          maxWidth: '400px',
-          margin: '0 auto 2rem auto'
+          border: '3px double #c9a961',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.9), inset 0 2px 8px rgba(201, 169, 97, 0.15), 0 0 20px rgba(201, 169, 97, 0.1)',
+          maxWidth: '500px',
+          margin: '0 auto 2rem auto',
+          position: 'relative'
         }}>
           <button
             onClick={() => setTurnCounter(Math.max(1, turnCounter - 1))}
@@ -563,17 +581,53 @@ const HPCounter = () => {
           >
             -
           </button>
-          <div style={{
-            fontSize: '2rem',
-            fontWeight: 'bold',
-            color: '#d4af37',
-            textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-            fontFamily: '"Cinzel", Georgia, serif',
-            minWidth: '150px',
-            textAlign: 'center'
-          }}>
-            Turn {turnCounter}
+          
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: 'bold',
+              color: '#c9a961',
+              textShadow: '3px 3px 6px rgba(0,0,0,1), 0 0 15px rgba(201, 169, 97, 0.4)',
+              fontFamily: '"Cinzel", Georgia, serif',
+              minWidth: '150px',
+              textAlign: 'center'
+            }}>
+              Turn {turnCounter}
+            </div>
+            
+            {/* Reset Button */}
+            <button
+              onClick={() => {
+                setTurnCounter(1);
+                // Reset all commander cooldowns
+                setPlayers(players.map(p => ({
+                  ...p,
+                  commanderStats: {
+                    ...p.commanderStats,
+                    cooldown: false,
+                    cooldownTurn: null
+                  }
+                })));
+              }}
+              style={{
+                background: 'linear-gradient(to bottom, #92400e, #78350f)',
+                color: '#fef3c7',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '4px',
+                fontWeight: '600',
+                border: '2px solid #a16207',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                fontFamily: '"Cinzel", Georgia, serif',
+                transition: 'all 0.3s'
+              }}
+              onMouseEnter={(e) => e.target.style.background = 'linear-gradient(to bottom, #a16207, #92400e)'}
+              onMouseLeave={(e) => e.target.style.background = 'linear-gradient(to bottom, #92400e, #78350f)'}
+            >
+              🔄 Reset
+            </button>
           </div>
+          
           <button
             onClick={() => setTurnCounter(turnCounter + 1)}
             style={{
@@ -598,11 +652,13 @@ const HPCounter = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
           {players.map((player) => (
             <div key={player.id} style={{
-              background: 'linear-gradient(145deg, #3d2817, #2a1810)',
+              background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
               borderRadius: '12px',
               padding: '1.5rem',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-              border: '2px solid #6b4423'
+              boxShadow: '0 12px 40px rgba(0,0,0,0.9), inset 0 1px 4px rgba(201, 169, 97, 0.1), 0 0 15px rgba(0,0,0,0.8)',
+              border: '3px solid #5a4a3a',
+              borderTop: '3px solid #6b5a4a',
+              position: 'relative'
             }}>
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
@@ -737,35 +793,38 @@ const HPCounter = () => {
               {player.commander && (
                 <div style={{
                   marginBottom: '1.5rem',
-                  padding: '1.25rem',
-                  background: 'linear-gradient(145deg, #2a1810, #1f120c)',
+                  padding: '1.5rem',
+                  background: 'linear-gradient(145deg, #120a06, #0a0503)',
                   borderRadius: '10px',
                   transition: 'opacity 0.3s',
-                  opacity: player.commanderStats.isDead ? 0.4 : 1,
-                  border: '2px solid #6b4423'
+                  opacity: player.commanderStats.isDead ? 0.3 : 1,
+                  border: '2px solid #c9a961',
+                  borderLeft: '4px solid #c9a961',
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.8), inset 0 1px 3px rgba(201, 169, 97, 0.2)'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                     <h3 style={{
                       fontSize: '1.5rem',
                       fontWeight: 'bold',
-                      color: '#d4af37',
-                      textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                      color: '#c9a961',
+                      textShadow: '2px 2px 4px rgba(0,0,0,1), 0 0 10px rgba(201, 169, 97, 0.3)',
                       margin: 0
                     }}>⚔️ {player.commander}</h3>
                     
                     {/* Commander Stats */}
                     {COMMANDER_STATS[player.commander] && (
                       <div style={{
-                        background: '#1a0f0a',
+                        background: '#0a0503',
                         padding: '0.5rem 0.75rem',
                         borderRadius: '6px',
-                        border: '1px solid #4a3322',
+                        border: '1px solid #5a4a3a',
                         flex: 1,
                         marginLeft: '1rem',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
-                        justifyContent: 'center'
+                        justifyContent: 'center',
+                        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.8)'
                       }}>
                         {/* Row 1: Movement & Combat */}
                         <div style={{
@@ -773,7 +832,7 @@ const HPCounter = () => {
                           gap: '0.5rem',
                           marginBottom: '0.25rem',
                           fontSize: '0.875rem',
-                          color: '#d4af37'
+                          color: '#c9a961'
                         }}>
                           <span style={{ minWidth: '2.5rem' }}>🚶{COMMANDER_STATS[player.commander].walk}</span>
                           <span style={{ minWidth: '3rem' }}>🏃{COMMANDER_STATS[player.commander].run}</span>
@@ -789,7 +848,7 @@ const HPCounter = () => {
                           display: 'flex',
                           gap: '0.5rem',
                           fontSize: '0.875rem',
-                          color: '#d4af37'
+                          color: '#c9a961'
                         }}>
                           <span style={{ minWidth: '2.5rem' }}>💥{COMMANDER_STATS[player.commander].attacksPerHit}</span>
                           <span style={{ minWidth: '3rem' }}>🗡️{COMMANDER_STATS[player.commander].meleeDamage}</span>
@@ -805,17 +864,18 @@ const HPCounter = () => {
                   
                   {/* HP Bar */}
                   <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e2e8f0', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c9a961', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
                       <span style={{ fontWeight: 'bold' }}>HP</span>
-                      <span style={{ fontWeight: 'bold', color: '#d4af37' }}>{player.commanderStats.currentHP} / {player.commanderStats.maxHP}</span>
+                      <span style={{ fontWeight: 'bold', color: '#c9a961' }}>{player.commanderStats.currentHP} / {player.commanderStats.maxHP}</span>
                     </div>
                     <div style={{
                       width: '100%',
                       height: '1.5rem',
-                      background: '#1a0f0a',
+                      background: '#0a0503',
                       borderRadius: '999px',
                       overflow: 'hidden',
-                      border: '2px solid #4a3322'
+                      border: '2px solid #5a4a3a',
+                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.9)'
                     }}>
                       <div
                         style={Object.assign(
@@ -951,10 +1011,10 @@ const HPCounter = () => {
                   <h4 style={{
                     fontSize: '1.25rem',
                     fontWeight: 'bold',
-                    color: '#d4af37',
+                    color: '#c9a961',
                     marginBottom: '0.75rem',
                     textAlign: 'center',
-                    textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+                    textShadow: '2px 2px 4px rgba(0,0,0,1)',
                     fontFamily: '"Cinzel", Georgia, serif'
                   }}>
                     {player.faction}
@@ -1292,23 +1352,26 @@ const HPCounter = () => {
               fontWeight: 'bold',
               padding: '1.5rem',
               borderRadius: '12px',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-              border: '3px solid #a16207',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.6), inset 0 2px 4px rgba(254, 243, 199, 0.1)',
+              border: '3px solid #d4af37',
               cursor: 'pointer',
               transition: 'all 0.3s',
               fontFamily: '"Cinzel", Georgia, serif',
-              letterSpacing: '1px'
+              letterSpacing: '2px',
+              textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
             }}
             onMouseEnter={(e) => {
               e.target.style.transform = 'scale(1.02)';
               e.target.style.background = 'linear-gradient(to bottom, #a16207, #854d0e)';
+              e.target.style.boxShadow = '0 12px 35px rgba(212, 175, 55, 0.4), inset 0 2px 4px rgba(254, 243, 199, 0.2)';
             }}
             onMouseLeave={(e) => {
               e.target.style.transform = 'scale(1)';
               e.target.style.background = 'linear-gradient(to bottom, #854d0e, #713f12)';
+              e.target.style.boxShadow = '0 10px 30px rgba(0,0,0,0.6), inset 0 2px 4px rgba(254, 243, 199, 0.1)';
             }}
           >
-            ⚔️ + Add Player ⚔️
+            ⚔️ + Add Warrior ⚔️
           </button>
         </div>
       </div>

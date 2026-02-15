@@ -1449,11 +1449,14 @@ const HPCounter = () => {
                     <label style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '0.5rem',
+                      gap: '0.75rem',
                       color: '#c9a961',
-                      fontSize: '0.75rem',
+                      fontSize: '0.9rem',
                       cursor: 'pointer',
-                      marginBottom: '0.5rem'
+                      marginBottom: '0.75rem',
+                      padding: '0.5rem',
+                      borderRadius: '4px',
+                      background: 'rgba(201, 169, 97, 0.1)'
                     }}>
                       <input
                         type="checkbox"
@@ -1486,7 +1489,7 @@ const HPCounter = () => {
                             }));
                           }
                         }}
-                        style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+                        style={{ width: '20px', height: '20px', cursor: 'pointer' }}
                       />
                       <strong>Squad?</strong>
                     </label>
@@ -1563,21 +1566,22 @@ const HPCounter = () => {
                 )}
 
                 {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => openCalculator(player.id, 'shoot')}
                   style={{
                     flex: '1 1 auto',
                     background: 'linear-gradient(to bottom, #854d0e, #713f12)',
                     color: '#fef3c7',
-                    padding: '0.375rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #a16207',
+                    padding: '0.75rem 1rem',
+                    minHeight: '48px',
+                    borderRadius: '6px',
+                    border: '2px solid #a16207',
                     cursor: 'pointer',
-                    fontSize: '0.75rem',
+                    fontSize: '0.9rem',
                     fontFamily: '"Cinzel", Georgia, serif',
                     fontWeight: '600',
-                    minWidth: '60px'
+                    minWidth: '80px'
                   }}
                   title="Calculate shooting damage"
                 >
@@ -1589,14 +1593,15 @@ const HPCounter = () => {
                     flex: '1 1 auto',
                     background: 'linear-gradient(to bottom, #7f1d1d, #5f1a1a)',
                     color: '#fecaca',
-                    padding: '0.375rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #991b1b',
+                    padding: '0.75rem 1rem',
+                    minHeight: '48px',
+                    borderRadius: '6px',
+                    border: '2px solid #991b1b',
                     cursor: 'pointer',
-                    fontSize: '0.75rem',
+                    fontSize: '0.9rem',
                     fontFamily: '"Cinzel", Georgia, serif',
                     fontWeight: '600',
-                    minWidth: '60px'
+                    minWidth: '80px'
                   }}
                   title="Calculate melee damage"
                 >
@@ -1617,15 +1622,16 @@ const HPCounter = () => {
                         '#1a0f0a' : 
                         'linear-gradient(to bottom, #6b21a8, #581c87)',
                       color: player.commanderStats.cooldown ? '#4a3322' : '#e9d5ff',
-                      padding: '0.375rem 0.5rem',
-                      borderRadius: '4px',
-                      border: '1px solid',
+                      padding: '0.75rem 1rem',
+                      minHeight: '48px',
+                      borderRadius: '6px',
+                      border: '2px solid',
                       borderColor: player.commanderStats.cooldown ? '#4a3322' : '#7e22ce',
                       cursor: player.commanderStats.cooldown ? 'not-allowed' : 'pointer',
-                      fontSize: '0.75rem',
+                      fontSize: '0.9rem',
                       fontFamily: '"Cinzel", Georgia, serif',
                       fontWeight: '600',
-                      minWidth: '60px',
+                      minWidth: '80px',
                       opacity: player.commanderStats.cooldown ? 0.5 : 1
                     }}
                     title={player.commanderStats.cooldown ? 'On cooldown - cannot use' : 'Use special weapon'}
@@ -1639,14 +1645,15 @@ const HPCounter = () => {
                     flex: '1 1 auto',
                     background: 'linear-gradient(to bottom, #15803d, #14532d)',
                     color: '#86efac',
-                    padding: '0.375rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #16a34a',
+                    padding: '0.75rem 1rem',
+                    minHeight: '48px',
+                    borderRadius: '6px',
+                    border: '2px solid #16a34a',
                     cursor: 'pointer',
-                    fontSize: '0.75rem',
+                    fontSize: '0.9rem',
                     fontFamily: '"Cinzel", Georgia, serif',
                     fontWeight: '600',
-                    minWidth: '55px'
+                    minWidth: '80px'
                   }}
                   title="Calculate healing"
                 >
@@ -1882,7 +1889,8 @@ const HPCounter = () => {
                       style={{
                         background: player.commanderStats.isDead ? '#1a0f0a' : 'linear-gradient(to bottom, #991b1b, #7f1d1d)',
                         color: player.commanderStats.isDead ? '#4a3322' : '#fecaca',
-                        padding: '0.75rem 1rem',
+                        padding: '1rem 1.25rem',
+                        minHeight: '52px',
                         borderRadius: '8px',
                         fontWeight: '600',
                         border: '2px solid',
@@ -1890,7 +1898,7 @@ const HPCounter = () => {
                         cursor: player.commanderStats.isDead ? 'not-allowed' : 'pointer',
                         transition: 'all 0.3s',
                         fontFamily: '"Cinzel", Georgia, serif',
-                        fontSize: '1rem'
+                        fontSize: '1.1rem'
                       }}
                     >
                       - HP
@@ -1901,7 +1909,8 @@ const HPCounter = () => {
                       style={{
                         background: player.commanderStats.revives === 0 ? '#1a0f0a' : 'linear-gradient(to bottom, #1e40af, #1e3a8a)',
                         color: player.commanderStats.revives === 0 ? '#4a3322' : '#bfdbfe',
-                        padding: '0.75rem 1rem',
+                        padding: '1rem 1.25rem',
+                        minHeight: '52px',
                         borderRadius: '8px',
                         fontWeight: '600',
                         border: '2px solid',
@@ -1909,7 +1918,7 @@ const HPCounter = () => {
                         cursor: player.commanderStats.revives === 0 ? 'not-allowed' : 'pointer',
                         transition: 'all 0.3s',
                         fontFamily: '"Cinzel", Georgia, serif',
-                        fontSize: '1rem'
+                        fontSize: '1.1rem'
                       }}
                     >
                       ⟲ Revive
@@ -2335,6 +2344,7 @@ const HPCounter = () => {
             style={{
               gridColumn: '1 / -1',
               width: '100%',
+              marginTop: '8px',
               background: 'linear-gradient(to bottom, #854d0e, #713f12)',
               color: '#fef3c7',
               fontSize: '2rem',
@@ -3044,8 +3054,9 @@ const HPCounter = () => {
                         calculatorData.targetId;
                       return isEnabled ? '#86efac' : '#4a3322';
                     })(),
-                    padding: '0.75rem',
-                    borderRadius: '6px',
+                    padding: '1rem',
+                    minHeight: '56px',
+                    borderRadius: '8px',
                     border: '2px solid',
                     borderColor: (() => {
                       const isEnabled = calculatorData.action === 'heal' ? 
@@ -3061,7 +3072,7 @@ const HPCounter = () => {
                     })(),
                     fontFamily: '"Cinzel", Georgia, serif',
                     fontWeight: 'bold',
-                    fontSize: '1rem'
+                    fontSize: '1.1rem'
                   }}
                 >
                   ✓ Apply
@@ -3075,13 +3086,14 @@ const HPCounter = () => {
                     flex: 1,
                     background: 'linear-gradient(to bottom, #7f1d1d, #5f1a1a)',
                     color: '#fecaca',
-                    padding: '0.75rem',
-                    borderRadius: '6px',
+                    padding: '1rem',
+                    minHeight: '56px',
+                    borderRadius: '8px',
                     border: '2px solid #991b1b',
                     cursor: 'pointer',
                     fontFamily: '"Cinzel", Georgia, serif',
                     fontWeight: 'bold',
-                    fontSize: '1rem'
+                    fontSize: '1.1rem'
                   }}
                 >
                   ✕ Cancel
@@ -3246,15 +3258,15 @@ const HPCounter = () => {
                             style={{
                               background: 'linear-gradient(to bottom, #7f1d1d, #5f1a1a)',
                               color: '#fecaca',
-                              padding: '0.5rem',
-                              borderRadius: '6px',
+                              padding: '0.75rem',
+                              borderRadius: '8px',
                               border: '2px solid #991b1b',
                               cursor: 'pointer',
                               fontFamily: '"Cinzel", Georgia, serif',
                               fontWeight: 'bold',
-                              fontSize: '1.25rem',
-                              width: '40px',
-                              height: '40px'
+                              fontSize: '1.5rem',
+                              minWidth: '52px',
+                              minHeight: '52px'
                             }}
                           >
                             −
@@ -3262,13 +3274,13 @@ const HPCounter = () => {
                           <div style={{
                             background: '#1a0f0a',
                             color: '#fecaca',
-                            padding: '0.5rem 1rem',
-                            borderRadius: '6px',
+                            padding: '0.75rem 1.25rem',
+                            borderRadius: '8px',
                             border: '2px solid #c9a961',
                             fontFamily: '"Cinzel", Georgia, serif',
                             fontWeight: 'bold',
                             fontSize: '1.5rem',
-                            minWidth: '60px',
+                            minWidth: '80px',
                             textAlign: 'center'
                           }}>
                             {currentDamage}hp
@@ -3283,15 +3295,15 @@ const HPCounter = () => {
                             style={{
                               background: 'linear-gradient(to bottom, #15803d, #14532d)',
                               color: '#86efac',
-                              padding: '0.5rem',
-                              borderRadius: '6px',
+                              padding: '0.75rem',
+                              borderRadius: '8px',
                               border: '2px solid #16a34a',
                               cursor: 'pointer',
                               fontFamily: '"Cinzel", Georgia, serif',
                               fontWeight: 'bold',
-                              fontSize: '1.25rem',
-                              width: '40px',
-                              height: '40px'
+                              fontSize: '1.5rem',
+                              minWidth: '52px',
+                              minHeight: '52px'
                             }}
                           >
                             +

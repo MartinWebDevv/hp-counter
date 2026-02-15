@@ -1412,7 +1412,7 @@ const HPCounter = () => {
               <div style={{ 
                 marginBottom: '1rem', 
                 padding: '0.5rem',
-                background: '#0a0503',
+                background: '#000000',
                 borderRadius: '6px',
                 border: '1px solid #5a4a3a'
               }}>

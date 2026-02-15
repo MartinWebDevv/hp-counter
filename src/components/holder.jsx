@@ -2622,20 +2622,34 @@ const HPCounter = () => {
                       if (!healer) return null;
 
                       const allUnits = [
-                        { type: 'commander', index: -1, name: healer.commander || 'Commander', hp: healer.commanderStats.currentHP, maxHP: healer.commanderStats.maxHP },
+                        { 
+                          type: 'commander', 
+                          index: -1, 
+                          name: healer.commander || 'Commander', 
+                          hp: healer.commanderStats.currentHP, 
+                          maxHP: healer.commanderStats.maxHP,
+                          revives: healer.commanderStats.revives,
+                          isDead: healer.commanderStats.isDead
+                        },
                         ...healer.subUnits.map((unit, idx) => ({
                           type: idx === 0 ? 'special' : `soldier${idx}`,
                           index: idx,
                           name: unit.name || (idx === 0 ? 'Special Soldier' : `Soldier ${idx + 1}`),
                           hp: unit.currentHP,
                           maxHP: unit.maxHP,
+                          revives: unit.revives,
                           isDead: unit.isDead
                         }))
-                      ].filter(u => !u.isDead && u.hp < u.maxHP); // Only show units that need healing
+                      ].filter(u => {
+                        // Can only heal if: NOT permanently dead AND needs healing
+                        const isPermanentlyDead = u.isDead && u.revives === 0;
+                        const needsHealing = u.hp < u.maxHP;
+                        return !isPermanentlyDead && needsHealing;
+                      });
 
                       if (allUnits.length === 0) {
                         return <div style={{ color: '#8b7355', fontSize: '0.75rem', textAlign: 'center' }}>
-                          All units are at full health!
+                          All units are at full health or permanently dead!
                         </div>;
                       }
 

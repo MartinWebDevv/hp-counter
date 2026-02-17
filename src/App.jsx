@@ -7,8 +7,8 @@ function App() {
 
   return (
     <div>
-      {/* <HPCounter /> */}
-      <Holder />
+      <HPCounter />
+      {/* <Holder /> */}
     </div>
 
   )

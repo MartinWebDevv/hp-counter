@@ -1,14 +1,17 @@
 import React from "react";
-import Index from "./components";
+import HPCounterOG from "./components/HPCounterOG";
+// import Holder from "./components/holder"
 import HPCounter from "./components/HPCounter";
-import Holder from "./components/holder"
+import './styles/fullscreen.css';
 
 function App() {
 
   return (
     <div>
-      {/* <HPCounter /> */}
-      <Holder />
+      {/* <HPCounterOG /> */}
+      <HPCounter />
+      {/* <Holder /> */}
+
     </div>
 
   )

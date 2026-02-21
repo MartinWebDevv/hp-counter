@@ -1,0 +1,102 @@
+const FACTION_STATS = {
+  'Red Rovers': {
+    walk: '6"',
+    run: '12"',
+    rollToHit: '4+',
+    rollToBlock: '4+',
+    rollToHeal: '4+',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '6"/2hp'
+  },
+  'Space Aliens': {
+    walk: '6"',
+    run: '12"',
+    rollToHit: '3+',
+    rollToBlock: '5+',
+    rollToHeal: '4+',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '6"/2hp'
+  },
+  'NoLobe Zombies': {
+    walk: '4"',
+    run: '12"',
+    rollToHit: '6+',
+    rollToBlock: '3+',
+    rollToHeal: '2+',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '4"/2hp'
+  },
+  'Murder Bots': {
+    walk: '4"',
+    run: '12"',
+    rollToHit: '5+',
+    rollToBlock: '3+',
+    rollToHeal: '3+',
+    shootRange: '8"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '4"/2hp'
+  },
+  'Monster': {
+    walk: '8"',
+    run: '12"',
+    rollToHit: '3+',
+    rollToBlock: '5+',
+    rollToHeal: '5+',
+    shootRange: '16"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '8"/2hp'
+  },
+  'Space Pony': {
+    walk: '8"',
+    run: '12"',
+    rollToHit: '2+',
+    rollToBlock: '5+',
+    rollToHeal: '6+',
+    shootRange: '12"',
+    shootDamage: '1hp',
+    attacksPerHit: '1x',
+    meleeDamage: '1hp',
+    special: '8"/2hp'
+  },
+  'Uncivilized': {
+    caveman: {
+      walk: '6"',
+      run: '12"',
+      rollToHit: '5+',
+      rollToBlock: '3+',
+      rollToHeal: '5+',
+      shootRange: '8"',
+      shootDamage: '1hp',
+      attacksPerHit: '2x',
+      meleeDamage: '1hp',
+      special: '4"/2hp',
+      specialAbility: '⛔'
+    },
+    dinosaur: {
+      walk: '8"',
+      run: '16"',
+      rollToHit: '5+',
+      rollToBlock: '3+',
+      rollToHeal: '5+',
+      shootRange: '8"',
+      shootDamage: '1hp',
+      attacksPerHit: '2x',
+      meleeDamage: '1hp',
+      special: '4"/1hp',
+      specialAbility: '💔'
+    }
+  }
+};

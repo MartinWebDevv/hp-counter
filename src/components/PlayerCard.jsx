@@ -17,6 +17,9 @@ const PlayerCard = ({
   isCurrentTurn = false,
   hasActedThisRound = false
 }) => {
+  const [showSquad, setShowSquad] = React.useState(true);
+  const [showReviveModal, setShowReviveModal] = React.useState(false);
+  const [reviveType, setReviveType] = React.useState('commander'); // 'commander' or unit index
   
   const handlePlayerNameChange = (e) => {
     onUpdate(player.id, { playerName: e.target.value });
@@ -77,21 +80,35 @@ const PlayerCard = ({
     onUpdate(player.id, { subUnits: newSubUnits });
   };
 
-  const handleSubUnitRevive = (unitIndex) => {
+  const handleSubUnitRevive = (unitIndex, isSuccessful = true) => {
     const unit = player.subUnits[unitIndex];
     if (!unit || (unit.revives || 0) <= 0 || unit.hp > 0) return;
 
-    const newMaxHP = Math.floor(unit.maxHp / 2);
-    const restoredHP = newMaxHP;
+    let newSubUnits;
     
-    const newSubUnits = player.subUnits.map((u, i) => 
-      i === unitIndex ? { 
-        ...u, 
-        hp: restoredHP,
-        maxHp: newMaxHP,
-        revives: (u.revives || 0) - 1 
-      } : u
-    );
+    if (isSuccessful) {
+      // Successful revive
+      const newMaxHP = Math.floor(unit.maxHp / 2);
+      const restoredHP = newMaxHP;
+      
+      newSubUnits = player.subUnits.map((u, i) => 
+        i === unitIndex ? { 
+          ...u, 
+          hp: restoredHP,
+          maxHp: newMaxHP,
+          revives: (u.revives || 0) - 1 
+        } : u
+      );
+    } else {
+      // Unsuccessful revive - permanently dead
+      newSubUnits = player.subUnits.map((u, i) => 
+        i === unitIndex ? { 
+          ...u, 
+          hp: 0,
+          revives: 0 // Set to 0 so they're fully dead
+        } : u
+      );
+    }
     
     onUpdate(player.id, { subUnits: newSubUnits });
   };
@@ -305,7 +322,10 @@ const PlayerCard = ({
 
           {/* Revive Button - Blue as long as revives exist */}
           <button
-            onClick={() => onUseRevive(player.id)}
+            onClick={() => {
+              setReviveType('commander');
+              setShowReviveModal(true);
+            }}
             disabled={player.commanderStats.hp > 0 || (player.commanderStats.revives || 0) === 0}
             style={{
               flex: 1,
@@ -337,21 +357,51 @@ const PlayerCard = ({
         <div style={styles.actionBtns}>
           <button
             onClick={() => onOpenCalculator(player.id, 'shoot', 'commander')}
-            style={styles.actionBtn}
+            style={{
+              ...styles.actionBtn,
+              ...(player.commanderStats.hp === 0 && {
+                background: 'linear-gradient(135deg, #374151, #1f2937)',
+                border: '2px solid #4b5563',
+                color: '#6b7280',
+                cursor: 'not-allowed',
+                opacity: 0.5,
+                boxShadow: 'none',
+              })
+            }}
             disabled={player.commanderStats.hp === 0}
           >
             🎯 Shoot
           </button>
           <button
             onClick={() => onOpenCalculator(player.id, 'melee', 'commander')}
-            style={styles.actionBtn}
+            style={{
+              ...styles.actionBtn,
+              ...(player.commanderStats.hp === 0 && {
+                background: 'linear-gradient(135deg, #374151, #1f2937)',
+                border: '2px solid #4b5563',
+                color: '#6b7280',
+                cursor: 'not-allowed',
+                opacity: 0.5,
+                boxShadow: 'none',
+              })
+            }}
             disabled={player.commanderStats.hp === 0}
           >
             ⚔️ Melee
           </button>
           <button
             onClick={() => onOpenCalculator(player.id, 'special', 'commander')}
-            style={styles.actionBtn}
+            style={{
+              ...styles.actionBtn,
+              ...((player.commanderStats.hp === 0 || (player.commanderStats.cooldownRounds || 0) > 0) && {
+                background: 'linear-gradient(135deg, #374151, #1f2937)',
+                border: '2px solid #4b5563',
+                color: '#6b7280',
+                cursor: 'not-allowed',
+                opacity: 0.5,
+                boxShadow: 'none',
+              })
+            }}
             disabled={player.commanderStats.hp === 0 || (player.commanderStats.cooldownRounds || 0) > 0}
           >
             ⚡ Special
@@ -361,9 +411,22 @@ const PlayerCard = ({
 
       {/* Sub-Units Section */}
       <div style={styles.section}>
-        <h3 style={styles.sectionTitle}>Squad Members (5)</h3>
+        <div style={{
+          ...styles.sectionHeader,
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+        onClick={() => setShowSquad(!showSquad)}
+        >
+          <h3 style={styles.sectionTitle}>
+            {showSquad ? '▼' : '▶'} Squad Members (5)
+          </h3>
+          <span style={{ color: '#8b7355', fontSize: '0.8rem' }}>
+            {showSquad ? 'Click to collapse' : 'Click to expand'}
+          </span>
+        </div>
         
-        {player.subUnits.map((unit, index) => (
+        {showSquad && player.subUnits.map((unit, index) => (
           <div key={index} style={{
             ...styles.unitCard,
             opacity: unit.hp === 0 ? 0.4 : 1,
@@ -450,7 +513,10 @@ const PlayerCard = ({
 
               {/* Revive Button */}
               <button
-                onClick={() => handleSubUnitRevive(index)}
+                onClick={() => {
+                  setReviveType(index);
+                  setShowReviveModal(true);
+                }}
                 disabled={unit.hp > 0 || (unit.revives || 0) === 0}
                 style={{
                   flex: 1,
@@ -484,14 +550,34 @@ const PlayerCard = ({
             <div style={styles.unitActionBtns}>
               <button
                 onClick={() => onOpenCalculator(player.id, 'shoot', index === 0 ? 'special' : `soldier${index}`)}
-                style={styles.unitActionBtn}
+                style={{
+                  ...styles.unitActionBtn,
+                  ...(unit.hp === 0 && {
+                    background: 'linear-gradient(135deg, #374151, #1f2937)',
+                    border: '2px solid #4b5563',
+                    color: '#6b7280',
+                    cursor: 'not-allowed',
+                    opacity: 0.5,
+                    boxShadow: 'none',
+                  })
+                }}
                 disabled={unit.hp === 0}
               >
                 🎯 SHOOT
               </button>
               <button
                 onClick={() => onOpenCalculator(player.id, 'melee', index === 0 ? 'special' : `soldier${index}`)}
-                style={styles.unitActionBtn}
+                style={{
+                  ...styles.unitActionBtn,
+                  ...(unit.hp === 0 && {
+                    background: 'linear-gradient(135deg, #374151, #1f2937)',
+                    border: '2px solid #4b5563',
+                    color: '#6b7280',
+                    cursor: 'not-allowed',
+                    opacity: 0.5,
+                    boxShadow: 'none',
+                  })
+                }}
                 disabled={unit.hp === 0}
               >
                 ⚔️ MELEE
@@ -500,6 +586,116 @@ const PlayerCard = ({
           </div>
         ))}
       </div>
+
+      {/* Revive Confirmation Modal */}
+      {showReviveModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}
+        onClick={() => setShowReviveModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
+              border: '3px solid #d4af37',
+              borderRadius: '12px',
+              padding: '2rem',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
+            }}
+          >
+            <h3 style={{
+              color: '#d4af37',
+              fontSize: '1.5rem',
+              marginBottom: '1rem',
+              textAlign: 'center',
+              fontFamily: '"Cinzel", Georgia, serif',
+            }}>
+              🎲 Revive Roll
+            </h3>
+            
+            <p style={{
+              color: '#e8dcc4',
+              textAlign: 'center',
+              marginBottom: '2rem',
+              fontSize: '1rem',
+            }}>
+              Was the revive roll successful?
+            </p>
+            
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '1rem',
+              padding: '0 1.5rem',
+              justifyItems: 'center',
+            }}>
+              <button
+                onClick={() => {
+                  if (reviveType === 'commander') {
+                    onUseRevive(player.id, true);
+                  } else {
+                    handleSubUnitRevive(reviveType, true);
+                  }
+                  setShowReviveModal(false);
+                }}
+                style={{
+                  padding: '1rem 1.5rem',
+                  background: 'linear-gradient(135deg, #059669, #047857)',
+                  border: '2px solid #10b981',
+                  color: '#d1fae5',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontWeight: '700',
+                  fontSize: '1rem',
+                  textTransform: 'uppercase',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                }}
+              >
+                ✓ Successful
+              </button>
+              
+              <button
+                onClick={() => {
+                  if (reviveType === 'commander') {
+                    onUseRevive(player.id, false);
+                  } else {
+                    handleSubUnitRevive(reviveType, false);
+                  }
+                  setShowReviveModal(false);
+                }}
+                style={{
+                  padding: '1rem 1.5rem',
+                  background: 'linear-gradient(135deg, #b91c1c, #991b1b)',
+                  border: '2px solid #dc2626',
+                  color: '#fecaca',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontWeight: '700',
+                  fontSize: '1rem',
+                  textTransform: 'uppercase',
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)',
+                }}
+              >
+                ✗ Unsuccessful
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -511,6 +707,9 @@ const styles = {
     padding: '1rem',
     fontFamily: '"Rajdhani", "Cinzel", sans-serif',
     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+    maxHeight: '85vh',
+    overflowY: 'auto',
+    overflowX: 'hidden',
   },
   header: {
     display: 'flex',

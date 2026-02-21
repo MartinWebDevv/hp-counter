@@ -18,6 +18,8 @@ const HPCounter = () => {
     customModeSettings,
     currentPlayerIndex,
     playersWhoActedThisRound,
+    gameStarted,
+    setPlayers,
     addPlayer,
     removePlayer,
     reorderPlayers,
@@ -26,10 +28,12 @@ const HPCounter = () => {
     useRevive,
     changeGameMode,
     getModeValues,
+    startGame,
     endTurn,
     undo,
     addLog,
     clearLog,
+    loadGameState,
   } = useGameState();
 
   const {
@@ -49,6 +53,63 @@ const HPCounter = () => {
   const [showModeSelector, setShowModeSelector] = React.useState(false);
   const [viewMode, setViewMode] = React.useState('all');
   const [draggedIndex, setDraggedIndex] = React.useState(null);
+
+  const saveGameToFile = () => {
+    const gameState = {
+      players,
+      currentRound,
+      combatLog,
+      gameMode,
+      customModeSettings,
+      currentPlayerIndex,
+      playersWhoActedThisRound,
+      gameStarted,
+      savedAt: new Date().toISOString()
+    };
+    
+    const dataStr = JSON.stringify(gameState, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `battle-tracker-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const loadGameFromFile = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const gameState = JSON.parse(event.target.result);
+          
+          // Validate the data has required fields
+          if (!gameState.players || !Array.isArray(gameState.players)) {
+            alert('Invalid save file format!');
+            return;
+          }
+          
+          // Restore game state using the hook function
+          loadGameState(gameState);
+          
+          addLog(`Game loaded from ${new Date(gameState.savedAt).toLocaleString()}`);
+          alert('Game loaded successfully!');
+        } catch (error) {
+          console.error('Error loading save file:', error);
+          alert('Failed to load save file. Make sure it\'s a valid Battle Tracker save.');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
 
   const currentModeConfig = getModeConfig(gameMode);
   const currentPlayer = players[currentPlayerIndex];
@@ -103,8 +164,30 @@ const HPCounter = () => {
             <div style={styles.roundNumber}>{currentRound}</div>
           </div>
           
-          <button onClick={endTurn} style={styles.endTurnBtn} disabled={!currentPlayer || currentPlayer.commanderStats.hp === 0}>
-            END TURN
+          <button 
+            onClick={() => {
+              if (!gameStarted) {
+                startGame();
+              } else {
+                endTurn();
+              }
+            }}
+            style={styles.endTurnBtn}
+          >
+            {!gameStarted 
+              ? '▶️ START GAME' 
+              : (() => {
+                  // Check if current player is the last alive player
+                  const alivePlayers = players.filter(p => p.commanderStats.hp > 0);
+                  const alivePlayersWhoActed = alivePlayers.filter(p => 
+                    playersWhoActedThisRound.includes(p.id)
+                  );
+                  const isLastPlayer = currentPlayer && 
+                    alivePlayersWhoActed.length === alivePlayers.length - 1;
+                  
+                  return isLastPlayer ? '🔄 END ROUND' : '➡️ END TURN';
+                })()
+            }
           </button>
           
           <button onClick={() => setViewMode(viewMode === 'all' ? 'current' : 'all')} style={styles.viewModeBtn} disabled={!currentPlayer}>
@@ -124,14 +207,47 @@ const HPCounter = () => {
           </button>
           
           <button onClick={() => {
-            if (window.confirm('Reset the entire game?')) window.location.reload();
+            if (window.confirm('Reset the entire game? This will clear all players and progress.')) {
+              // Clear ALL localStorage items related to the game
+              localStorage.removeItem('hpCounterPlayers');
+              localStorage.removeItem('hpCounterRound');
+              localStorage.removeItem('hpCounterLog');
+              localStorage.removeItem('hpCounterGameMode');
+              localStorage.removeItem('hpCounterCustomSettings');
+              localStorage.removeItem('hpCounterCurrentPlayerIndex');
+              localStorage.removeItem('hpCounterGameStarted');
+              // Reload page to fresh state
+              window.location.reload();
+            }
           }} style={styles.resetBtn}>
             🔄 RESET
           </button>
         </div>
       </div>
 
-      <LogPanel battleLog={combatLog} onClearLog={clearLog} />
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '1rem',
+        gap: '1rem',
+      }}>
+        <div style={{ flex: 1 }}>
+          <LogPanel battleLog={combatLog} onClearLog={clearLog} />
+        </div>
+        
+        <div style={{ 
+          display: 'flex', 
+          gap: '0.75rem',
+        }}>
+          <button onClick={saveGameToFile} style={styles.saveBtn}>
+            💾 SAVE
+          </button>
+          <button onClick={loadGameFromFile} style={styles.loadBtn}>
+            📂 LOAD
+          </button>
+        </div>
+      </div>
 
       <div style={styles.addPlayerSection}>
         <button onClick={addPlayer} style={styles.addPlayerBtn}>
@@ -433,6 +549,36 @@ const styles = {
     fontSize: "0.95rem",
     letterSpacing: "0.05em",
     boxShadow: "0 4px 12px rgba(220, 38, 38, 0.3)",
+    transition: "all 0.2s",
+  },
+  saveBtn: {
+    padding: "0.85rem 1.75rem",
+    background: "linear-gradient(135deg, #0891b2, #0e7490)",
+    border: "2px solid #06b6d4",
+    color: "#cffafe",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontWeight: "700",
+    fontSize: "0.95rem",
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
+    boxShadow: "0 4px 12px rgba(6, 182, 212, 0.3)",
+    transition: "all 0.2s",
+  },
+  loadBtn: {
+    padding: "0.85rem 1.75rem",
+    background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
+    border: "2px solid #a78bfa",
+    color: "#f3e8ff",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontWeight: "700",
+    fontSize: "0.95rem",
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
+    boxShadow: "0 4px 12px rgba(167, 139, 250, 0.3)",
     transition: "all 0.2s",
   },
   addPlayerSection: {

@@ -23,25 +23,38 @@ const CalculatorD20 = ({
 
   // Determine dice types based on attacker and defender
   const getAttackerDiceType = () => {
-    if (calculatorData.attackingUnitType === 'commander') return 'D20';
-    return 'D10';
+    if (calculatorData.attackingUnitType === 'commander') {
+      // Check if target is a commander (single target or in squad)
+      const targetIsCommander = 
+        calculatorData.targetId?.unitType === 'commander' ||
+        calculatorData.targetSquadMembers?.some(t => t.unitType === 'commander');
+      
+      if (targetIsCommander) {
+        return 'D20'; // Commander vs Commander → D20
+      }
+      
+      // Commander attacking soldiers - check if squad or solo
+      const isTargetingSquad = calculatorData.targetSquadMembers && calculatorData.targetSquadMembers.length > 1;
+      if (isTargetingSquad) {
+        return 'D20'; // Commander vs Squad → Commander uses D20
+      }
+      // Commander vs Solo Soldier → Commander uses D10
+      return 'D10';
+    }
+    return 'D10'; // Soldiers always use D10
   };
 
   const getDefenderDiceType = () => {
-    // Need to check if target is commander or soldier
-    if (!calculatorData.targetId) return 'D10';
+    // Check if defender is a commander (single target or in squad)
+    const defenderIsCommander = 
+      calculatorData.targetId?.unitType === 'commander' ||
+      calculatorData.targetSquadMembers?.some(t => t.unitType === 'commander');
     
-    const targetPlayer = players.find(p => p.id === calculatorData.targetId.playerId);
-    if (!targetPlayer) return 'D10';
-    
-    if (calculatorData.targetId.unitType === 'commander') {
-      // Commander defending
-      if (calculatorData.attackingUnitType === 'commander') return 'D20';
-      return 'D10'; // Soldier attacking commander
+    if (defenderIsCommander && calculatorData.attackingUnitType === 'commander') {
+      return 'D20'; // Commander vs Commander → both D20
     }
     
-    // Soldier defending
-    if (calculatorData.attackingUnitType === 'commander') return 'D10';
+    // All other scenarios: defender uses D10
     return 'D10';
   };
 
@@ -196,10 +209,10 @@ const CalculatorD20 = ({
           background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
           border: '3px solid ' + gold,
           borderRadius: '12px',
-          padding: '2rem',
-          maxWidth: '600px',
-          width: '90%',
-          maxHeight: '80vh',
+          padding: '1.5rem',
+          maxWidth: '95%',
+          width: '1200px',
+          maxHeight: '90vh',
           overflowY: 'auto',
           boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
         }}
@@ -349,18 +362,18 @@ const CalculatorD20 = ({
 
         {/* Target Selection */}
         {!calculatorData.targetIsSquad ? (
-          // Single Target
+          // Single Target - Two Step Selection
           <div style={{ marginBottom: '1rem' }}>
+            {/* Step 1: Select Target Player */}
             <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
-              <strong>Select Target:</strong>
+              <strong>Select Target Player:</strong>
             </label>
             <select
-              value={calculatorData.targetId ? `${calculatorData.targetId.playerId}-${calculatorData.targetId.unitType}` : ''}
+              value={calculatorData.targetId?.playerId || ''}
               onChange={(e) => {
-                const [playerId, unitType] = e.target.value.split('-');
                 setCalculatorData({
                   ...calculatorData,
-                  targetId: playerId ? { playerId: parseInt(playerId), unitType } : null,
+                  targetId: e.target.value ? { playerId: parseInt(e.target.value), unitType: null } : null,
                 });
               }}
               style={{
@@ -373,22 +386,116 @@ const CalculatorD20 = ({
                 fontFamily: '"Cinzel", Georgia, serif',
                 fontSize: '0.875rem',
                 cursor: 'pointer',
+                marginBottom: '1rem',
               }}
             >
-              <option value="">Select Target...</option>
-              {players.filter(p => p.id !== calculatorData.attackerId).map(p => (
-                <optgroup key={p.id} label={p.playerName || 'Player'}>
-                  <option value={`${p.id}-commander`}>
-                    ⚔️ {p.commander} ({p.commanderStats.hp}hp)
+              <option value="">Select Player...</option>
+              {players
+                .filter(p => p.id !== calculatorData.attackerId)
+                .filter(p => p.commanderStats.hp > 0 || p.subUnits.some(u => u.hp > 0))
+                .map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.playerName || 'Player'}
                   </option>
-                  {p.subUnits.map((unit, idx) => (
-                    <option key={idx} value={`${p.id}-${idx === 0 ? 'special' : `soldier${idx}`}`}>
-                      {idx === 0 ? '⭐' : '🛡️'} {idx === 0 ? 'Special' : `Soldier ${idx}`} ({unit.hp}hp)
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
+                ))}
             </select>
+
+            {/* Step 2: Select Target Unit - Only show if player selected */}
+            {calculatorData.targetId?.playerId && (() => {
+              const targetPlayer = players.find(p => p.id === calculatorData.targetId.playerId);
+              if (!targetPlayer) return null;
+
+              return (
+                <div>
+                  <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                    <strong>Select Target Unit:</strong>
+                  </label>
+                  <div style={{
+                    background: '#0a0503',
+                    padding: '1rem',
+                    borderRadius: '6px',
+                    border: '2px solid #5a4a3a',
+                  }}>
+                    {/* Commander option - only if alive */}
+                    {targetPlayer.commanderStats.hp > 0 && (
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem',
+                        marginBottom: '0.5rem',
+                        background: calculatorData.targetId.unitType === 'commander' 
+                          ? 'rgba(201, 169, 97, 0.2)' 
+                          : 'transparent',
+                        borderRadius: '4px',
+                        color: gold,
+                        fontSize: '0.875rem',
+                        cursor: 'pointer',
+                      }}>
+                        <input
+                          type="radio"
+                          name="targetUnit"
+                          checked={calculatorData.targetId.unitType === 'commander'}
+                          onChange={() => {
+                            setCalculatorData({
+                              ...calculatorData,
+                              targetId: { 
+                                playerId: calculatorData.targetId.playerId, 
+                                unitType: 'commander' 
+                              },
+                            });
+                          }}
+                          style={{ width: '16px', height: '16px' }}
+                        />
+                        ⚔️ {targetPlayer.commander} ({targetPlayer.commanderStats.hp}hp)
+                      </label>
+                    )}
+
+                    {/* Squad members - only alive ones */}
+                    {targetPlayer.subUnits.map((unit, idx) => {
+                      if (unit.hp === 0) return null;
+                      const unitType = idx === 0 ? 'special' : `soldier${idx}`;
+                      return (
+                        <label
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.5rem',
+                            marginBottom: '0.5rem',
+                            background: calculatorData.targetId.unitType === unitType
+                              ? 'rgba(201, 169, 97, 0.2)'
+                              : 'transparent',
+                            borderRadius: '4px',
+                            color: gold,
+                            fontSize: '0.875rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="targetUnit"
+                            checked={calculatorData.targetId.unitType === unitType}
+                            onChange={() => {
+                              setCalculatorData({
+                                ...calculatorData,
+                                targetId: { 
+                                  playerId: calculatorData.targetId.playerId, 
+                                  unitType 
+                                },
+                              });
+                            }}
+                            style={{ width: '16px', height: '16px' }}
+                          />
+                          {idx === 0 ? '⭐' : '🛡️'} {idx === 0 ? 'Special Unit' : `Soldier ${idx}`} ({unit.hp}hp)
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         ) : (
           // Squad Target Selection
@@ -419,11 +526,14 @@ const CalculatorD20 = ({
               }}
             >
               <option value="">Select Player...</option>
-              {players.filter(p => p.id !== calculatorData.attackerId).map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.playerName || 'Player'}
-                </option>
-              ))}
+              {players
+                .filter(p => p.id !== calculatorData.attackerId)
+                .filter(p => p.commanderStats.hp > 0 || p.subUnits.some(u => u.hp > 0))
+                .map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.playerName || 'Player'}
+                  </option>
+                ))}
             </select>
 
             {/* Squad Member Selection */}

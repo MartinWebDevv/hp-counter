@@ -72,7 +72,7 @@ export const getUnitStats = (player, unitType) => {
     return {
       shootDamage: factionStats.specialDamage || 2,
       meleeDamage: parseNumber(factionStats.meleeDamage) || 1,
-      attacksPerHit: parseNumber(factionStats.attacksPerHit) || 1,
+      attacksPerHit: player.faction === 'Uncivilized' ? 2 : (parseNumber(factionStats.attacksPerHit) || 1),
       specialDamage: factionStats.specialDamage || 2,
       shootRange: factionStats.shootRange,
       specialRange: factionStats.specialRange,
@@ -85,7 +85,7 @@ export const getUnitStats = (player, unitType) => {
   return {
     shootDamage: parseNumber(factionStats.shootDamage) || 1,
     meleeDamage: parseNumber(factionStats.meleeDamage) || 1,
-    attacksPerHit: parseNumber(factionStats.attacksPerHit) || 1,
+    attacksPerHit: player.faction === 'Uncivilized' ? 2 : (parseNumber(factionStats.attacksPerHit) || 1),
     specialDamage: factionStats.specialDamage || 2,
     shootRange: factionStats.shootRange,
     specialRange: factionStats.specialRange,

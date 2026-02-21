@@ -174,9 +174,11 @@ const DamageDistribution = ({
           background: "linear-gradient(145deg, #1a0f0a, #0f0805)",
           border: "3px solid " + gold,
           borderRadius: "12px",
-          padding: "2rem",
-          maxWidth: "500px",
-          width: "90%",
+          padding: "1.5rem",
+          maxWidth: "95%",
+          width: "1000px",
+          maxHeight: "90vh",
+          overflowY: "auto",
           boxShadow: "0 20px 60px rgba(0,0,0,0.9)",
         }}
       >

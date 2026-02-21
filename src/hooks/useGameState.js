@@ -14,6 +14,7 @@ export const useGameState = () => {
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [playersWhoActedThisRound, setPlayersWhoActedThisRound] = useState([]);
   const [actionHistory, setActionHistory] = useState([]);
+  const [gameStarted, setGameStarted] = useState(false);
 
   // Load state from localStorage on mount
   useEffect(() => {
@@ -24,6 +25,7 @@ export const useGameState = () => {
       const savedMode = localStorage.getItem('hpCounterGameMode');
       const savedCustomSettings = localStorage.getItem('hpCounterCustomSettings');
       const savedPlayerIndex = localStorage.getItem('hpCounterCurrentPlayerIndex');
+      const savedGameStarted = localStorage.getItem('hpCounterGameStarted');
       
       if (savedPlayers) setPlayers(JSON.parse(savedPlayers));
       if (savedRound) setCurrentRound(parseInt(savedRound));
@@ -31,6 +33,7 @@ export const useGameState = () => {
       if (savedMode) setGameMode(savedMode);
       if (savedCustomSettings) setCustomModeSettings(JSON.parse(savedCustomSettings));
       if (savedPlayerIndex) setCurrentPlayerIndex(parseInt(savedPlayerIndex));
+      if (savedGameStarted) setGameStarted(JSON.parse(savedGameStarted));
     } catch (error) {
       console.error('Error loading saved game state:', error);
     }
@@ -44,13 +47,14 @@ export const useGameState = () => {
       localStorage.setItem('hpCounterLog', JSON.stringify(combatLog));
       localStorage.setItem('hpCounterGameMode', gameMode);
       localStorage.setItem('hpCounterCurrentPlayerIndex', currentPlayerIndex.toString());
+      localStorage.setItem('hpCounterGameStarted', JSON.stringify(gameStarted));
       if (customModeSettings) {
         localStorage.setItem('hpCounterCustomSettings', JSON.stringify(customModeSettings));
       }
     } catch (error) {
       console.error('Error saving game state:', error);
     }
-  }, [players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex]);
+  }, [players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, gameStarted]);
 
   // Get current mode config
   const getModeValues = () => {
@@ -170,7 +174,7 @@ export const useGameState = () => {
     }));
   };
 
-  const useRevive = (playerId) => {
+  const useRevive = (playerId, isSuccessful = true) => {
     setPlayers(prev => prev.map(player => {
       if (player.id !== playerId) return player;
       
@@ -179,26 +183,43 @@ export const useGameState = () => {
         return player;
       }
       
-      // Use a revive and restore half HP, set new maxHP
-      const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
-      const restoredHP = newMaxHP;
-      
-      return {
-        ...player,
-        commanderStats: {
-          ...player.commanderStats,
-          hp: restoredHP,
-          maxHp: newMaxHP,
-          revives: player.commanderStats.revives - 1,
-          isDead: false
-        }
-      };
+      if (isSuccessful) {
+        // Successful revive - restore half HP, set new maxHP
+        const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
+        const restoredHP = newMaxHP;
+        
+        return {
+          ...player,
+          commanderStats: {
+            ...player.commanderStats,
+            hp: restoredHP,
+            maxHp: newMaxHP,
+            revives: player.commanderStats.revives - 1,
+            isDead: false
+          }
+        };
+      } else {
+        // Unsuccessful revive - character permanently dead
+        return {
+          ...player,
+          commanderStats: {
+            ...player.commanderStats,
+            hp: 0,
+            revives: 0, // Set to 0 so they're fully dead
+            isDead: true
+          }
+        };
+      }
     }));
     
     const player = players.find(p => p.id === playerId);
     if (player) {
-      const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
-      addLog(`${player.playerName}'s commander revived with ${newMaxHP}hp (new max)!`);
+      if (isSuccessful) {
+        const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
+        addLog(`${player.playerName}'s commander revived with ${newMaxHP}hp (new max)!`);
+      } else {
+        addLog(`${player.playerName}'s commander failed to revive - eliminated from game!`);
+      }
     }
   };
 
@@ -222,16 +243,47 @@ export const useGameState = () => {
     return true;
   };
 
+  // Helper: Check if player is completely out (no revives, everything dead)
+  const isPlayerFullyDead = (player) => {
+    // Commander dead with no revives
+    const commanderDead = player.commanderStats.hp === 0 && 
+                         (player.commanderStats.revives || 0) === 0;
+    
+    // All squad members dead with no revives
+    const allSquadDead = player.subUnits.every(unit => 
+      unit.hp === 0 && (unit.revives || 0) === 0
+    );
+    
+    return commanderDead && allSquadDead;
+  };
+
+  const startGame = () => {
+    if (players.length === 0) {
+      alert('Add at least one player to start!');
+      return;
+    }
+    setGameStarted(true);
+    setCurrentPlayerIndex(0);
+    setPlayersWhoActedThisRound([]);
+    addLog(`----- Game Started - Round ${currentRound} -----`);
+  };
+
   const endTurn = () => {
     const currentPlayer = players[currentPlayerIndex];
     if (!currentPlayer) return;
 
-    // Mark this player as having acted
+    // Mark this player as having acted (even if dead - they just get skipped)
     const newPlayersWhoActed = [...playersWhoActedThisRound, currentPlayer.id];
     setPlayersWhoActedThisRound(newPlayersWhoActed);
 
-    // Get alive players
-    const alivePlayers = players.filter(p => p.commanderStats.hp > 0);
+    // Get alive players (not fully dead)
+    const alivePlayers = players.filter(p => !isPlayerFullyDead(p));
+    
+    // If all players are dead, game over
+    if (alivePlayers.length === 0) {
+      alert('All players are eliminated! Game Over!');
+      return;
+    }
     
     // Check if all alive players have acted
     const allPlayersActed = alivePlayers.every(p => newPlayersWhoActed.includes(p.id));
@@ -248,16 +300,31 @@ export const useGameState = () => {
       
       setCurrentRound(prev => prev + 1);
       setPlayersWhoActedThisRound([]);
-      setCurrentPlayerIndex(0);
+      
+      // Find first alive player for next round
+      let firstAliveIndex = 0;
+      while (firstAliveIndex < players.length && isPlayerFullyDead(players[firstAliveIndex])) {
+        firstAliveIndex++;
+      }
+      setCurrentPlayerIndex(firstAliveIndex);
       addLog(`----- Round ${currentRound + 1} -----`);
     } else {
       // Find next alive player
       let nextIndex = (currentPlayerIndex + 1) % players.length;
-      while (nextIndex !== currentPlayerIndex && 
-             (players[nextIndex].commanderStats.hp === 0 || 
+      let attempts = 0;
+      while (attempts < players.length && 
+             (isPlayerFullyDead(players[nextIndex]) || 
               newPlayersWhoActed.includes(players[nextIndex].id))) {
         nextIndex = (nextIndex + 1) % players.length;
+        attempts++;
       }
+      
+      // Safety check - if we couldn't find next player, something is wrong
+      if (attempts >= players.length) {
+        console.error('Could not find next player');
+        return;
+      }
+      
       setCurrentPlayerIndex(nextIndex);
     }
   };
@@ -289,6 +356,19 @@ export const useGameState = () => {
     }
   };
 
+  const loadGameState = (gameState) => {
+    setPlayers(gameState.players || []);
+    setCurrentRound(gameState.currentRound || 1);
+    setCombatLog(gameState.combatLog || []);
+    setGameMode(gameState.gameMode || 'd20');
+    if (gameState.customModeSettings) {
+      setCustomModeSettings(gameState.customModeSettings);
+    }
+    setCurrentPlayerIndex(gameState.currentPlayerIndex || 0);
+    setPlayersWhoActedThisRound(gameState.playersWhoActedThisRound || []);
+    setGameStarted(gameState.gameStarted || false);
+  };
+
   return {
     players,
     currentRound,
@@ -297,6 +377,7 @@ export const useGameState = () => {
     customModeSettings,
     currentPlayerIndex,
     playersWhoActedThisRound,
+    gameStarted,
     setPlayers,
     addPlayer,
     removePlayer,
@@ -306,10 +387,12 @@ export const useGameState = () => {
     useRevive,
     changeGameMode,
     getModeValues,
+    startGame,
     endTurn,
     undo,
     addLog,
     clearLog,
-    resetGame
+    resetGame,
+    loadGameState
   };
 };

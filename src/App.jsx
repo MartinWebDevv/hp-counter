@@ -4,6 +4,7 @@ import HPCounterOG from "./components/HPCounterOG";
 import HPCounter from "./components/HPCounter";
 import './styles/fullscreen.css';
 import './styles/scrollbar.css';
+import './styles/mobileResponsive.css';
 
 
 function App() {

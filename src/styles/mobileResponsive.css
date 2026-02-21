@@ -1,0 +1,284 @@
+/* Mobile Responsive Styles for Battle Tracker */
+/* Import this in your main App.jsx or index.js */
+
+/* ========================================
+   MOBILE BREAKPOINTS
+   ======================================== */
+
+/* Large phones and small tablets (portrait) */
+@media screen and (max-width: 768px) {
+  
+  /* Force single column layout for player cards */
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Main container adjustments */
+  .players-container,
+  [style*="display: grid"][style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+
+  /* Header buttons - stack vertically on small screens */
+  .header-buttons {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+
+  .header-buttons > button {
+    flex: 1 1 45% !important;
+    min-width: 120px !important;
+    font-size: 0.85rem !important;
+    padding: 0.75rem 1rem !important;
+  }
+
+  /* Sidebar in current player view - make narrower */
+  .sidebar,
+  [style*="width: 280px"] {
+    width: 200px !important;
+    font-size: 0.85rem !important;
+  }
+
+  /* Player cards - adjust padding */
+  .player-card {
+    padding: 0.75rem !important;
+  }
+
+  /* Action buttons grid - keep 3 columns but smaller */
+  .action-buttons {
+    gap: 0.5rem !important;
+  }
+
+  .action-buttons > button {
+    padding: 0.75rem 0.5rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  /* Modals - make them fill more of the screen */
+  .modal-content,
+  [style*="maxWidth"][style*="600px"],
+  [style*="maxWidth"][style*="1200px"],
+  [style*="maxWidth"][style*="1000px"] {
+    max-width: 95% !important;
+    width: 95% !important;
+    padding: 1.5rem !important;
+  }
+
+  /* Calculator/Damage Distribution - single column */
+  .calculator-content,
+  .damage-distribution-content {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Save/Load buttons container */
+  .save-load-container {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .save-load-container > button {
+    width: 100% !important;
+  }
+
+  /* HP display - slightly smaller fonts */
+  .hp-text {
+    font-size: 0.9rem !important;
+  }
+
+  /* Turn order sidebar - hide on very small screens, show toggle */
+  .turn-order-sidebar {
+    position: fixed !important;
+    left: -220px !important;
+    top: 0 !important;
+    height: 100vh !important;
+    z-index: 999 !important;
+    transition: left 0.3s ease !important;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.5) !important;
+  }
+
+  .turn-order-sidebar.open {
+    left: 0 !important;
+  }
+}
+
+/* Small phones (portrait) */
+@media screen and (max-width: 480px) {
+  
+  /* Header - stack everything */
+  .header-top,
+  .header-buttons {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .header-buttons > button {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
+
+  /* Title smaller */
+  .app-title,
+  h1[style*="fontSize"] {
+    font-size: 1.5rem !important;
+  }
+
+  /* Current player display - stack info */
+  .current-player-info {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  /* Round counter - smaller */
+  .round-display {
+    font-size: 1.2rem !important;
+    padding: 0.5rem !important;
+  }
+
+  /* Player cards - more compact */
+  .player-card {
+    padding: 0.5rem !important;
+  }
+
+  /* Faction/Commander selects - stack vertically */
+  .faction-commander-row {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .faction-commander-row > select {
+    width: 100% !important;
+  }
+
+  /* Commander action buttons - 2 rows of buttons */
+  .commander-actions {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .commander-actions > button:last-child {
+    grid-column: 1 / -1 !important;
+  }
+
+  /* Squad unit action buttons - stack vertically */
+  .squad-unit-actions {
+    flex-direction: column !important;
+  }
+
+  .squad-unit-actions > button {
+    width: 100% !important;
+  }
+
+  /* HP buttons - slightly smaller */
+  .hp-button {
+    min-width: 40px !important;
+    min-height: 40px !important;
+    font-size: 1rem !important;
+  }
+
+  /* Revive modal - adjust button text */
+  .revive-modal button {
+    font-size: 1rem !important;
+    padding: 1rem 1.5rem !important;
+  }
+
+  /* Battle log - smaller text */
+  .battle-log {
+    font-size: 0.8rem !important;
+    max-height: 300px !important;
+  }
+
+  /* Add player button */
+  .add-player-button {
+    padding: 0.75rem 1.5rem !important;
+    font-size: 0.9rem !important;
+  }
+
+  /* Sidebar - even narrower */
+  .sidebar,
+  [style*="width: 280px"],
+  [style*="width: 200px"] {
+    width: 180px !important;
+    font-size: 0.75rem !important;
+    padding: 0.5rem !important;
+  }
+
+  /* Hide sidebar completely on very small screens in 'all' view */
+  .sidebar-hidden {
+    display: none !important;
+  }
+}
+
+/* Landscape phones */
+@media screen and (max-height: 500px) and (orientation: landscape) {
+  
+  /* Reduce vertical spacing */
+  .player-card,
+  .modal-content {
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* Make modals scrollable with less height */
+  .modal-content {
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+
+  /* Compact header */
+  .app-header {
+    padding: 0.5rem !important;
+  }
+
+  /* Smaller round display */
+  .round-display {
+    font-size: 1rem !important;
+    padding: 0.5rem !important;
+  }
+}
+
+/* ========================================
+   UTILITY CLASSES
+   ======================================== */
+
+/* Add these classes to your components for mobile control */
+
+.mobile-hidden {
+  display: block;
+}
+
+@media screen and (max-width: 768px) {
+  .mobile-hidden {
+    display: none !important;
+  }
+}
+
+.desktop-hidden {
+  display: none;
+}
+
+@media screen and (max-width: 768px) {
+  .desktop-hidden {
+    display: block !important;
+  }
+}
+
+/* Full width on mobile */
+.mobile-full-width {
+  width: auto;
+}
+
+@media screen and (max-width: 768px) {
+  .mobile-full-width {
+    width: 100% !important;
+  }
+}
+
+/* Stack on mobile */
+.mobile-stack {
+  display: flex;
+}
+
+@media screen and (max-width: 768px) {
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+}

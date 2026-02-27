@@ -71,7 +71,7 @@ export const FACTION_STATS = {
     rollToHit: 2,
     rollToBlock: 5,
     rollToHeal: 6,
-    shootRange: '12"',
+    shootRange: '16"',
     shootDamage: 1,
     attacksPerHit: 1,
     meleeDamage: 1,

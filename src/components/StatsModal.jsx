@@ -210,7 +210,7 @@ const FACTION_STATS = {
     rollToHit: "2+",
     rollToBlock: "5+",
     rollToHeal: "6+",
-    shootRange: '8"',
+    shootRange: '16"',
     shootDamage: "1hp",
     attacksPerHit: "1x",
     meleeDamage: "1hp",

@@ -224,22 +224,46 @@ export const useGameState = () => {
   };
 
   const changeGameMode = (newMode, customSettings = null) => {
+    // Get new mode config
+    const newModeConfig = newMode === 'custom' && customSettings 
+      ? customSettings 
+      : getModeConfig(newMode);
+    
+    // If there are players, update their HP/revives to match new mode
     if (players.length > 0) {
-      const confirm = window.confirm(
-        'Changing game mode will reset all players. Continue?'
-      );
-      if (!confirm) return false;
+      // Update existing players to new mode values
+      setPlayers(prev => prev.map(player => ({
+        ...player,
+        commanderStats: {
+          ...player.commanderStats,
+          hp: newModeConfig.commanderHP,
+          maxHp: newModeConfig.commanderHP,
+          revives: newModeConfig.commanderRevives,
+          cooldownRounds: 0,
+          isDead: false
+        },
+        subUnits: player.subUnits.map(unit => ({
+          ...unit,
+          hp: newModeConfig.squadHP,
+          maxHp: newModeConfig.squadHP,
+          revives: newModeConfig.squadRevives
+        }))
+      })));
     }
     
     setGameMode(newMode);
     if (newMode === 'custom') {
       setCustomModeSettings(customSettings);
     }
-    setPlayers([]);
+    
+    // Reset round and combat log but keep players
     setCombatLog([]);
     setCurrentRound(1);
+    setCurrentPlayerIndex(0);
+    setPlayersWhoActedThisRound([]);
+    setGameStarted(false);
     
-    addLog(`Game mode changed to ${getModeConfig(newMode).name}`);
+    addLog(`Game mode changed to ${newModeConfig.name}`);
     return true;
   };
 

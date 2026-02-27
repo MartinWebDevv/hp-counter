@@ -248,7 +248,7 @@ const Calculator = ({
                         }}
                         style={{ width: "14px", height: "14px" }}
                       />
-                      {idx === 0 ? "⭐ Special" : `🛡️ Soldier ${idx}`} (
+                      {unit.name || (idx === 0 ? "⭐ Special" : `🛡️ Soldier ${idx}`)} (
                       {unit.hp}hp)
                     </label>
                   );
@@ -342,7 +342,7 @@ const Calculator = ({
                         value={`${p.id}-${idx === 0 ? "special" : `soldier${idx}`}`}
                       >
                         {idx === 0 ? "⭐" : "🛡️"}{" "}
-                        {idx === 0 ? "Special" : `Soldier ${idx + 1}`} (
+                        {unit.name || (idx === 0 ? "Special" : `Soldier ${idx + 1}`)} (
                         {unit.hp}hp)
                       </option>
                     ))}
@@ -480,7 +480,7 @@ const Calculator = ({
                             }}
                             style={{ width: "14px", height: "14px" }}
                           />
-                          {idx === 0 ? "⭐ Special" : `🛡️ Soldier ${idx + 1}`} (
+                          {unit.name || (idx === 0 ? "⭐ Special" : `🛡️ Soldier ${idx + 1}`)} (
                           {unit.hp}hp)
                         </label>
                       );

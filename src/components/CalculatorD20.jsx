@@ -66,10 +66,23 @@ const CalculatorD20 = ({
   // Get number of attacks
   const getNumAttacks = () => {
     if (calculatorData.attackerIsSquad) {
-      // Initiator + selected squad members
-      return 1 + (calculatorData.attackerSquadMembers?.length || 0);
+      // For squad attacks, each member gets their attacksPerHit
+      let totalAttacks = 0;
+      
+      // Count initiating unit's attacks
+      const initiatorStats = getUnitStats(attacker, calculatorData.attackingUnitType);
+      totalAttacks += initiatorStats?.attacksPerHit || 1;
+      
+      // Count each squad member's attacks
+      calculatorData.attackerSquadMembers?.forEach(memberType => {
+        const memberStats = getUnitStats(attacker, memberType);
+        totalAttacks += memberStats?.attacksPerHit || 1;
+      });
+      
+      return totalAttacks;
     }
     
+    // Solo unit - use their attacksPerHit (2 for Uncivilized)
     const attackerStats = getUnitStats(attacker, calculatorData.attackingUnitType);
     return attackerStats?.attacksPerHit || 1;
   };
@@ -325,7 +338,7 @@ const CalculatorD20 = ({
                     }}
                     style={{ width: '14px', height: '14px' }}
                   />
-                  {idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`} ({unit.hp}hp)
+                  {unit.name || (idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`)} ({unit.hp}hp)
                   {isInitiator && <span style={{ color: gold }}> (initiator)</span>}
                 </label>
               );
@@ -447,7 +460,7 @@ const CalculatorD20 = ({
                           }}
                           style={{ width: '16px', height: '16px' }}
                         />
-                        ⚔️ {targetPlayer.commander} ({targetPlayer.commanderStats.hp}hp)
+                        ⚔️ {targetPlayer.commanderCustomName || targetPlayer.commander} ({targetPlayer.commanderStats.hp}hp)
                       </label>
                     )}
 
@@ -488,7 +501,7 @@ const CalculatorD20 = ({
                             }}
                             style={{ width: '16px', height: '16px' }}
                           />
-                          {idx === 0 ? '⭐' : '🛡️'} {idx === 0 ? 'Special Unit' : `Soldier ${idx}`} ({unit.hp}hp)
+                          {idx === 0 ? '⭐' : '🛡️'} {unit.name || (idx === 0 ? 'Special Unit' : `Soldier ${idx}`)} ({unit.hp}hp)
                         </label>
                       );
                     })}
@@ -594,7 +607,7 @@ const CalculatorD20 = ({
                           }}
                           style={{ width: '14px', height: '14px' }}
                         />
-                        {idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`} ({unit.hp}hp)
+                        {unit.name || (idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`)} ({unit.hp}hp)
                       </label>
                     );
                   })}

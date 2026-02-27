@@ -138,11 +138,17 @@ export const useDamageCalculation = (players, addLog) => {
 
     // Log the action
     const attacker = players.find(p => p.id === calculatorData.attackerId);
-    const attackerName = calculatorData.attackingUnitType === 'commander'
-      ? (attacker?.commanderStats?.customName || attacker?.commander || 'Commander')
-      : calculatorData.attackingUnitType === 'special'
-        ? 'Special Unit'
-        : `Soldier ${calculatorData.attackingUnitType.replace('soldier', '')}`;
+    
+    // Get attacker's name (with custom name support)
+    let attackerName = '';
+    if (calculatorData.attackingUnitType === 'commander') {
+      attackerName = attacker?.commanderCustomName || attacker?.commander || 'Commander';
+    } else if (calculatorData.attackingUnitType === 'special') {
+      attackerName = attacker?.subUnits[0]?.name || 'Special Unit';
+    } else {
+      const soldierIndex = parseInt(calculatorData.attackingUnitType.replace('soldier', ''));
+      attackerName = attacker?.subUnits[soldierIndex]?.name || `Soldier ${soldierIndex}`;
+    }
 
     const actionVerb =
       calculatorData.action === "shoot"
@@ -157,13 +163,15 @@ export const useDamageCalculation = (players, addLog) => {
         const target = players.find((p) => p.id === m.playerId);
         const damage = damageDistribution[`${m.playerId}-${m.unitType}`];
         
+        // Get target's custom name
         let unitName = '';
         if (m.unitType === 'commander') {
-          unitName = target?.commanderStats?.customName || target?.commander || 'Commander';
+          unitName = target?.commanderCustomName || target?.commander || 'Commander';
         } else if (m.unitType === 'special') {
-          unitName = 'Special Unit';
+          unitName = target?.subUnits[0]?.name || 'Special Unit';
         } else {
-          unitName = `Soldier ${m.unitType.replace('soldier', '')}`;
+          const soldierIndex = parseInt(m.unitType.replace('soldier', ''));
+          unitName = target?.subUnits[soldierIndex]?.name || `Soldier ${soldierIndex}`;
         }
         
         return `${target?.playerName || "Unknown"}'s ${unitName} (${damage}hp)`;

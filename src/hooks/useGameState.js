@@ -64,21 +64,31 @@ export const useGameState = () => {
     return getModeConfig(gameMode);
   };
 
+  // Get lives per soldier based on game mode
+  const getSoldierLives = () => {
+    const mode = getModeValues();
+    // D20 mode = 1 life, Classic mode = 2 lives
+    // Check for explicit soldierLives in config, else fallback by name
+    if (mode.soldierLives !== undefined) return mode.soldierLives;
+    return mode.name?.toLowerCase().includes('classic') ? 2 : 1;
+  };
+
   const addPlayer = () => {
     const modeConfig = getModeValues();
+    const soldierLives = getSoldierLives();
     
     const newPlayer = {
       id: Date.now(),
       playerName: `Player ${players.length + 1}`,
       faction: 'Red Rovers',
       commander: 'Lord Fantastic',
-      playerColor: '#3b82f6', // Default blue
+      playerColor: '#3b82f6',
       isSquad: false,
       selectedUnit: 'commander',
       commanderStats: {
         hp: modeConfig.commanderHP,
         maxHp: modeConfig.commanderHP,
-        cooldownRounds: 0, // Changed from boolean to counter
+        cooldownRounds: 0,
         revives: modeConfig.commanderRevives,
         isDead: false
       },
@@ -87,10 +97,13 @@ export const useGameState = () => {
         maxHp: modeConfig.squadHP,
         name: '',
         unitType: i === 0 ? 'special' : 'soldier',
-        revives: modeConfig.squadRevives
+        revives: modeConfig.squadRevives,
+        livesRemaining: soldierLives,
       })),
       squadMembers: [],
-      actionHistory: []
+      actionHistory: [],
+      // Revive queue: array of unit indices (0=special, 1-4=soldiers) in death order
+      reviveQueue: [],
     };
     setPlayers(prev => [...prev, newPlayer]);
   };
@@ -107,7 +120,6 @@ export const useGameState = () => {
       return newPlayers;
     });
     
-    // Adjust current player index if needed
     if (fromIndex === currentPlayerIndex) {
       setCurrentPlayerIndex(toIndex);
     } else if (fromIndex < currentPlayerIndex && toIndex >= currentPlayerIndex) {
@@ -118,14 +130,13 @@ export const useGameState = () => {
   };
 
   const updatePlayer = (playerId, updates) => {
-    // Save snapshot before update
     setActionHistory(prev => [...prev, { 
       players, 
       currentRound, 
       combatLog, 
       currentPlayerIndex, 
       playersWhoActedThisRound 
-    }].slice(-10)); // Keep last 10
+    }].slice(-10));
     
     setPlayers(prev => prev.map(player => 
       player.id === playerId ? { ...player, ...updates } : player
@@ -152,7 +163,6 @@ export const useGameState = () => {
       if (player.id !== playerId) return player;
       
       if (!player.isSquad) {
-        // Creating squad - activate special unit and first two soldiers
         return {
           ...player,
           isSquad: true,
@@ -163,7 +173,6 @@ export const useGameState = () => {
           ]
         };
       } else {
-        // Disbanding squad
         return {
           ...player,
           isSquad: false,
@@ -178,13 +187,11 @@ export const useGameState = () => {
     setPlayers(prev => prev.map(player => {
       if (player.id !== playerId) return player;
       
-      // Check if can revive
       if (player.commanderStats.revives <= 0 || player.commanderStats.hp > 0) {
         return player;
       }
       
       if (isSuccessful) {
-        // Successful revive - restore half HP, set new maxHP
         const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
         const restoredHP = newMaxHP;
         
@@ -199,13 +206,12 @@ export const useGameState = () => {
           }
         };
       } else {
-        // Unsuccessful revive - character permanently dead
         return {
           ...player,
           commanderStats: {
             ...player.commanderStats,
             hp: 0,
-            revives: 0, // Set to 0 so they're fully dead
+            revives: 0,
             isDead: true
           }
         };
@@ -223,15 +229,86 @@ export const useGameState = () => {
     }
   };
 
+  /**
+   * Check if all 5 soldiers are dead → squad wipe
+   * Clears queue and zeroes out all livesRemaining
+   */
+  const checkSquadWipe = (player) => {
+    const allDead = player.subUnits.every(unit => unit.hp === 0);
+    if (!allDead) return player;
+
+    // Squad wipe! Clear queue and set all lives to 0
+    addLog(`💀 SQUAD WIPE! ${player.playerName}'s entire squad is eliminated!`);
+    return {
+      ...player,
+      reviveQueue: [],
+      subUnits: player.subUnits.map(unit => ({
+        ...unit,
+        livesRemaining: 0,
+        revives: 0,
+      })),
+    };
+  };
+
+  /**
+   * Process one revive attempt for the first soldier in the queue.
+   * isSuccessful=true  → revive at half HP, remove from queue, decrement livesRemaining
+   * isSuccessful=false → stay in queue (no life lost per spec)
+   */
+  const processSquadRevive = (playerId, isSuccessful) => {
+    setPlayers(prev => prev.map(player => {
+      if (player.id !== playerId) return player;
+
+      const queue = player.reviveQueue || [];
+      if (queue.length === 0) return player;
+
+      const unitIndex = queue[0]; // First in queue gets the attempt
+      const unit = player.subUnits[unitIndex];
+
+      if (!unit) return player;
+
+      if (isSuccessful) {
+        const newMaxHP = Math.floor(unit.maxHp / 2);
+        const restoredHP = newMaxHP;
+
+        const newSubUnits = player.subUnits.map((u, i) =>
+          i === unitIndex
+            ? {
+                ...u,
+                hp: restoredHP,
+                maxHp: newMaxHP,
+                livesRemaining: Math.max(0, (u.livesRemaining ?? 1) - 1),
+              }
+            : u
+        );
+
+        const newQueue = queue.slice(1); // Remove from front of queue
+
+        const updatedPlayer = {
+          ...player,
+          subUnits: newSubUnits,
+          reviveQueue: newQueue,
+        };
+
+        addLog(`✅ ${player.playerName}'s ${unit.name || `Unit ${unitIndex}`} revived with ${restoredHP}hp!`);
+        return updatedPlayer;
+      } else {
+        // Fail: stays in queue, no life lost
+        addLog(`❌ ${player.playerName}'s ${unit.name || `Unit ${unitIndex}`} failed to revive - still in queue.`);
+        return player; // No change
+      }
+    }));
+  };
+
   const changeGameMode = (newMode, customSettings = null) => {
-    // Get new mode config
     const newModeConfig = newMode === 'custom' && customSettings 
       ? customSettings 
       : getModeConfig(newMode);
+
+    const soldierLives = newModeConfig.soldierLives ?? 
+      (newModeConfig.name?.toLowerCase().includes('classic') ? 2 : 1);
     
-    // If there are players, update their HP/revives to match new mode
     if (players.length > 0) {
-      // Update existing players to new mode values
       setPlayers(prev => prev.map(player => ({
         ...player,
         commanderStats: {
@@ -246,8 +323,10 @@ export const useGameState = () => {
           ...unit,
           hp: newModeConfig.squadHP,
           maxHp: newModeConfig.squadHP,
-          revives: newModeConfig.squadRevives
-        }))
+          revives: newModeConfig.squadRevives,
+          livesRemaining: soldierLives,
+        })),
+        reviveQueue: [],
       })));
     }
     
@@ -256,7 +335,6 @@ export const useGameState = () => {
       setCustomModeSettings(customSettings);
     }
     
-    // Reset round and combat log but keep players
     setCombatLog([]);
     setCurrentRound(1);
     setCurrentPlayerIndex(0);
@@ -267,13 +345,10 @@ export const useGameState = () => {
     return true;
   };
 
-  // Helper: Check if player is completely out (no revives, everything dead)
   const isPlayerFullyDead = (player) => {
-    // Commander dead with no revives
     const commanderDead = player.commanderStats.hp === 0 && 
                          (player.commanderStats.revives || 0) === 0;
     
-    // All squad members dead with no revives
     const allSquadDead = player.subUnits.every(unit => 
       unit.hp === 0 && (unit.revives || 0) === 0
     );
@@ -296,24 +371,19 @@ export const useGameState = () => {
     const currentPlayer = players[currentPlayerIndex];
     if (!currentPlayer) return;
 
-    // Mark this player as having acted (even if dead - they just get skipped)
     const newPlayersWhoActed = [...playersWhoActedThisRound, currentPlayer.id];
     setPlayersWhoActedThisRound(newPlayersWhoActed);
 
-    // Get alive players (not fully dead)
     const alivePlayers = players.filter(p => !isPlayerFullyDead(p));
     
-    // If all players are dead, game over
     if (alivePlayers.length === 0) {
       alert('All players are eliminated! Game Over!');
       return;
     }
     
-    // Check if all alive players have acted
     const allPlayersActed = alivePlayers.every(p => newPlayersWhoActed.includes(p.id));
 
     if (allPlayersActed) {
-      // New round - decrement cooldowns and reset
       setPlayers(prev => prev.map(player => ({
         ...player,
         commanderStats: {
@@ -325,7 +395,6 @@ export const useGameState = () => {
       setCurrentRound(prev => prev + 1);
       setPlayersWhoActedThisRound([]);
       
-      // Find first alive player for next round
       let firstAliveIndex = 0;
       while (firstAliveIndex < players.length && isPlayerFullyDead(players[firstAliveIndex])) {
         firstAliveIndex++;
@@ -333,7 +402,6 @@ export const useGameState = () => {
       setCurrentPlayerIndex(firstAliveIndex);
       addLog(`----- Round ${currentRound + 1} -----`);
     } else {
-      // Find next alive player
       let nextIndex = (currentPlayerIndex + 1) % players.length;
       let attempts = 0;
       while (attempts < players.length && 
@@ -343,7 +411,6 @@ export const useGameState = () => {
         attempts++;
       }
       
-      // Safety check - if we couldn't find next player, something is wrong
       if (attempts >= players.length) {
         console.error('Could not find next player');
         return;
@@ -411,12 +478,15 @@ export const useGameState = () => {
     useRevive,
     changeGameMode,
     getModeValues,
+    getSoldierLives,
     startGame,
     endTurn,
     undo,
     addLog,
     clearLog,
     resetGame,
-    loadGameState
+    loadGameState,
+    processSquadRevive,
+    checkSquadWipe,
   };
 };

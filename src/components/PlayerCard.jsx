@@ -4,7 +4,8 @@ import { getUnitName } from '../utils/statsUtils';
 
 /**
  * PlayerCard Component
- * Displays and manages a single player's state
+ * Displays and manages a single player's state.
+ * Now supports squad revive queue system.
  */
 const PlayerCard = ({ 
   player, 
@@ -13,14 +14,17 @@ const PlayerCard = ({
   onToggleSquad,
   onOpenCalculator,
   onUseRevive,
+  onOpenSquadRevive,  // NEW: opens SquadReviveModal for this player
   allPlayers,
   isCurrentTurn = false,
   hasActedThisRound = false
 }) => {
   const [showSquad, setShowSquad] = React.useState(true);
   const [showReviveModal, setShowReviveModal] = React.useState(false);
-  const [reviveType, setReviveType] = React.useState('commander'); // 'commander' or unit index
+  const [reviveType, setReviveType] = React.useState('commander');
   
+  const reviveQueue = player.reviveQueue || [];
+
   const handlePlayerNameChange = (e) => {
     onUpdate(player.id, { playerName: e.target.value });
   };
@@ -45,7 +49,6 @@ const PlayerCard = ({
       currentHP + delta
     ));
     
-    // Check if commander just died (went to 0 HP)
     const justDied = currentHP > 0 && newHP === 0;
     
     onUpdate(player.id, {
@@ -58,19 +61,36 @@ const PlayerCard = ({
   };
 
   const handleSubUnitHPChange = (index, delta) => {
-    const newSubUnits = player.subUnits.map((unit, i) => {
-      if (i !== index) return unit;
-      
-      const currentHP = unit.hp;
-      const newHP = Math.max(0, Math.min(unit.maxHp, currentHP + delta));
-      
-      return { 
-        ...unit, 
-        hp: newHP
-      };
+    const unit = player.subUnits[index];
+    const currentHP = unit.hp;
+    const newHP = Math.max(0, Math.min(unit.maxHp, currentHP + delta));
+    const justDied = currentHP > 0 && newHP === 0;
+
+    const newSubUnits = player.subUnits.map((u, i) => {
+      if (i !== index) return u;
+      return { ...u, hp: newHP };
     });
-    
-    onUpdate(player.id, { subUnits: newSubUnits });
+
+    // Determine updated revive queue
+    let newReviveQueue = [...reviveQueue];
+    const lives = unit.livesRemaining ?? unit.revives ?? 1;
+    if (justDied && lives > 0 && !newReviveQueue.includes(index)) {
+      newReviveQueue = [...newReviveQueue, index];
+    }
+
+    // Squad wipe check
+    const allDead = newSubUnits.every(u => u.hp === 0);
+    let finalSubUnits = newSubUnits;
+    if (allDead) {
+      newReviveQueue = [];
+      finalSubUnits = newSubUnits.map(u => ({
+        ...u,
+        livesRemaining: 0,
+        revives: 0,
+      }));
+    }
+
+    onUpdate(player.id, { subUnits: finalSubUnits, reviveQueue: newReviveQueue });
   };
 
   const handleSubUnitNameChange = (index, name) => {
@@ -80,37 +100,10 @@ const PlayerCard = ({
     onUpdate(player.id, { subUnits: newSubUnits });
   };
 
-  const handleSubUnitRevive = (unitIndex, isSuccessful = true) => {
-    const unit = player.subUnits[unitIndex];
-    if (!unit || (unit.revives || 0) <= 0 || unit.hp > 0) return;
-
-    let newSubUnits;
-    
-    if (isSuccessful) {
-      // Successful revive
-      const newMaxHP = Math.floor(unit.maxHp / 2);
-      const restoredHP = newMaxHP;
-      
-      newSubUnits = player.subUnits.map((u, i) => 
-        i === unitIndex ? { 
-          ...u, 
-          hp: restoredHP,
-          maxHp: newMaxHP,
-          revives: (u.revives || 0) - 1 
-        } : u
-      );
-    } else {
-      // Unsuccessful revive - permanently dead
-      newSubUnits = player.subUnits.map((u, i) => 
-        i === unitIndex ? { 
-          ...u, 
-          hp: 0,
-          revives: 0 // Set to 0 so they're fully dead
-        } : u
-      );
-    }
-    
-    onUpdate(player.id, { subUnits: newSubUnits });
+  // Get the queue position for a given unit index (1-based), or 0 if not in queue
+  const getQueuePosition = (unitIndex) => {
+    const pos = reviveQueue.indexOf(unitIndex);
+    return pos === -1 ? 0 : pos + 1;
   };
 
   return (
@@ -298,7 +291,6 @@ const PlayerCard = ({
 
         {/* Revive Tokens & Revive Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          {/* Revive Circles - Always colored if available */}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {[...Array(2)].map((_, idx) => (
               <div
@@ -320,7 +312,6 @@ const PlayerCard = ({
             ))}
           </div>
 
-          {/* Revive Button - Blue as long as revives exist */}
           <button
             onClick={() => {
               setReviveType('commander');
@@ -407,6 +398,55 @@ const PlayerCard = ({
             ⚡ Special
           </button>
         </div>
+
+        {/* ── REVIVE SQUAD Button ── */}
+        <button
+          onClick={() => onOpenSquadRevive(player.id)}
+          disabled={reviveQueue.length === 0}
+          style={{
+            width: '100%',
+            marginTop: '0.5rem',
+            padding: '0.65rem',
+            background: reviveQueue.length > 0
+              ? 'linear-gradient(135deg, #92400e, #78350f)'
+              : 'rgba(0,0,0,0.3)',
+            border: reviveQueue.length > 0
+              ? '2px solid #eab308'
+              : '1px solid #374151',
+            color: reviveQueue.length > 0 ? '#fde68a' : '#4b5563',
+            borderRadius: '8px',
+            cursor: reviveQueue.length > 0 ? 'pointer' : 'not-allowed',
+            fontFamily: 'inherit',
+            fontWeight: '800',
+            fontSize: '0.85rem',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            boxShadow: reviveQueue.length > 0 ? '0 4px 16px rgba(234, 179, 8, 0.25)' : 'none',
+            transition: 'all 0.2s',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          ⚕️ REVIVE SQUAD
+          {reviveQueue.length > 0 && (
+            <span style={{
+              background: '#eab308',
+              color: '#1a0f0a',
+              borderRadius: '50%',
+              width: '20px',
+              height: '20px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.75rem',
+              fontWeight: '900',
+            }}>
+              {reviveQueue.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Sub-Units Section */}
@@ -420,174 +460,216 @@ const PlayerCard = ({
         >
           <h3 style={styles.sectionTitle}>
             {showSquad ? '▼' : '▶'} Squad Members (5)
+            {reviveQueue.length > 0 && (
+              <span style={{
+                marginLeft: '0.5rem',
+                fontSize: '0.7rem',
+                color: '#fbbf24',
+                background: 'rgba(234, 179, 8, 0.15)',
+                border: '1px solid rgba(234, 179, 8, 0.4)',
+                borderRadius: '4px',
+                padding: '0.1rem 0.4rem',
+                verticalAlign: 'middle',
+              }}>
+                ⚕️ {reviveQueue.length} in queue
+              </span>
+            )}
           </h3>
           <span style={{ color: '#8b7355', fontSize: '0.8rem' }}>
             {showSquad ? 'Click to collapse' : 'Click to expand'}
           </span>
         </div>
         
-        {showSquad && player.subUnits.map((unit, index) => (
-          <div key={index} style={{
-            ...styles.unitCard,
-            opacity: unit.hp === 0 ? 0.4 : 1,
-            filter: unit.hp === 0 ? 'grayscale(1)' : 'none',
-            border: unit.hp === 0 ? '2px solid #7f1d1d' : '1px solid rgba(212, 175, 55, 0.2)',
-            transition: 'all 0.3s'
-          }}>
-            {/* Unit Header */}
-            <div style={styles.unitHeader}>
-              <input
-                type="text"
-                value={unit.name}
-                onChange={(e) => handleSubUnitNameChange(index, e.target.value)}
-                placeholder={index === 0 ? '⭐ Special Unit' : `🛡️ Soldier ${index}`}
-                style={styles.unitNameInput}
-              />
-            </div>
+        {showSquad && player.subUnits.map((unit, index) => {
+          const isDead = unit.hp === 0;
+          const queuePos = getQueuePosition(index);
+          const isInQueue = queuePos > 0;
+          const livesRemaining = unit.livesRemaining ?? unit.revives ?? 0;
+          const isPermaDead = isDead && livesRemaining === 0;
 
-            {/* HP Controls */}
-            <div style={styles.unitHPRow}>
-              <button
-                onClick={() => handleSubUnitHPChange(index, -1)}
-                style={styles.smallBtn}
-                disabled={unit.hp === 0}
-              >
-                -
-              </button>
-              
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <span style={{ ...styles.unitHP, textAlign: 'center' }}>
-                  {unit.hp}/{unit.maxHp} HP
-                </span>
+          return (
+            <div key={index} style={{
+              ...styles.unitCard,
+              opacity: isPermaDead ? 0.3 : isDead ? 0.65 : 1,
+              filter: isPermaDead ? 'grayscale(1)' : isDead ? 'grayscale(0.5)' : 'none',
+              border: isPermaDead
+                ? '2px solid #450a0a'
+                : isInQueue
+                  ? '2px solid rgba(234, 179, 8, 0.5)'
+                  : isDead
+                    ? '2px solid #7f1d1d'
+                    : '1px solid rgba(212, 175, 55, 0.2)',
+              transition: 'all 0.3s',
+              position: 'relative',
+            }}>
+              {/* Dead badge + queue number overlay */}
+              {isDead && (
                 <div style={{
-                  width: '100%',
-                  height: '4px',
-                  background: 'rgba(0,0,0,0.5)',
-                  borderRadius: '2px',
-                  overflow: 'hidden'
+                  position: 'absolute',
+                  top: '0.5rem',
+                  right: '0.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  zIndex: 1,
                 }}>
-                  <div style={{
-                    width: `${(unit.hp / unit.maxHp) * 100}%`,
-                    height: '100%',
-                    background: unit.hp > unit.maxHp * 0.5 
-                      ? 'linear-gradient(to right, #16a34a, #22c55e)' 
-                      : unit.hp > unit.maxHp * 0.25
-                        ? 'linear-gradient(to right, #ca8a04, #eab308)'
-                        : 'linear-gradient(to right, #dc2626, #ef4444)',
-                    transition: 'width 0.3s ease'
-                  }} />
+                  {isInQueue ? (
+                    <div style={{
+                      background: 'linear-gradient(135deg, #92400e, #78350f)',
+                      border: '2px solid #eab308',
+                      borderRadius: '20px',
+                      padding: '0.15rem 0.6rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '900',
+                      color: '#fde68a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                    }}>
+                      💀 <span>#{queuePos}</span>
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: '#1a0000',
+                      border: '1px solid #450a0a',
+                      borderRadius: '20px',
+                      padding: '0.15rem 0.6rem',
+                      fontSize: '0.75rem',
+                      fontWeight: '700',
+                      color: '#7f1d1d',
+                    }}>
+                      💀 GONE
+                    </div>
+                  )}
                 </div>
-              </div>
-              
-              <button
-                onClick={() => handleSubUnitHPChange(index, 1)}
-                style={styles.smallBtn}
-                disabled={unit.hp === unit.maxHp}
-              >
-                +
-              </button>
-            </div>
+              )}
 
-            {/* Revive Row - Same layout as commander */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-              {/* Revive Circles */}
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                {[...Array(2)].map((_, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      border: '3px solid',
-                      borderColor: idx < (unit.revives || 0) ? '#60a5fa' : '#4a3322',
-                      background: idx < (unit.revives || 0)
-                        ? 'radial-gradient(circle, #3b82f6, #1e40af)'
-                        : '#1a0f0a',
-                      transition: 'all 0.3s',
-                      boxShadow: idx < (unit.revives || 0) ? '0 0 8px #3b82f6' : 'none',
-                    }}
-                  />
-                ))}
+              {/* Unit Header */}
+              <div style={styles.unitHeader}>
+                <input
+                  type="text"
+                  value={unit.name}
+                  onChange={(e) => handleSubUnitNameChange(index, e.target.value)}
+                  placeholder={index === 0 ? '⭐ Special Unit' : `🛡️ Soldier ${index}`}
+                  style={styles.unitNameInput}
+                />
               </div>
 
-              {/* Revive Button */}
-              <button
-                onClick={() => {
-                  setReviveType(index);
-                  setShowReviveModal(true);
-                }}
-                disabled={unit.hp > 0 || (unit.revives || 0) === 0}
-                style={{
-                  flex: 1,
-                  background: (unit.revives || 0) > 0
-                    ? 'linear-gradient(to bottom, #1e40af, #1e3a8a)'
-                    : '#1a0f0a',
-                  color: (unit.revives || 0) > 0
-                    ? '#bfdbfe'
-                    : '#4a3322',
-                  border: '2px solid',
-                  borderColor: (unit.revives || 0) > 0
-                    ? '#2563eb'
-                    : '#4a3322',
-                  padding: '0.75rem 1.25rem',
-                  borderRadius: '8px',
-                  cursor: (unit.hp === 0 && (unit.revives || 0) > 0)
-                    ? 'pointer'
-                    : 'not-allowed',
-                  fontFamily: 'inherit',
-                  fontWeight: 'bold',
-                  fontSize: '1rem',
-                  minHeight: '48px',
-                  boxShadow: (unit.revives || 0) > 0 ? '0 4px 12px rgba(37, 99, 235, 0.2)' : 'none',
-                }}
-              >
-                ⟲ Revive
-              </button>
-            </div>
+              {/* HP Controls */}
+              <div style={styles.unitHPRow}>
+                <button
+                  onClick={() => handleSubUnitHPChange(index, -1)}
+                  style={styles.smallBtn}
+                  disabled={isDead}
+                >
+                  -
+                </button>
+                
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ ...styles.unitHP, textAlign: 'center' }}>
+                    {unit.hp}/{unit.maxHp} HP
+                  </span>
+                  <div style={{
+                    width: '100%',
+                    height: '4px',
+                    background: 'rgba(0,0,0,0.5)',
+                    borderRadius: '2px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${(unit.hp / unit.maxHp) * 100}%`,
+                      height: '100%',
+                      background: unit.hp > unit.maxHp * 0.5 
+                        ? 'linear-gradient(to right, #16a34a, #22c55e)' 
+                        : unit.hp > unit.maxHp * 0.25
+                          ? 'linear-gradient(to right, #ca8a04, #eab308)'
+                          : 'linear-gradient(to right, #dc2626, #ef4444)',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => handleSubUnitHPChange(index, 1)}
+                  style={styles.smallBtn}
+                  disabled={unit.hp === unit.maxHp}
+                >
+                  +
+                </button>
+              </div>
 
-            {/* Unit Action Buttons - Full width like commander */}
-            <div style={styles.unitActionBtns}>
-              <button
-                onClick={() => onOpenCalculator(player.id, 'shoot', index === 0 ? 'special' : `soldier${index}`)}
-                style={{
-                  ...styles.unitActionBtn,
-                  ...(unit.hp === 0 && {
-                    background: 'linear-gradient(135deg, #374151, #1f2937)',
-                    border: '2px solid #4b5563',
-                    color: '#6b7280',
-                    cursor: 'not-allowed',
-                    opacity: 0.5,
-                    boxShadow: 'none',
-                  })
-                }}
-                disabled={unit.hp === 0}
-              >
-                🎯 SHOOT
-              </button>
-              <button
-                onClick={() => onOpenCalculator(player.id, 'melee', index === 0 ? 'special' : `soldier${index}`)}
-                style={{
-                  ...styles.unitActionBtn,
-                  ...(unit.hp === 0 && {
-                    background: 'linear-gradient(135deg, #374151, #1f2937)',
-                    border: '2px solid #4b5563',
-                    color: '#6b7280',
-                    cursor: 'not-allowed',
-                    opacity: 0.5,
-                    boxShadow: 'none',
-                  })
-                }}
-                disabled={unit.hp === 0}
-              >
-                ⚔️ MELEE
-              </button>
+              {/* Lives remaining pips */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <span style={{ color: '#6b7280', fontSize: '0.75rem', fontWeight: '600' }}>LIVES:</span>
+                <div style={{ display: 'flex', gap: '0.3rem' }}>
+                  {[...Array(2)].map((_, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        border: '2px solid',
+                        borderColor: idx < livesRemaining ? '#eab308' : '#374151',
+                        background: idx < livesRemaining
+                          ? 'radial-gradient(circle, #eab308, #92400e)'
+                          : '#111',
+                        boxShadow: idx < livesRemaining ? '0 0 6px #eab30880' : 'none',
+                        transition: 'all 0.3s',
+                      }}
+                    />
+                  ))}
+                </div>
+                <span style={{ color: '#78716c', fontSize: '0.7rem' }}>
+                  {livesRemaining} remaining
+                </span>
+              </div>
+
+              {/* Unit Action Buttons */}
+              <div style={styles.unitActionBtns}>
+                <button
+                  onClick={() => onOpenCalculator(player.id, 'shoot', index === 0 ? 'special' : `soldier${index}`)}
+                  style={{
+                    ...styles.unitActionBtn,
+                    ...(isDead && {
+                      background: 'linear-gradient(135deg, #374151, #1f2937)',
+                      border: '2px solid #4b5563',
+                      color: '#6b7280',
+                      cursor: 'not-allowed',
+                      opacity: 0.5,
+                      boxShadow: 'none',
+                    })
+                  }}
+                  disabled={isDead}
+                >
+                  🎯 SHOOT
+                </button>
+                <button
+                  onClick={() => onOpenCalculator(player.id, 'melee', index === 0 ? 'special' : `soldier${index}`)}
+                  style={{
+                    ...styles.unitActionBtn,
+                    ...(isDead && {
+                      background: 'linear-gradient(135deg, #374151, #1f2937)',
+                      border: '2px solid #4b5563',
+                      color: '#6b7280',
+                      cursor: 'not-allowed',
+                      opacity: 0.5,
+                      boxShadow: 'none',
+                    })
+                  }}
+                  disabled={isDead}
+                >
+                  ⚔️ MELEE
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
+
+
       </div>
 
-      {/* Revive Confirmation Modal */}
+      {/* Commander Revive Confirmation Modal */}
       {showReviveModal && (
         <div style={{
           position: 'fixed',
@@ -643,11 +725,7 @@ const PlayerCard = ({
             }}>
               <button
                 onClick={() => {
-                  if (reviveType === 'commander') {
-                    onUseRevive(player.id, true);
-                  } else {
-                    handleSubUnitRevive(reviveType, true);
-                  }
+                  onUseRevive(player.id, true);
                   setShowReviveModal(false);
                 }}
                 style={{
@@ -669,11 +747,7 @@ const PlayerCard = ({
               
               <button
                 onClick={() => {
-                  if (reviveType === 'commander') {
-                    onUseRevive(player.id, false);
-                  } else {
-                    handleSubUnitRevive(reviveType, false);
-                  }
+                  onUseRevive(player.id, false);
                   setShowReviveModal(false);
                 }}
                 style={{
@@ -938,6 +1012,9 @@ const styles = {
     borderRadius: '50%',
     border: '2px solid',
     marginRight: '0.25rem',
+  },
+  unitHeader: {
+    marginBottom: '0.25rem',
   },
 };
 

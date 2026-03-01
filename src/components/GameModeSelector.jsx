@@ -7,7 +7,8 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
     commanderHP: 15,
     squadHP: 8,
     commanderRevives: 2,
-    squadRevives: 2
+    squadRevives: 2,
+    squadLives: 2
   });
   const [errors, setErrors] = useState([]);
 
@@ -128,6 +129,7 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   <div>Squad HP: {mode.squadHP}</div>
                   <div>Commander Revives: {mode.commanderRevives}</div>
                   <div>Squad Revives: {mode.squadRevives}</div>
+                  <div>Squad Lives: {mode.squadLives}</div>
                 </div>
               )}
             </div>
@@ -236,6 +238,27 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   }}
                 />
               </div>
+
+              <div>
+                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                  Squad Lives:
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={customSettings.squadLives}
+                  onChange={(e) => handleCustomChange('squadLives', e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#1a0f0a',
+                    color: gold,
+                    padding: '0.5rem',
+                    borderRadius: '4px',
+                    border: '1px solid #5a4a3a',
+                    fontFamily: '"Cinzel", Georgia, serif'
+                  }}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -256,20 +279,6 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
             ))}
           </div>
         )}
-
-        {/* Warning */}
-        <div style={{
-          background: 'rgba(161, 98, 7, 0.2)',
-          border: '1px solid #a16207',
-          borderRadius: '6px',
-          padding: '0.75rem',
-          marginBottom: '1rem',
-          color: '#fbbf24',
-          fontSize: '0.875rem',
-          textAlign: 'center'
-        }}>
-          ⚠️ Changing modes will reset all players and combat log
-        </div>
 
         {/* Buttons */}
         <div style={{ display: 'flex', gap: '1rem' }}>

@@ -12,6 +12,7 @@ export const GAME_MODES = {
     squadHP: 8,
     commanderRevives: 2,
     squadRevives: 2,
+    squadLives: 2, // Each soldier can be revived 2 times
     diceSystem: 'roll-to-hit', // 2+, 3+, 4+, 5+, 6+
     icon: '⚔️'
   },
@@ -23,6 +24,7 @@ export const GAME_MODES = {
     squadHP: 10,
     commanderRevives: 1,
     squadRevives: 1,
+    squadLives: 1, // Each soldier can be revived 1 time
     diceSystem: 'd20', // D20 for commanders, D10 for squads
     icon: '🎲'
   },
@@ -34,6 +36,7 @@ export const GAME_MODES = {
     squadHP: null,
     commanderRevives: null,
     squadRevives: null,
+    squadLives: null, // User configurable
     diceSystem: 'custom',
     icon: '⚙️'
   }
@@ -68,6 +71,10 @@ export const validateCustomMode = (settings) => {
   
   if (settings.squadRevives < 0) {
     errors.push('Squad revives cannot be negative');
+  }
+  
+  if (settings.squadLives === undefined || settings.squadLives < 1) {
+    errors.push('Squad lives must be at least 1');
   }
   
   return errors;

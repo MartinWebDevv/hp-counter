@@ -7,6 +7,7 @@ import DamageDistribution from "./DamageDistribution";
 import LogPanel from "./LogPanel";
 import StatsModal from "./StatsModal";
 import GameModeSelector from "./GameModeSelector";
+import SquadReviveModal from "./SquadReviveModal";
 import { getModeConfig } from "../data/gameModes";
 
 const HPCounter = () => {
@@ -34,6 +35,7 @@ const HPCounter = () => {
     addLog,
     clearLog,
     loadGameState,
+    processSquadRevive,
   } = useGameState();
 
   const {
@@ -53,6 +55,25 @@ const HPCounter = () => {
   const [showModeSelector, setShowModeSelector] = React.useState(false);
   const [viewMode, setViewMode] = React.useState('all');
   const [draggedIndex, setDraggedIndex] = React.useState(null);
+
+  // Squad Revive Modal state
+  const [squadRevivePlayerId, setSquadRevivePlayerId] = React.useState(null);
+  const squadRevivePlayer = squadRevivePlayerId
+    ? players.find(p => p.id === squadRevivePlayerId)
+    : null;
+
+  const handleOpenSquadRevive = (playerId) => {
+    setSquadRevivePlayerId(playerId);
+  };
+
+  const handleCloseSquadRevive = () => {
+    setSquadRevivePlayerId(null);
+  };
+
+  const handleSquadRevive = (playerId, isSuccessful) => {
+    processSquadRevive(playerId, isSuccessful);
+    handleCloseSquadRevive();
+  };
 
   const saveGameToFile = () => {
     const gameState = {
@@ -90,13 +111,11 @@ const HPCounter = () => {
         try {
           const gameState = JSON.parse(event.target.result);
           
-          // Validate the data has required fields
           if (!gameState.players || !Array.isArray(gameState.players)) {
             alert('Invalid save file format!');
             return;
           }
           
-          // Restore game state using the hook function
           loadGameState(gameState);
           
           addLog(`Game loaded from ${new Date(gameState.savedAt).toLocaleString()}`);
@@ -177,7 +196,6 @@ const HPCounter = () => {
             {!gameStarted 
               ? '▶️ START GAME' 
               : (() => {
-                  // Check if current player is the last alive player
                   const alivePlayers = players.filter(p => p.commanderStats.hp > 0);
                   const alivePlayersWhoActed = alivePlayers.filter(p => 
                     playersWhoActedThisRound.includes(p.id)
@@ -208,7 +226,6 @@ const HPCounter = () => {
           
           <button onClick={() => {
             if (window.confirm('Reset the entire game? This will clear all players and progress.')) {
-              // Clear ALL localStorage items related to the game
               localStorage.removeItem('hpCounterPlayers');
               localStorage.removeItem('hpCounterRound');
               localStorage.removeItem('hpCounterLog');
@@ -216,7 +233,6 @@ const HPCounter = () => {
               localStorage.removeItem('hpCounterCustomSettings');
               localStorage.removeItem('hpCounterCurrentPlayerIndex');
               localStorage.removeItem('hpCounterGameStarted');
-              // Reload page to fresh state
               window.location.reload();
             }
           }} style={styles.resetBtn}>
@@ -333,6 +349,7 @@ const HPCounter = () => {
                   onToggleSquad={toggleSquad}
                   onOpenCalculator={openCalculator}
                   onUseRevive={useRevive}
+                  onOpenSquadRevive={handleOpenSquadRevive}
                   allPlayers={players}
                   isCurrentTurn={actualIndex === currentPlayerIndex}
                   hasActedThisRound={playersWhoActedThisRound.includes(player.id)}
@@ -343,6 +360,7 @@ const HPCounter = () => {
         </div>
       </div>
 
+      {/* Modals */}
       {showCalculator && (
         <Calculator data={calculatorData} players={players} onClose={closeCalculator} onProceedToDistribution={(data) => { setCalculatorData(data); setShowDamageDistribution(true); }} gameMode={gameMode} />
       )}
@@ -353,6 +371,15 @@ const HPCounter = () => {
 
       {showStats && <StatsModal onClose={() => setShowStats(false)} />}
       {showModeSelector && <GameModeSelector currentMode={gameMode} onModeChange={changeGameMode} onClose={() => setShowModeSelector(false)} />}
+
+      {/* Squad Revive Modal */}
+      {squadRevivePlayer && (
+        <SquadReviveModal
+          player={squadRevivePlayer}
+          onRevive={handleSquadRevive}
+          onClose={handleCloseSquadRevive}
+        />
+      )}
     </div>
   );
 };

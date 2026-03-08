@@ -3,16 +3,24 @@ import { getUnitStats, getUnitName } from '../utils/statsUtils';
 
 const CalculatorD20 = ({ 
   data, 
-  players, 
+  players,
+  npcs = [],
   onClose, 
-  onProceedToDistribution 
+  onProceedToDistribution,
+  gameMode = 'd20',
+  firstStrike = false,
+  onUpdatePlayer = () => {},
 }) => {
-  const [calculatorData, setCalculatorData] = React.useState(data);
+  const [calculatorData, setCalculatorData] = React.useState({ targetNPCId: null, ...data });
   const [attackRolls, setAttackRolls] = useState([]);
   const [currentAttackIndex, setCurrentAttackIndex] = useState(0);
   const [attackerRoll, setAttackerRoll] = useState('');
   const [defenderRoll, setDefenderRoll] = useState('');
   const [totalDamage, setTotalDamage] = useState(0);
+  const [showBonusPrompt, setShowBonusPrompt] = useState(null); // { type: 'attack'|'defense', value, itemName }
+  const [activeAttackBonus, setActiveAttackBonus] = useState(0);
+  const [activeDefenseBonus, setActiveDefenseBonus] = useState(0);
+  const [bonusPromptShown, setBonusPromptShown] = useState(false);
 
   if (!calculatorData) return null;
 
@@ -21,41 +29,104 @@ const CalculatorD20 = ({
 
   const gold = '#c9a961';
 
+  // Defender player (PvP only — NPC targets have no inventory)
+  const defender = players.find(p => p.id === (calculatorData.targetId?.playerId ?? calculatorData.targetId));
+
+  // Helper: scan a player's full inventory for a given effect type
+  const scanInventory = (player, effectType) => {
+    if (!player) return [];
+    return (player.inventory || []).filter(item => {
+      if (item.effect?.type !== effectType) return false;
+      const usesLeft = item.effect.uses === 0 ? Infinity : (item.effect.usesRemaining ?? item.effect.uses ?? 1);
+      return usesLeft > 0;
+    }).map(item => ({
+      ...item,
+      usesLeft: item.effect.uses === 0 ? Infinity : (item.effect.usesRemaining ?? item.effect.uses ?? 1),
+    }));
+  };
+
+  // Attacker side — attacker's own reroll OR defender forcing attacker reroll
+  const attackerRerollItems  = scanInventory(attacker, 'rerollAttack');      // attacker uses own item
+  const forceAttackRerollItems = scanInventory(defender, 'forceAttackReroll'); // defender forces attacker reroll
+
+  // Defender side — defender's own reroll OR attacker forcing defender reroll
+  const defenderRerollItems    = scanInventory(defender, 'rerollDefense');      // defender uses own item
+  const forceDefenseRerollItems = scanInventory(attacker, 'forceDefenseReroll'); // attacker forces defender reroll
+
+  // Get the attacking unit's pending bonuses
+  const attackingUnit = calculatorData.attackingUnitType === 'commander'
+    ? null
+    : (() => {
+        const idx = calculatorData.attackingUnitType === 'special' ? 0 : parseInt(calculatorData.attackingUnitType.replace('soldier', ''));
+        return attacker.subUnits?.[idx];
+      })();
+  const pendingAttackBonus = (attackingUnit?.pendingAttackBonus || 0) + (attacker.commanderStats?.pendingAttackBonus || 0);
+  const pendingDefenseBonus = attackingUnit?.pendingDefenseBonus || attacker.commanderStats?.pendingDefenseBonus || 0;
+
+  // Show prompt once when first roll is about to happen
+  React.useEffect(() => {
+    if (bonusPromptShown || attackRolls.length > 0) return;
+    if (pendingAttackBonus > 0) {
+      setShowBonusPrompt({ type: 'attack', value: pendingAttackBonus });
+      setBonusPromptShown(true);
+    } else if (pendingDefenseBonus > 0) {
+      setShowBonusPrompt({ type: 'defense', value: pendingDefenseBonus });
+      setBonusPromptShown(true);
+    }
+  }, [bonusPromptShown, attackRolls.length, pendingAttackBonus, pendingDefenseBonus]);
+
   // Determine dice types based on attacker and defender
+  //
+  // NPC:                attacker mirrors their own type (cmd=D20, soldier=D10)
+  // Cmd vs Cmd:         D20 v D20
+  // Cmd vs Solo Soldier:D10 v D10
+  // Cmd vs Squad:       D20 v D20
+  // Soldier vs anything:D10 v D10
+
   const getAttackerDiceType = () => {
+    // NPC target — follows attacker unit type
+    if (calculatorData.targetNPCId) {
+      return calculatorData.attackingUnitType === 'commander' ? 'D20' : 'D10';
+    }
+
     if (calculatorData.attackingUnitType === 'commander') {
-      // Check if target is a commander (single target or in squad)
-      const targetIsCommander = 
+      const targetIsCommander =
         calculatorData.targetId?.unitType === 'commander' ||
         calculatorData.targetSquadMembers?.some(t => t.unitType === 'commander');
-      
-      if (targetIsCommander) {
-        return 'D20'; // Commander vs Commander → D20
-      }
-      
-      // Commander attacking soldiers - check if squad or solo
-      const isTargetingSquad = calculatorData.targetSquadMembers && calculatorData.targetSquadMembers.length > 1;
-      if (isTargetingSquad) {
-        return 'D20'; // Commander vs Squad → Commander uses D20
-      }
-      // Commander vs Solo Soldier → Commander uses D10
-      return 'D10';
+      if (targetIsCommander) return 'D20'; // Cmd vs Cmd
+
+      const isTargetingSquad =
+        calculatorData.targetIsSquad ||
+        (calculatorData.targetSquadMembers && calculatorData.targetSquadMembers.length > 1);
+      if (isTargetingSquad) return 'D20'; // Cmd vs Squad
+
+      return 'D10'; // Cmd vs Solo Soldier
     }
-    return 'D10'; // Soldiers always use D10
+
+    return 'D10'; // Soldiers always D10
   };
 
   const getDefenderDiceType = () => {
-    // Check if defender is a commander (single target or in squad)
-    const defenderIsCommander = 
-      calculatorData.targetId?.unitType === 'commander' ||
-      calculatorData.targetSquadMembers?.some(t => t.unitType === 'commander');
-    
-    if (defenderIsCommander && calculatorData.attackingUnitType === 'commander') {
-      return 'D20'; // Commander vs Commander → both D20
+    // NPC target — mirrors attacker
+    if (calculatorData.targetNPCId) {
+      return calculatorData.attackingUnitType === 'commander' ? 'D20' : 'D10';
     }
-    
-    // All other scenarios: defender uses D10
-    return 'D10';
+
+    if (calculatorData.attackingUnitType === 'commander') {
+      const targetIsCommander =
+        calculatorData.targetId?.unitType === 'commander' ||
+        calculatorData.targetSquadMembers?.some(t => t.unitType === 'commander');
+      if (targetIsCommander) return 'D20'; // Cmd vs Cmd
+
+      const isTargetingSquad =
+        calculatorData.targetIsSquad ||
+        (calculatorData.targetSquadMembers && calculatorData.targetSquadMembers.length > 1);
+      if (isTargetingSquad) return 'D20'; // Cmd vs Squad
+
+      return 'D10'; // Cmd vs Solo Soldier
+    }
+
+    return 'D10'; // Soldier vs anything → D10
   };
 
   // Check if attacker is special unit (gets +1)
@@ -117,11 +188,20 @@ const CalculatorD20 = ({
       isSpecialBonus = isFirstRoll && hasSpecialInSquad;
     }
     
-    const finalAtkRoll = isSpecialBonus ? atkRoll + 1 : atkRoll;
-    
+    const baseRoll = isSpecialBonus ? atkRoll + 1 : atkRoll;
+    const finalAtkRoll = (firstStrike && calculatorData.targetNPCId ? baseRoll + 2 : baseRoll) + activeAttackBonus;
+
+    // Apply NPC armor floor to defense roll
+    const targetNPC = calculatorData.targetNPCId
+      ? npcs.find(n => n.id === calculatorData.targetNPCId)
+      : null;
+    const effectiveDefRoll = targetNPC
+      ? Math.max(defRoll, targetNPC.armor || 0)
+      : defRoll;
+
     // Defender must roll >= attacker to block
-    if (defRoll >= finalAtkRoll) return 0;
-    return finalAtkRoll - defRoll;
+    if (effectiveDefRoll >= finalAtkRoll) return 0;
+    return finalAtkRoll - effectiveDefRoll;
   };
 
   const handleAddRoll = () => {
@@ -142,11 +222,22 @@ const CalculatorD20 = ({
       isSpecialBonus = isFirstRoll && hasSpecialInSquad;
     }
     
+    const targetNPCForRoll = calculatorData.targetNPCId
+      ? npcs.find(n => n.id === calculatorData.targetNPCId)
+      : null;
+    const rawDef = parseInt(defenderRoll);
+    const effectiveDef = (targetNPCForRoll
+      ? Math.max(rawDef, targetNPCForRoll.armor || 0)
+      : rawDef) + activeDefenseBonus;
+
     const newRoll = {
       attackerRoll: parseInt(attackerRoll),
-      defenderRoll: parseInt(defenderRoll),
+      defenderRoll: rawDef,
+      effectiveDefenderRoll: effectiveDef,
       damage,
-      isSpecial: isSpecialBonus
+      isSpecial: isSpecialBonus,
+      isFirstStrike: firstStrike && !!calculatorData.targetNPCId,
+      armorFloored: targetNPCForRoll && effectiveDef > rawDef,
     };
     
     const newAttackRolls = [...attackRolls, newRoll];
@@ -166,7 +257,9 @@ const CalculatorD20 = ({
     }
 
     // Check target selection
-    if (calculatorData.targetIsSquad) {
+    if (calculatorData.targetNPCId) {
+      // NPC target — valid, proceed
+    } else if (calculatorData.targetIsSquad) {
       if (!calculatorData.targetSquadMembers || calculatorData.targetSquadMembers.length === 0) {
         alert('Please select at least one squad member to target!');
         return;
@@ -180,7 +273,13 @@ const CalculatorD20 = ({
 
     // Create targetSquadMembers array
     let targetMembers;
-    if (calculatorData.targetIsSquad && calculatorData.targetSquadMembers?.length > 0) {
+    if (calculatorData.targetNPCId) {
+      // NPC target — encode as a special member entry
+      targetMembers = [{
+        isNPC: true,
+        npcId: calculatorData.targetNPCId,
+      }];
+    } else if (calculatorData.targetIsSquad && calculatorData.targetSquadMembers?.length > 0) {
       targetMembers = calculatorData.targetSquadMembers;
     } else {
       targetMembers = [{
@@ -201,6 +300,18 @@ const CalculatorD20 = ({
   };
 
   const canAddRoll = attackerRoll && defenderRoll && currentAttackIndex < numAttacks;
+
+  // Consume one use of a reroll item and clear the appropriate roll input
+  const consumeRerollItem = (item, owner, clearRoll) => {
+    if (!owner) return;
+    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
+    const consumed = newUsesRemaining <= 0;
+    const newInventory = (owner.inventory || [])
+      .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
+      .filter(it => it.id !== item.id ? true : !consumed);
+    onUpdatePlayer(owner.id, { inventory: newInventory });
+    clearRoll('');
+  };
   const allRollsComplete = attackRolls.length === numAttacks;
 
   return (
@@ -230,6 +341,65 @@ const CalculatorD20 = ({
           boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
         }}
       >
+        {/* Bonus Prompt */}
+        {showBonusPrompt && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(76,29,149,0.1))',
+            border: '2px solid rgba(167,139,250,0.5)', borderRadius: '10px',
+            padding: '1rem', marginBottom: '1.25rem', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '1.5rem', marginBottom: '0.4rem' }}>✨</div>
+            <div style={{ color: '#e9d5ff', fontWeight: '900', fontSize: '0.95rem', marginBottom: '0.25rem' }}>
+              {showBonusPrompt.type === 'attack' ? 'Attack Bonus Available' : 'Defense Bonus Available'}
+            </div>
+            <div style={{ color: '#a78bfa', fontSize: '0.8rem', marginBottom: '0.85rem' }}>
+              +{showBonusPrompt.value} to {showBonusPrompt.type === 'attack' ? 'attack' : 'defense'} rolls this sequence. Use it?
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                onClick={() => {
+                  if (showBonusPrompt.type === 'attack') setActiveAttackBonus(showBonusPrompt.value);
+                  else setActiveDefenseBonus(showBonusPrompt.value);
+                  setShowBonusPrompt(null);
+                }}
+                style={{
+                  padding: '0.5rem 1.25rem',
+                  background: 'linear-gradient(135deg, #059669, #047857)',
+                  border: '2px solid #10b981', color: '#d1fae5', borderRadius: '8px',
+                  cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.85rem',
+                }}>✓ Use Bonus</button>
+              <button
+                onClick={() => setShowBonusPrompt(null)}
+                style={{
+                  padding: '0.5rem 1.25rem',
+                  background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
+                  color: '#fca5a5', borderRadius: '8px',
+                  cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.85rem',
+                }}>✗ Save for Later</button>
+            </div>
+          </div>
+        )}
+
+        {/* Active bonus indicators */}
+        {(activeAttackBonus > 0 || activeDefenseBonus > 0) && (
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', justifyContent: 'center' }}>
+            {activeAttackBonus > 0 && (
+              <span style={{
+                padding: '0.2rem 0.6rem', background: 'rgba(34,197,94,0.12)',
+                border: '1px solid rgba(34,197,94,0.4)', borderRadius: '5px',
+                color: '#86efac', fontSize: '0.72rem', fontWeight: '800',
+              }}>⚔️ +{activeAttackBonus} ATK BONUS ACTIVE</span>
+            )}
+            {activeDefenseBonus > 0 && (
+              <span style={{
+                padding: '0.2rem 0.6rem', background: 'rgba(59,130,246,0.12)',
+                border: '1px solid rgba(59,130,246,0.4)', borderRadius: '5px',
+                color: '#93c5fd', fontSize: '0.72rem', fontWeight: '800',
+              }}>🛡️ +{activeDefenseBonus} DEF BONUS ACTIVE</span>
+            )}
+          </div>
+        )}
+
         {/* Title */}
         <h3 style={{
           color: gold,
@@ -399,7 +569,7 @@ const CalculatorD20 = ({
                 fontFamily: '"Cinzel", Georgia, serif',
                 fontSize: '0.875rem',
                 cursor: 'pointer',
-                marginBottom: '1rem',
+                marginBottom: '0.5rem',
               }}
             >
               <option value="">Select Player...</option>
@@ -413,8 +583,83 @@ const CalculatorD20 = ({
                 ))}
             </select>
 
-            {/* Step 2: Select Target Unit - Only show if player selected */}
-            {calculatorData.targetId?.playerId && (() => {
+            {/* ── OR Target NPC ── */}
+            {npcs.filter(n => n.active && !n.isDead).length > 0 && (
+              <div style={{ marginTop: '0.75rem' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.75rem',
+                  marginBottom: '0.6rem',
+                }}>
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
+                  <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC</span>
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {npcs.filter(n => n.active && !n.isDead).map(npc => {
+                    const isSelected = calculatorData.targetNPCId === npc.id;
+                    const hpPct = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
+                    const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
+                    return (
+                      <div
+                        key={npc.id}
+                        onClick={() => setCalculatorData({
+                          ...calculatorData,
+                          targetNPCId: isSelected ? null : npc.id,
+                          targetId: null,
+                          targetSquadMembers: [],
+                        })}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.75rem',
+                          padding: '0.6rem 0.85rem',
+                          background: isSelected
+                            ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))'
+                            : 'rgba(0,0,0,0.3)',
+                          border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {/* Selection indicator */}
+                        <div style={{
+                          width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+                          border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`,
+                          background: isSelected ? '#ef4444' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.6rem', color: '#fff', fontWeight: '900',
+                        }}>{isSelected && '✓'}</div>
+
+                        {/* NPC info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>
+                            {npc.name}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
+                            <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
+                              <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
+                            </div>
+                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>
+                              {npc.hp}/{npc.maxHp}hp
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Armor floor badge */}
+                        <div style={{
+                          padding: '0.15rem 0.5rem',
+                          background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)',
+                          borderRadius: '5px', color: '#5eead4',
+                          fontSize: '0.68rem', fontWeight: '800', flexShrink: 0,
+                        }}>🛡️{npc.armor}+</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Select Target Unit - Only show if player selected and no NPC selected */}
+            {!calculatorData.targetNPCId && calculatorData.targetId?.playerId && (() => {
               const targetPlayer = players.find(p => p.id === calculatorData.targetId.playerId);
               if (!targetPlayer) return null;
 
@@ -464,9 +709,10 @@ const CalculatorD20 = ({
                       </label>
                     )}
 
-                    {/* Squad members - only alive ones */}
+                    {/* Squad members - only alive and non-immune ones */}
                     {targetPlayer.subUnits.map((unit, idx) => {
                       if (unit.hp === 0) return null;
+                      if (unit.revivedOnPlayerId) return null; // immune this round
                       const unitType = idx === 0 ? 'special' : `soldier${idx}`;
                       return (
                         <label
@@ -535,7 +781,7 @@ const CalculatorD20 = ({
                 fontFamily: '"Cinzel", Georgia, serif',
                 fontSize: '0.875rem',
                 cursor: 'pointer',
-                marginBottom: '0.75rem',
+                marginBottom: '0.5rem',
               }}
             >
               <option value="">Select Player...</option>
@@ -549,8 +795,83 @@ const CalculatorD20 = ({
                 ))}
             </select>
 
+            {/* ── OR Target NPC ── */}
+            {npcs.filter(n => n.active && !n.isDead).length > 0 && (
+              <div style={{ marginTop: '0.75rem' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.75rem',
+                  marginBottom: '0.6rem',
+                }}>
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
+                  <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC</span>
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {npcs.filter(n => n.active && !n.isDead).map(npc => {
+                    const isSelected = calculatorData.targetNPCId === npc.id;
+                    const hpPct = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
+                    const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
+                    return (
+                      <div
+                        key={npc.id}
+                        onClick={() => setCalculatorData({
+                          ...calculatorData,
+                          targetNPCId: isSelected ? null : npc.id,
+                          targetId: null,
+                          targetSquadMembers: [],
+                        })}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.75rem',
+                          padding: '0.6rem 0.85rem',
+                          background: isSelected
+                            ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))'
+                            : 'rgba(0,0,0,0.3)',
+                          border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {/* Selection indicator */}
+                        <div style={{
+                          width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+                          border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`,
+                          background: isSelected ? '#ef4444' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.6rem', color: '#fff', fontWeight: '900',
+                        }}>{isSelected && '✓'}</div>
+
+                        {/* NPC info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>
+                            {npc.name}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
+                            <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
+                              <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
+                            </div>
+                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>
+                              {npc.hp}/{npc.maxHp}hp
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Armor floor badge */}
+                        <div style={{
+                          padding: '0.15rem 0.5rem',
+                          background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)',
+                          borderRadius: '5px', color: '#5eead4',
+                          fontSize: '0.68rem', fontWeight: '800', flexShrink: 0,
+                        }}>🛡️{npc.armor}+</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Squad Member Selection */}
-            {calculatorData.targetId?.playerId && (() => {
+            {!calculatorData.targetNPCId && calculatorData.targetId?.playerId && (() => {
               const targetPlayer = players.find(p => p.id === calculatorData.targetId.playerId);
               if (!targetPlayer) return null;
 
@@ -566,6 +887,7 @@ const CalculatorD20 = ({
                   </div>
                   {targetPlayer.subUnits.map((unit, idx) => {
                     if (unit.hp === 0) return null;
+                    if (unit.revivedOnPlayerId) return null; // immune this round
                     const unitType = idx === 0 ? 'special' : `soldier${idx}`;
                     const isSelected = calculatorData.targetSquadMembers?.some(m => m.unitType === unitType);
                     const canSelect = isSelected || (calculatorData.targetSquadMembers?.length || 0) < 3;
@@ -656,6 +978,37 @@ const CalculatorD20 = ({
                 <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Attacker Roll ({attackerDice}):
                 </label>
+                {/* Attacker reroll buttons — always shown when items exist, before typing */}
+                {(() => {
+                  const allAtkRerolls = [
+                    ...attackerRerollItems.map(it => ({ ...it, label: '⟳ REROLL MY ATTACK', color: '#86efac', owner: attacker })),
+                    ...forceAttackRerollItems.map(it => ({ ...it, label: '⚡ FORCE ATTACKER REROLL', color: '#fca5a5', owner: defender })),
+                  ];
+                  if (allAtkRerolls.length === 0) return null;
+                  return (
+                    <div style={{ marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                      {allAtkRerolls.map(item => (
+                        <button key={item.id} onClick={() => consumeRerollItem(item, item.owner, setAttackerRoll)}
+                          style={{
+                            width: '100%', padding: '0.45rem',
+                            background: 'rgba(0,0,0,0.4)',
+                            border: `2px solid ${item.color}60`,
+                            borderRadius: '7px', cursor: 'pointer',
+                            color: item.color, fontFamily: 'inherit',
+                            fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.05em',
+                          }}>
+                          {item.label}
+                          <span style={{ color: '#6b7280', fontWeight: '600', marginLeft: '0.4rem' }}>
+                            · {item.name}
+                          </span>
+                          <span style={{ color: '#4b5563', fontWeight: '600', marginLeft: '0.3rem' }}>
+                            [{item.owner?.playerName} / {item.heldBy}] · {item.usesLeft === Infinity ? '∞' : item.usesLeft} left
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
                 <input
                   type="number"
                   min="1"
@@ -681,6 +1034,37 @@ const CalculatorD20 = ({
                 <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Defender Roll ({defenderDice}):
                 </label>
+                {/* Defender reroll buttons — always shown when items exist, before typing */}
+                {(() => {
+                  const allDefRerolls = [
+                    ...defenderRerollItems.map(it => ({ ...it, label: '⟳ REROLL MY DEFENSE', color: '#86efac', owner: defender })),
+                    ...forceDefenseRerollItems.map(it => ({ ...it, label: '⚡ FORCE DEFENDER REROLL', color: '#fca5a5', owner: attacker })),
+                  ];
+                  if (allDefRerolls.length === 0) return null;
+                  return (
+                    <div style={{ marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                      {allDefRerolls.map(item => (
+                        <button key={item.id} onClick={() => consumeRerollItem(item, item.owner, setDefenderRoll)}
+                          style={{
+                            width: '100%', padding: '0.45rem',
+                            background: 'rgba(0,0,0,0.4)',
+                            border: `2px solid ${item.color}60`,
+                            borderRadius: '7px', cursor: 'pointer',
+                            color: item.color, fontFamily: 'inherit',
+                            fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.05em',
+                          }}>
+                          {item.label}
+                          <span style={{ color: '#6b7280', fontWeight: '600', marginLeft: '0.4rem' }}>
+                            · {item.name}
+                          </span>
+                          <span style={{ color: '#4b5563', fontWeight: '600', marginLeft: '0.3rem' }}>
+                            [{item.owner?.playerName} / {item.heldBy}] · {item.usesLeft === Infinity ? '∞' : item.usesLeft} left
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
                 <input
                   type="number"
                   min="1"
@@ -750,7 +1134,14 @@ const CalculatorD20 = ({
                 fontSize: '0.875rem'
               }}>
                 <span style={{ color: '#8b7355' }}>
-                  Roll {idx + 1}: {roll.attackerRoll}{roll.isSpecial && <span style={{ color: '#fbbf24' }}>+1</span>} vs {roll.defenderRoll}
+                  Roll {idx + 1}: {roll.attackerRoll}
+                  {roll.isSpecial && <span style={{ color: '#fbbf24' }}>+1</span>}
+                  {roll.isFirstStrike && <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>⚡+2</span>}
+                  {' '}vs{' '}
+                  {roll.armorFloored
+                    ? <><span style={{ color: '#6b7280', textDecoration: 'line-through' }}>{roll.defenderRoll}</span><span style={{ color: '#5eead4' }}> {roll.effectiveDefenderRoll}</span><span style={{ color: '#374151', fontSize: '0.7rem' }}> 🛡️floor</span></>
+                    : roll.defenderRoll
+                  }
                 </span>
                 <span style={{ color: roll.damage > 0 ? '#fecaca' : '#86efac', fontWeight: 'bold' }}>
                   {roll.damage > 0 ? `${roll.damage}hp` : 'BLOCKED'}
@@ -781,16 +1172,16 @@ const CalculatorD20 = ({
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button
             onClick={handleProceed}
-            disabled={!allRollsComplete || !calculatorData.targetId}
+            disabled={!allRollsComplete || (!calculatorData.targetId && !calculatorData.targetNPCId)}
             style={{
               flex: 1,
-              background: (allRollsComplete && calculatorData.targetId) ? 'linear-gradient(to bottom, #15803d, #14532d)' : '#1a0f0a',
-              color: (allRollsComplete && calculatorData.targetId) ? '#86efac' : '#4a3322',
+              background: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? 'linear-gradient(to bottom, #15803d, #14532d)' : '#1a0f0a',
+              color: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? '#86efac' : '#4a3322',
               padding: '0.75rem',
               borderRadius: '6px',
               border: '2px solid',
-              borderColor: (allRollsComplete && calculatorData.targetId) ? '#16a34a' : '#4a3322',
-              cursor: (allRollsComplete && calculatorData.targetId) ? 'pointer' : 'not-allowed',
+              borderColor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? '#16a34a' : '#4a3322',
+              cursor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? 'pointer' : 'not-allowed',
               fontFamily: '"Cinzel", Georgia, serif',
               fontWeight: 'bold',
               fontSize: '1rem',

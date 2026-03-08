@@ -12,8 +12,8 @@ export const GAME_MODES = {
     squadHP: 8,
     commanderRevives: 2,
     squadRevives: 2,
-    squadLives: 2, // Each soldier can be revived 2 times
-    diceSystem: 'roll-to-hit', // 2+, 3+, 4+, 5+, 6+
+    squadLives: 2,
+    diceSystem: 'roll-to-hit',
     icon: '⚔️'
   },
   d20: {
@@ -24,19 +24,31 @@ export const GAME_MODES = {
     squadHP: 10,
     commanderRevives: 1,
     squadRevives: 1,
-    squadLives: 1, // Each soldier can be revived 1 time
-    diceSystem: 'd20', // D20 for commanders, D10 for squads
+    squadLives: 1,
+    diceSystem: 'd20',
     icon: '🎲'
+  },
+  campaign: {
+    id: 'campaign',
+    name: 'Campaign Mode',
+    description: 'Full narrative campaign with NPCs, loot, and DM tools',
+    commanderHP: 20,
+    squadHP: 10,
+    commanderRevives: 1,
+    squadRevives: 1,
+    squadLives: 1,
+    diceSystem: 'd20',
+    icon: '🗺️'
   },
   custom: {
     id: 'custom',
     name: 'Custom Mode',
     description: 'Configure your own HP, revives, and dice mechanics',
-    commanderHP: null, // User configurable
+    commanderHP: null,
     squadHP: null,
     commanderRevives: null,
     squadRevives: null,
-    squadLives: null, // User configurable
+    squadLives: null,
     diceSystem: 'custom',
     icon: '⚙️'
   }
@@ -56,26 +68,26 @@ export const getModeConfig = (modeId) => {
  */
 export const validateCustomMode = (settings) => {
   const errors = [];
-  
+
   if (!settings.commanderHP || settings.commanderHP < 1) {
     errors.push('Commander HP must be at least 1');
   }
-  
+
   if (!settings.squadHP || settings.squadHP < 1) {
     errors.push('Squad HP must be at least 1');
   }
-  
+
   if (settings.commanderRevives < 0) {
     errors.push('Commander revives cannot be negative');
   }
-  
+
   if (settings.squadRevives < 0) {
     errors.push('Squad revives cannot be negative');
   }
-  
+
   if (settings.squadLives === undefined || settings.squadLives < 1) {
     errors.push('Squad lives must be at least 1');
   }
-  
+
   return errors;
 };

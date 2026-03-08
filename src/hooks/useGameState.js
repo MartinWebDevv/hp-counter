@@ -15,6 +15,12 @@ export const useGameState = () => {
   const [playersWhoActedThisRound, setPlayersWhoActedThisRound] = useState([]);
   const [actionHistory, setActionHistory] = useState([]);
   const [gameStarted, setGameStarted] = useState(false);
+  const [lootPool, setLootPool] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hpCounterLootPool');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
 
   // Load state from localStorage on mount
   useEffect(() => {
@@ -48,13 +54,14 @@ export const useGameState = () => {
       localStorage.setItem('hpCounterGameMode', gameMode);
       localStorage.setItem('hpCounterCurrentPlayerIndex', currentPlayerIndex.toString());
       localStorage.setItem('hpCounterGameStarted', JSON.stringify(gameStarted));
+      localStorage.setItem('hpCounterLootPool', JSON.stringify(lootPool));
       if (customModeSettings) {
         localStorage.setItem('hpCounterCustomSettings', JSON.stringify(customModeSettings));
       }
     } catch (error) {
       console.error('Error saving game state:', error);
     }
-  }, [players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, gameStarted]);
+  }, [players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, gameStarted, lootPool]);
 
   // Get current mode config
   const getModeValues = () => {
@@ -90,7 +97,7 @@ export const useGameState = () => {
         maxHp: modeConfig.commanderHP,
         cooldownRounds: 0,
         revives: modeConfig.commanderRevives,
-        isDead: false
+        isDead: false,
       },
       subUnits: Array(5).fill(null).map((_, i) => ({
         hp: modeConfig.squadHP,
@@ -104,6 +111,7 @@ export const useGameState = () => {
       actionHistory: [],
       // Revive queue: array of unit indices (0=special, 1-4=soldiers) in death order
       reviveQueue: [],
+      inventory: [],
     };
     setPlayers(prev => [...prev, newPlayer]);
   };
@@ -286,11 +294,15 @@ export const useGameState = () => {
 
         const updatedPlayer = {
           ...player,
-          subUnits: newSubUnits,
+          subUnits: newSubUnits.map((u, i) =>
+            i === unitIndex
+              ? { ...u, revivedOnPlayerId: player.id }  // immunity until this player's next turn
+              : u
+          ),
           reviveQueue: newQueue,
         };
 
-        addLog(`✅ ${player.playerName}'s ${unit.name || `Unit ${unitIndex}`} revived with ${restoredHP}hp!`);
+        addLog(`✅ ${player.playerName}'s ${unit.name || `Unit ${unitIndex}`} revived with ${restoredHP}hp! (immune this round)`);
         return updatedPlayer;
       } else {
         // Fail: stays in queue, no life lost
@@ -367,6 +379,15 @@ export const useGameState = () => {
     addLog(`----- Game Started - Round ${currentRound} -----`);
   };
 
+  const addLog = (message) => {
+    setCombatLog(prev => [{
+      id: Date.now(),
+      round: currentRound,
+      message,
+      timestamp: new Date().toISOString()
+    }, ...prev]);
+  };
+
   const endTurn = () => {
     const currentPlayer = players[currentPlayerIndex];
     if (!currentPlayer) return;
@@ -399,6 +420,23 @@ export const useGameState = () => {
       while (firstAliveIndex < players.length && isPlayerFullyDead(players[firstAliveIndex])) {
         firstAliveIndex++;
       }
+
+      // Clear revival immunity for the first player of the new round
+      const firstPlayer = players[firstAliveIndex];
+      if (firstPlayer) {
+        setPlayers(prev => prev.map(p => {
+          if (p.id !== firstPlayer.id) return p;
+          const hasImmune = p.subUnits.some(u => u.revivedOnPlayerId === p.id);
+          if (!hasImmune) return p;
+          return {
+            ...p,
+            subUnits: p.subUnits.map(u =>
+              u.revivedOnPlayerId === p.id ? { ...u, revivedOnPlayerId: null } : u
+            ),
+          };
+        }));
+      }
+
       setCurrentPlayerIndex(firstAliveIndex);
       addLog(`----- Round ${currentRound + 1} -----`);
     } else {
@@ -416,17 +454,24 @@ export const useGameState = () => {
         return;
       }
       
+      // Clear revival immunity for the incoming player
+      const incomingPlayer = players[nextIndex];
+      if (incomingPlayer) {
+        setPlayers(prev => prev.map(p => {
+          if (p.id !== incomingPlayer.id) return p;
+          const hasImmune = p.subUnits.some(u => u.revivedOnPlayerId === p.id);
+          if (!hasImmune) return p;
+          return {
+            ...p,
+            subUnits: p.subUnits.map(u =>
+              u.revivedOnPlayerId === p.id ? { ...u, revivedOnPlayerId: null } : u
+            ),
+          };
+        }));
+      }
+
       setCurrentPlayerIndex(nextIndex);
     }
-  };
-
-  const addLog = (message) => {
-    setCombatLog(prev => [{
-      id: Date.now(),
-      round: currentRound,
-      message,
-      timestamp: new Date().toISOString()
-    }, ...prev]);
   };
 
   const clearLog = () => {
@@ -444,6 +489,9 @@ export const useGameState = () => {
       localStorage.removeItem('hpCounterRound');
       localStorage.removeItem('hpCounterLog');
       localStorage.removeItem('hpCounterCurrentPlayerIndex');
+      localStorage.removeItem('hpCounterLootPool');
+      localStorage.removeItem('hpCounterNPCs');
+      setLootPool([]);
     }
   };
 
@@ -458,6 +506,38 @@ export const useGameState = () => {
     setCurrentPlayerIndex(gameState.currentPlayerIndex || 0);
     setPlayersWhoActedThisRound(gameState.playersWhoActedThisRound || []);
     setGameStarted(gameState.gameStarted || false);
+  };
+
+  const resetCombat = () => {
+    const modeConfig = getModeValues();
+    const soldierLives = getSoldierLives();
+    setPlayers(prev => prev.map(player => ({
+      ...player,
+      selectedUnit: 'commander',
+      commanderStats: {
+        ...player.commanderStats,
+        hp: player.commanderStats.maxHp,
+        revives: modeConfig.commanderRevives,
+        isDead: false,
+        cooldownRounds: 0,
+      },
+      subUnits: (player.subUnits || []).map(unit => ({
+        ...unit,
+        hp: unit.maxHp,
+        revives: modeConfig.squadRevives,
+        livesRemaining: soldierLives,
+        revivedOnPlayerId: null,
+      })),
+      reviveQueue: [],
+      pendingAttackBonus: 0,
+      pendingDefenseBonus: 0,
+      firstStrike: false,
+    })));
+    setCurrentRound(1);
+    setCurrentPlayerIndex(0);
+    setPlayersWhoActedThisRound([]);
+    setGameStarted(false);
+    addLog('⚔️ Combat reset — all units restored to full HP and revives.');
   };
 
   return {
@@ -484,7 +564,10 @@ export const useGameState = () => {
     undo,
     addLog,
     clearLog,
+    lootPool,
+    setLootPool,
     resetGame,
+    resetCombat,
     loadGameState,
     processSquadRevive,
     checkSquadWipe,

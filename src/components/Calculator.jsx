@@ -8,24 +8,28 @@ import CalculatorD20 from './CalculatorD20';
  */
 const Calculator = ({ 
   data, 
-  players, 
+  players,
+  npcs = [],
   onClose, 
   onProceedToDistribution,
-  gameMode = 'classic'
+  gameMode = 'classic',
+  firstStrike = false,
+  onUpdatePlayer = () => {},
 }) => {
-  // Route to appropriate calculator based on mode
-  if (gameMode === 'd20') {
+  if (gameMode === 'd20' || gameMode === 'campaign') {
     return (
       <CalculatorD20
         data={data}
         players={players}
+        npcs={npcs}
         onClose={onClose}
         onProceedToDistribution={onProceedToDistribution}
+        firstStrike={firstStrike}
+        onUpdatePlayer={onUpdatePlayer}
       />
     );
   }
 
-  // Default to Classic mode (also handles Custom mode for now)
   return (
     <CalculatorClassic
       data={data}

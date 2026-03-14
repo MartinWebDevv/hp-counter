@@ -77,6 +77,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
     currentPhase: 0,      // index into phases array (0 = base)
     active: false,        // whether this NPC is in the turn rotation
     isDead: false,
+    isFinalBoss: false,   // marks this NPC for Final Boss Kill VP award
   });
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -137,7 +138,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
    * Apply damage to an NPC. Handles phase transitions automatically.
    * Returns the updated NPC for logging.
    */
-  const applyDamageToNPC = (npcId, damageAmount) => {
+  const applyDamageToNPC = (npcId, damageAmount, killerName = null, killerUnit = null) => {
     setNpcs(prev => prev.map(n => {
       if (n.id !== npcId) return n;
 
@@ -155,10 +156,16 @@ export const useNPCState = (addLog, onNPCKilled) => {
       if (newHP === 0 && !updated.phaseJustTriggered) {
         updated.isDead = true;
         updated.active = false;
-        addLog(`💀 "${n.name}" has been defeated!`);
+        const killLine = killerName
+          ? `💀 "${n.name}" defeated! Final blow by ${killerName}'s ${killerUnit} for ${damageAmount}hp.`
+          : `💀 "${n.name}" has been defeated!`;
+        addLog(killLine);
         // Fire loot callback with the snapshot of the dying NPC
-        if (onNPCKilled && (n.lootTable || []).length > 0) {
-          setTimeout(() => onNPCKilled({ ...updated, lootTable: n.lootTable }), 50);
+        if (onNPCKilled) {
+          const payload = { ...updated, lootTable: n.lootTable };
+          if ((n.lootTable || []).length > 0 || n.isFinalBoss) {
+            setTimeout(() => onNPCKilled(payload), 50);
+          }
         }
       }
 
@@ -280,6 +287,18 @@ export const useNPCState = (addLog, onNPCKilled) => {
 
   const getNPCById = (id) => npcs.find(n => n.id === id);
 
+  const resetAllNPCs = () => {
+    setNpcs(prev => prev.map(n => ({
+      ...n,
+      hp: n.maxHp,
+      isDead: false,
+      active: false,
+      currentPhaseIndex: 0,
+      phaseJustTriggered: false,
+      attackCount: 0,
+    })));
+  };
+
   return {
     npcs,
     setNpcs,
@@ -301,5 +320,6 @@ export const useNPCState = (addLog, onNPCKilled) => {
     setNPCHP,
     triggerNextPhase,
     getNPCById,
+    resetAllNPCs,
   };
 };

@@ -228,21 +228,27 @@ const PlayerCard = ({
           <button onClick={() => handleCommanderHPChange(1)} disabled={cmdHP === cmdMaxHP} style={hpBtn(cmdHP === cmdMaxHP)}>+</button>
         </div>
 
-        {/* Commander item holding token */}
+        {/* Commander item holding tokens */}
         {(() => {
-          const heldItem = (player.inventory || []).find(it => it.heldBy === 'commander');
-          if (!heldItem) return null;
-          const tierColor = { Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[heldItem.tier] || '#9ca3af';
+          const heldItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
+          if (heldItems.length === 0) return null;
           return (
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-              margin: '0.3rem 0', padding: '0.15rem 0.45rem',
-              background: `${tierColor}18`,
-              border: `1px solid ${tierColor}50`,
-              borderRadius: '4px',
-            }}>
-              <span style={{ fontSize: '0.7rem' }}>📦</span>
-              <span style={{ color: tierColor, fontSize: '0.62rem', fontWeight: '800' }}>{heldItem.name}</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.3rem 0' }}>
+              {heldItems.map((heldItem, hi) => {
+                const tierColor = heldItem.isQuestItem ? '#fde68a' : ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[heldItem.tier] || '#9ca3af');
+                return (
+                  <div key={hi} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                    padding: '0.15rem 0.45rem',
+                    background: `${tierColor}18`,
+                    border: `1px solid ${tierColor}50`,
+                    borderRadius: '4px',
+                  }}>
+                    <span style={{ fontSize: '0.7rem' }}>{heldItem.isQuestItem ? '🗝️' : '📦'}</span>
+                    <span style={{ color: tierColor, fontSize: '0.62rem', fontWeight: '800' }}>{heldItem.name}</span>
+                  </div>
+                );
+              })}
             </div>
           );
         })()}
@@ -437,22 +443,28 @@ const PlayerCard = ({
                   >⚔️</button>
                 </div>
 
-                {/* Item holding token */}
+                {/* Item holding tokens */}
                 {(() => {
                   const unitType = index === 0 ? 'special' : `soldier${index}`;
-                  const heldItem = (player.inventory || []).find(it => it.heldBy === unitType);
-                  if (!heldItem) return null;
-                  const tierColor = { Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[heldItem.tier] || '#9ca3af';
+                  const heldItems = (player.inventory || []).filter(it => it.heldBy === unitType);
+                  if (heldItems.length === 0) return null;
                   return (
-                    <div style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                      marginTop: '0.3rem', padding: '0.15rem 0.45rem',
-                      background: `${tierColor}18`,
-                      border: `1px solid ${tierColor}50`,
-                      borderRadius: '4px',
-                    }}>
-                      <span style={{ fontSize: '0.7rem' }}>📦</span>
-                      <span style={{ color: tierColor, fontSize: '0.62rem', fontWeight: '800' }}>{heldItem.name}</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem' }}>
+                      {heldItems.map((heldItem, hi) => {
+                        const tierColor = heldItem.isQuestItem ? '#fde68a' : ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[heldItem.tier] || '#9ca3af');
+                        return (
+                          <div key={hi} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                            padding: '0.15rem 0.45rem',
+                            background: `${tierColor}18`,
+                            border: `1px solid ${tierColor}50`,
+                            borderRadius: '4px',
+                          }}>
+                            <span style={{ fontSize: '0.7rem' }}>{heldItem.isQuestItem ? '🗝️' : '📦'}</span>
+                            <span style={{ color: tierColor, fontSize: '0.62rem', fontWeight: '800' }}>{heldItem.name}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -559,7 +571,14 @@ const PlayerCard = ({
                   <div style={{ color: tierColor, fontWeight: '800', fontSize: '0.82rem', marginBottom: '0.1rem' }}>{item.name}</div>
                   {item.description && <div style={{ color: '#6b7280', fontSize: '0.7rem' }}>{item.description}</div>}
                   <div style={{ color: '#4b5563', fontSize: '0.62rem', marginTop: '0.1rem' }}>
-                    held by {item.heldBy === 'commander' ? 'Commander' : (player.subUnits?.find(u => (u.unitType || '') === item.heldBy)?.name || item.heldBy)}
+                    held by {item.heldBy === 'commander'
+                      ? (player.commanderStats?.customName || player.commander || 'Commander')
+                      : (() => {
+                          if (item.heldBy === 'special') return player.subUnits?.[0]?.name?.trim() || 'Special';
+                          const idx = parseInt((item.heldBy || '').replace('soldier', ''));
+                          if (!isNaN(idx)) return player.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`;
+                          return item.heldBy;
+                        })()}
                     {item.effect?.uses !== 0 && usesLeft !== Infinity && ` · ${usesLeft} use${usesLeft !== 1 ? 's' : ''} left`}
                   </div>
                 </div>

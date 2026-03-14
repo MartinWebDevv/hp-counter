@@ -18,6 +18,7 @@ const NPCCard = ({
   onHPChange,
   onTriggerPhase,
   onOpenNPCAttack,
+  onIncrementAttack,
   players = [],
   onDropLoot,
 }) => {
@@ -273,8 +274,37 @@ const NPCCard = ({
           letterSpacing: '0.1em',
           textTransform: 'uppercase',
           marginBottom: '0.75rem',
+          display: 'flex', alignItems: 'center',
         }}>
           ⚔️ Attacks
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto' }}>
+            <span style={{ color: '#6b7280', fontSize: '0.7rem', fontWeight: '700', letterSpacing: '0.05em' }}>TIMES ATTACKED:</span>
+            <span style={{
+              minWidth: '28px', textAlign: 'center',
+              color: (npc.attackCount || 0) > 0 ? '#f59e0b' : '#4b5563',
+              fontWeight: '900', fontSize: '0.95rem',
+            }}>{npc.attackCount || 0}</span>
+            <button
+              onClick={() => onIncrementAttack && onIncrementAttack(npc.id)}
+              style={{
+                padding: '0.2rem 0.55rem',
+                background: 'rgba(245,158,11,0.15)',
+                border: '1px solid rgba(245,158,11,0.4)',
+                borderRadius: '5px', cursor: 'pointer',
+                color: '#f59e0b', fontWeight: '900', fontSize: '0.8rem',
+                fontFamily: 'inherit', lineHeight: 1,
+              }}>+1</button>
+            <button
+              onClick={() => onIncrementAttack && onIncrementAttack(npc.id, true)}
+              style={{
+                padding: '0.2rem 0.45rem',
+                background: 'rgba(75,85,99,0.2)',
+                border: '1px solid rgba(75,85,99,0.4)',
+                borderRadius: '5px', cursor: 'pointer',
+                color: '#6b7280', fontWeight: '900', fontSize: '0.7rem',
+                fontFamily: 'inherit', lineHeight: 1,
+              }}>↺</button>
+          </div>
         </div>
 
         {npc.attacks?.map((attack, i) => (

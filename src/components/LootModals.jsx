@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getSlotCount, getHeldCount, unitIsFull } from './lootUtils';
 
 const gold = '#c9a961';
 
@@ -9,23 +10,6 @@ const TIER_COLORS = {
   Quest:     { border: 'rgba(234,179,8,0.6)',   text: '#fde68a', bg: 'rgba(234,179,8,0.1)'    },
 };
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
-
-export const getSlotCount = (p, unitType) => {
-  if (!p) return 1;
-  const extra = (p.inventory || []).filter(
-    it => it.heldBy === unitType && it.effect?.type === 'extraSlot'
-  ).length;
-  return 1 + extra;
-};
-
-export const getHeldCount = (p, unitType) => {
-  if (!p) return 0;
-  // Quest items don't count toward slots
-  return (p.inventory || []).filter(it => it.heldBy === unitType && !it.isQuestItem).length;
-};
-
-export const unitIsFull = (p, unitType) => getHeldCount(p, unitType) >= getSlotCount(p, unitType);
 
 const getAllUnits = (player) => {
   if (!player) return [];
@@ -89,15 +73,23 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
 
   const player = initPlayer || (players || []).find(p => p.id === parseInt(selectedPlayerId));
   const allAssigned = assignments.every(a => a !== null);
+  const getUnitType = (a) => (typeof a === 'object' && a !== null) ? a.unitType : a;
+  const getDroppedId = (a) => (typeof a === 'object' && a !== null) ? a.droppedItemId : null;
 
   const handleConfirm = () => {
-    const result = lootTable.map((item, i) => ({ ...item, heldBy: assignments[i] }));
+    const result = lootTable.map((item, i) => ({
+      ...item,
+      heldBy: getUnitType(assignments[i]),
+      droppedItemId: getDroppedId(assignments[i]),
+    }));
     onConfirm(result);
   };
 
   const assign = (itemIndex, unitType) => {
-    setAssignments(prev => { const next = [...prev]; next[itemIndex] = unitType; return next; });
-    setExpandedItem(null); // collapse after picking
+    const isSwap = !lootTable[itemIndex]?.isQuestItem && unitIsFull(player, unitType);
+    const dropped = isSwap ? (player?.inventory || []).find(it => it.heldBy === unitType && !it.isQuestItem) : null;
+    setAssignments(prev => { const next = [...prev]; next[itemIndex] = { unitType, droppedItemId: dropped?.id || null }; return next; });
+    setExpandedItem(null);
   };
 
   return (
@@ -176,7 +168,7 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
                   {item.isQuestItem && <span style={{ padding: '0.1rem 0.35rem', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: '4px', color: '#fde68a', fontSize: '0.58rem', fontWeight: '800' }}>QUEST</span>}
                 </div>
                 <div style={{ color: assigned ? '#4ade80' : '#6b7280', fontSize: '0.75rem', flexShrink: 0 }}>
-                  {assigned ? `✓ ${assigned === 'commander' ? 'Commander' : assigned}` : (player ? (isOpen ? '▲' : '▼ Assign') : '—')}
+                  {assigned ? `✓ ${getUnitType(assigned) === 'commander' ? player?.commanderStats?.customName || player?.commander || 'Commander' : (player?.subUnits?.find(u => u.unitType === getUnitType(assigned))?.name || getUnitType(assigned))}` : (player ? (isOpen ? '▲' : '▼ Assign') : '—')}
                 </div>
               </div>
 
@@ -193,26 +185,38 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
                   </div>
                   {units.map(u => {
                     const full = !item.isQuestItem && unitIsFull(player, u.unitType);
-                    const disabled = u.isDead || full;
+                    const disabled = u.isDead;
+                    const isSwap = full && !u.isDead;
+                    const currentItem = isSwap
+                      ? (player.inventory || []).find(it => it.heldBy === u.unitType && !it.isQuestItem)
+                      : null;
                     return (
-                      <div key={u.unitType} onClick={() => !disabled && assign(i, u.unitType)} style={{
-                        display: 'flex', alignItems: 'center', gap: '0.65rem',
-                        padding: '0.5rem 0.75rem', marginBottom: '0.3rem',
-                        background: disabled ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.4)',
-                        border: `1px solid ${disabled ? 'rgba(55,65,81,0.4)' : 'rgba(201,169,97,0.25)'}`,
-                        borderRadius: '6px', cursor: disabled ? 'not-allowed' : 'pointer',
-                        opacity: disabled ? 0.45 : 1,
-                      }}>
-                        <span style={{ color: disabled ? '#4b5563' : '#9ca3af', fontWeight: '800', fontSize: '0.8rem', flex: 1 }}>
-                          {u.label}
-                        </span>
-                        {/* HP bar */}
-                        <div style={{ width: '50px', height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
-                          <div style={{ width: `${u.maxHp > 0 ? (u.hp / u.maxHp) * 100 : 0}%`, height: '100%', background: u.isDead ? '#374151' : '#22c55e', borderRadius: '2px' }} />
+                      <div key={u.unitType}>
+                        <div onClick={() => !disabled && assign(i, u.unitType)} style={{
+                          display: 'flex', alignItems: 'center', gap: '0.65rem',
+                          padding: '0.5rem 0.75rem', marginBottom: currentItem ? '0' : '0.3rem',
+                          background: disabled ? 'rgba(0,0,0,0.2)' : isSwap ? 'rgba(249,115,22,0.07)' : 'rgba(0,0,0,0.4)',
+                          border: `1px solid ${disabled ? 'rgba(55,65,81,0.4)' : isSwap ? 'rgba(249,115,22,0.4)' : 'rgba(201,169,97,0.25)'}`,
+                          borderRadius: currentItem ? '6px 6px 0 0' : '6px',
+                          cursor: disabled ? 'not-allowed' : 'pointer',
+                          opacity: disabled ? 0.45 : 1,
+                        }}>
+                          <span style={{ color: disabled ? '#4b5563' : isSwap ? '#f97316' : '#9ca3af', fontWeight: '800', fontSize: '0.8rem', flex: 1 }}>
+                            {u.label}
+                          </span>
+                          <div style={{ width: '50px', height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ width: `${u.maxHp > 0 ? (u.hp / u.maxHp) * 100 : 0}%`, height: '100%', background: u.isDead ? '#374151' : '#22c55e', borderRadius: '2px' }} />
+                          </div>
+                          <span style={{ color: '#4b5563', fontSize: '0.62rem', minWidth: '32px', textAlign: 'right' }}>{u.hp}/{u.maxHp}</span>
+                          {isSwap && <span style={{ color: '#f97316', fontSize: '0.58rem', fontWeight: '800' }}>↕ SWAP</span>}
+                          {u.isDead && <span style={{ color: '#6b7280', fontSize: '0.58rem', fontWeight: '800' }}>DEAD</span>}
                         </div>
-                        <span style={{ color: '#4b5563', fontSize: '0.62rem', minWidth: '32px', textAlign: 'right' }}>{u.hp}/{u.maxHp}</span>
-                        {full && <span style={{ color: '#ef4444', fontSize: '0.58rem', fontWeight: '800' }}>FULL</span>}
-                        {u.isDead && <span style={{ color: '#6b7280', fontSize: '0.58rem', fontWeight: '800' }}>DEAD</span>}
+                        {currentItem && (
+                          <div style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.3)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.3rem 0.75rem', marginBottom: '0.3rem' }}>
+                            <span style={{ color: '#9ca3af', fontSize: '0.62rem' }}>Drops: </span>
+                            <span style={{ color: '#fbbf24', fontSize: '0.62rem', fontWeight: '800' }}>{currentItem.name}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -30,7 +30,7 @@ const CalculatorD20 = ({
   const gold = '#c9a961';
 
   // Defender player (PvP only — NPC targets have no inventory)
-  const defender = players.find(p => p.id === (calculatorData.targetId?.playerId ?? calculatorData.targetId));
+  const defender = players.find(p => p.id === calculatorData.targetId);
 
   // Helper: scan a player's full inventory for a given effect type
   const scanInventory = (player, effectType) => {
@@ -52,6 +52,14 @@ const CalculatorD20 = ({
   // Defender side — defender's own reroll OR attacker forcing defender reroll
   const defenderRerollItems    = scanInventory(defender, 'rerollDefense');      // defender uses own item
   const forceDefenseRerollItems = scanInventory(attacker, 'forceDefenseReroll'); // attacker forces defender reroll
+
+  // Dice swap — either player can hold this; only usable when both rolls are entered
+  const attackerSwapItems = scanInventory(attacker, 'diceSwap');
+  const defenderSwapItems = scanInventory(defender, 'diceSwap');
+  const allSwapItems = [
+    ...attackerSwapItems.map(it => ({ ...it, owner: attacker, ownerLabel: 'Attacker' })),
+    ...defenderSwapItems.map(it => ({ ...it, owner: defender, ownerLabel: 'Defender' })),
+  ];
 
   // Get the attacking unit's pending bonuses
   const attackingUnit = calculatorData.attackingUnitType === 'commander'
@@ -189,7 +197,7 @@ const CalculatorD20 = ({
     }
     
     const baseRoll = isSpecialBonus ? atkRoll + 1 : atkRoll;
-    const finalAtkRoll = (firstStrike && calculatorData.targetNPCId ? baseRoll + 2 : baseRoll) + activeAttackBonus;
+    const finalAtkRoll = (firstStrike ? baseRoll + 2 : baseRoll) + activeAttackBonus;
 
     // Apply NPC armor floor to defense roll
     const targetNPC = calculatorData.targetNPCId
@@ -236,7 +244,7 @@ const CalculatorD20 = ({
       effectiveDefenderRoll: effectiveDef,
       damage,
       isSpecial: isSpecialBonus,
-      isFirstStrike: firstStrike && !!calculatorData.targetNPCId,
+      isFirstStrike: firstStrike,
       armorFloored: targetNPCForRoll && effectiveDef > rawDef,
     };
     
@@ -312,6 +320,21 @@ const CalculatorD20 = ({
     onUpdatePlayer(owner.id, { inventory: newInventory });
     clearRoll('');
   };
+  // Consume a diceSwap item and swap the two current roll inputs
+  const consumeDiceSwap = (item, owner) => {
+    if (!attackerRoll || !defenderRoll) return;
+    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
+    const consumed = newUsesRemaining <= 0;
+    const newInventory = (owner.inventory || [])
+      .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
+      .filter(it => it.id !== item.id ? true : !consumed);
+    onUpdatePlayer(owner.id, { inventory: newInventory });
+    // Swap the values
+    const tmp = attackerRoll;
+    setAttackerRoll(defenderRoll);
+    setDefenderRoll(tmp);
+  };
+
   const allRollsComplete = attackRolls.length === numAttacks;
 
   return (
@@ -999,10 +1022,7 @@ const CalculatorD20 = ({
                           }}>
                           {item.label}
                           <span style={{ color: '#6b7280', fontWeight: '600', marginLeft: '0.4rem' }}>
-                            · {item.name}
-                          </span>
-                          <span style={{ color: '#4b5563', fontWeight: '600', marginLeft: '0.3rem' }}>
-                            [{item.owner?.playerName} / {item.heldBy}] · {item.usesLeft === Infinity ? '∞' : item.usesLeft} left
+                            ({item.usesLeft === Infinity ? '∞' : item.usesLeft} left)
                           </span>
                         </button>
                       ))}
@@ -1030,6 +1050,28 @@ const CalculatorD20 = ({
                 />
               </div>
 
+              {/* Dice Swap buttons — shown when both rolls are entered */}
+              {allSwapItems.length > 0 && attackerRoll && defenderRoll && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', margin: '0.5rem 0' }}>
+                  {allSwapItems.map(item => (
+                    <button key={item.id} onClick={() => consumeDiceSwap(item, item.owner)}
+                      style={{
+                        width: '100%', padding: '0.45rem',
+                        background: 'rgba(99,102,241,0.1)',
+                        border: '2px solid rgba(99,102,241,0.5)',
+                        borderRadius: '7px', cursor: 'pointer',
+                        color: '#a5b4fc', fontFamily: 'inherit',
+                        fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.05em',
+                      }}>
+                      ⇅ SWAP DICE ROLLS
+                      <span style={{ color: '#4b5563', fontWeight: '600', marginLeft: '0.3rem' }}>
+                        ({item.ownerLabel}'s item · {item.usesLeft === Infinity ? '∞' : item.usesLeft} left)
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div>
                 <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Defender Roll ({defenderDice}):
@@ -1055,10 +1097,7 @@ const CalculatorD20 = ({
                           }}>
                           {item.label}
                           <span style={{ color: '#6b7280', fontWeight: '600', marginLeft: '0.4rem' }}>
-                            · {item.name}
-                          </span>
-                          <span style={{ color: '#4b5563', fontWeight: '600', marginLeft: '0.3rem' }}>
-                            [{item.owner?.playerName} / {item.heldBy}] · {item.usesLeft === Infinity ? '∞' : item.usesLeft} left
+                            ({item.usesLeft === Infinity ? '∞' : item.usesLeft} left)
                           </span>
                         </button>
                       ))}

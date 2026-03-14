@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getSlotCount, getHeldCount, unitIsFull } from './lootUtils';
 
 const gold = '#c9a961';
 
@@ -17,6 +18,7 @@ const EFFECT_TYPES = [
   { value: 'extraSlot',          label: '🎒 Extra Carrying Slot' },
   { value: 'key',                label: '🔑 Key' },
   { value: 'destroyItem',        label: '💥 Destroy Enemy Item' },
+  { value: 'diceSwap',           label: '⇅ Swap Dice Rolls' },
 ];
 
 const TIER_COLORS = {
@@ -202,25 +204,6 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
   const player = players.find(p => p.id === parseInt(selectedPlayerId));
   const canConfirm = selectedPlayerId && selectedUnitType;
 
-  // Returns how many slots a unit has (base 1, +1 per extraSlot item held)
-  const getSlotCount = (p, unitType) => {
-    if (!p) return 1;
-    const extraSlots = (p.inventory || []).filter(
-      it => it.heldBy === unitType && it.effect?.type === 'extraSlot'
-    ).length;
-    return 1 + extraSlots;
-  };
-
-  // Returns how many items a unit is currently holding (quest items don't count)
-  const getHeldCount = (p, unitType) => {
-    if (!p) return 0;
-    return (p.inventory || []).filter(it => it.heldBy === unitType && !it.isQuestItem).length;
-  };
-
-  const unitIsFull = (p, unitType) => {
-    return getHeldCount(p, unitType) >= getSlotCount(p, unitType);
-  };
-
   return (
     <div onClick={onClose} style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -252,59 +235,71 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
         </div>
 
         {/* Unit */}
-        {player && (
-          <div style={{ marginBottom: '1.25rem' }}>
-            <label style={labelStyle}>Assign to Unit</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-              {(() => {
-                const full = unitIsFull(player, 'commander');
-                return (
-                  <div
-                    onClick={() => !full && setSelectedUnitType('commander')}
-                    style={{
-                      ...unitRow(selectedUnitType === 'commander', gold),
-                      opacity: full ? 0.4 : 1,
-                      cursor: full ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    ⚔️ {player.commanderStats?.customName || player.commander || 'Commander'}
-                    {full && <span style={{ color: '#ef4444', fontSize: '0.62rem', fontWeight: '800', marginLeft: '0.5rem' }}>FULL</span>}
+        {player && (() => {
+          // Build unit list with full/swap state
+          const allUnits = [
+            { unitType: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander' },
+            ...(player.subUnits || []).map((u, idx) => ({
+              unitType: idx === 0 ? 'special' : `soldier${idx}`,
+              label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`),
+            })),
+          ];
+          const isSwap = selectedUnitType && !item.isQuestItem && unitIsFull(player, selectedUnitType);
+          const currentItem = selectedUnitType
+            ? (player.inventory || []).find(it => it.heldBy === selectedUnitType && !it.isQuestItem)
+            : null;
+
+          return (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={labelStyle}>Assign to Unit</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginBottom: '0.75rem' }}>
+                {allUnits.map(({ unitType: ut, label }) => {
+                  const full = !item.isQuestItem && unitIsFull(player, ut);
+                  const selected = selectedUnitType === ut;
+                  return (
+                    <div key={ut} onClick={() => setSelectedUnitType(ut)} style={{
+                      ...unitRow(selected, full ? '#f97316' : gold),
+                      cursor: 'pointer',
+                      border: `2px solid ${selected ? (full ? '#f97316' : gold) : full ? 'rgba(249,115,22,0.3)' : 'rgba(90,74,58,0.3)'}`,
+                    }}>
+                      <span style={{ flex: 1, color: selected ? (full ? '#f97316' : gold) : '#9ca3af', fontWeight: '800', fontSize: '0.82rem' }}>{label}</span>
+                      {full && !selected && <span style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800' }}>FULL — SWAP?</span>}
+                      {full && selected && <span style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800' }}>↕ SWAP</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Swap warning */}
+              {isSwap && currentItem && (
+                <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '0.5rem' }}>
+                  <div style={{ color: '#f97316', fontSize: '0.68rem', fontWeight: '900', marginBottom: '0.2rem' }}>⚠️ SWAP — unit is full</div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.68rem' }}>
+                    Drop <span style={{ color: '#fbbf24', fontWeight: '800' }}>{currentItem.name}</span> and take <span style={{ color: '#fbbf24', fontWeight: '800' }}>{item.name}</span>?
                   </div>
-                );
-              })()}
-              {player.subUnits?.map((unit, idx) => {
-                const ut = idx === 0 ? 'special' : `soldier${idx}`;
-                const label = unit.name?.trim() ? unit.name : (idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`);
-                const full = unitIsFull(player, ut);
-                return (
-                  <div
-                    key={idx}
-                    onClick={() => !full && setSelectedUnitType(ut)}
-                    style={{
-                      ...unitRow(selectedUnitType === ut, '#a78bfa'),
-                      opacity: full ? 0.4 : 1,
-                      cursor: full ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {label}
-                    {full && <span style={{ color: '#ef4444', fontSize: '0.62rem', fontWeight: '800', marginLeft: '0.5rem' }}>FULL</span>}
-                  </div>
-                );
-              })}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button disabled={!canConfirm} onClick={() => canConfirm && onConfirm(parseInt(selectedPlayerId), selectedUnitType)}
-            style={{
-              flex: 1, padding: '0.75rem',
-              background: canConfirm ? 'linear-gradient(135deg, #059669, #047857)' : '#1a0f0a',
-              border: '2px solid', borderColor: canConfirm ? '#10b981' : '#374151',
-              color: canConfirm ? '#d1fae5' : '#4a3322', borderRadius: '8px',
-              cursor: canConfirm ? 'pointer' : 'not-allowed',
-              fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem',
-            }}>✓ Give</button>
+          <button disabled={!canConfirm} onClick={() => {
+            if (!canConfirm) return;
+            const pid = parseInt(selectedPlayerId);
+            const isSwap = !item.isQuestItem && unitIsFull(player, selectedUnitType);
+            const droppedItem = isSwap
+              ? (player.inventory || []).find(it => it.heldBy === selectedUnitType && !it.isQuestItem)
+              : null;
+            onConfirm(pid, selectedUnitType, droppedItem || null);
+          }} style={{
+            flex: 1, padding: '0.75rem',
+            background: canConfirm ? 'linear-gradient(135deg, #059669, #047857)' : '#1a0f0a',
+            border: '2px solid', borderColor: canConfirm ? '#10b981' : '#374151',
+            color: canConfirm ? '#d1fae5' : '#4a3322', borderRadius: '8px',
+            cursor: canConfirm ? 'pointer' : 'not-allowed',
+            fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem',
+          }}>{canConfirm && !item.isQuestItem && unitIsFull(player, selectedUnitType) ? '↕ Swap' : '✓ Give'}</button>
           <button onClick={onClose} style={{
             flex: 1, padding: '0.75rem',
             background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',

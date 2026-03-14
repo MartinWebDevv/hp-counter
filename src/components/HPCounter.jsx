@@ -15,6 +15,7 @@ import SquadReviveModal from "./SquadReviveModal";
 import DMPanel from "./DMPanel";
 import LootPanel from "./LootPanel";
 import ChestPanel from "./ChestPanel";
+import VictoryPanel from "./VictoryPanel";
 import { getModeConfig } from "../data/gameModes";
 
 const HPCounter = () => {
@@ -46,7 +47,7 @@ const HPCounter = () => {
     processSquadRevive,
     lootPool,
     setLootPool,
-    resetCombat,
+    startNewSession,
   } = useGameState();
 
   // ── Chest state ────────────────────────────────────────────────────────────
@@ -56,6 +57,53 @@ const HPCounter = () => {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+  // ── Session tracking ─────────────────────────────────────────────────────
+  const [sessionCount, setSessionCount] = React.useState(() => {
+    try { return parseInt(localStorage.getItem('hpCounterSessionCount') || '0'); } catch { return 0; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem('hpCounterSessionCount', String(sessionCount)); } catch {}
+  }, [sessionCount]);
+
+  const [awardShowcase, setAwardShowcase] = React.useState(null); // { awards: [], index: 0, sessionName }
+  const [endSessionModal, setEndSessionModal] = React.useState(false);
+  const [sessionNameInput, setSessionNameInput] = React.useState('');
+  const [manualStatsModal, setManualStatsModal] = React.useState(null); // { players, stats, sessionName }
+  const [firstBloodAwarded, setFirstBloodAwarded] = React.useState(false);
+
+  // ── Victory Points state ─────────────────────────────────────────────────
+  const [vpStats, setVpStats] = React.useState(() => {
+    try { const s = localStorage.getItem('hpCounterVPStats'); return s ? JSON.parse(s) : {}; }
+    catch { return {}; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem('hpCounterVPStats', JSON.stringify(vpStats)); }
+    catch (e) { console.error('Error saving vpStats:', e); }
+  }, [vpStats]);
+
+  // Track stat — merges into vpStats[playerId]
+  const trackVP = (playerId, statKey, delta) => {
+    setVpStats(prev => ({
+      ...prev,
+      [playerId]: {
+        ...( prev[playerId] || {}),
+        [statKey]: ((prev[playerId]?.[statKey]) || 0) + delta,
+      },
+    }));
+  };
+
+  const awardVPPoints = (playerId, points, reason, categoryId) => {
+    setVpStats(prev => ({
+      ...prev,
+      [playerId]: {
+        ...(prev[playerId] || {}),
+        manualAwards: [...(prev[playerId]?.manualAwards || []), { points, reason, categoryId, awardedAt: new Date().toISOString() }],
+      },
+    }));
+    const player = players.find(p => p.id == playerId);
+    addLog(`🏅 ${player?.playerName || 'Player'} awarded ${points} VP — ${reason}`);
+  };
+
   React.useEffect(() => {
     try { localStorage.setItem('hpCounterChests', JSON.stringify(chests)); }
     catch (e) { console.error('Error saving chests:', e); }
@@ -83,9 +131,16 @@ const HPCounter = () => {
     triggerNextPhase,
     getNPCById,
     setNpcs,
+    resetAllNPCs,
   } = useNPCState(addLog, (killedNPC) => {
     const attackingPlayer = players.find(p => p.id === lastAttackerIdRef.current) || null;
-    setNpcLootClaim({ npc: killedNPC, player: attackingPlayer });
+    if (killedNPC.lootTable?.length > 0 || !killedNPC.isFinalBoss) {
+      if (killedNPC.lootTable?.length > 0) setNpcLootClaim({ npc: killedNPC, player: attackingPlayer });
+    }
+    if (killedNPC.isFinalBoss && attackingPlayer) {
+      trackVP(attackingPlayer.id, 'finalBossKill', 1);
+      addLog(`👑 ${attackingPlayer.playerName} dealt the killing blow to ${killedNPC.name}!`);
+    }
   });
 
   // ── Campaign turn rotation ─────────────────────────────────────────────────
@@ -136,7 +191,7 @@ const HPCounter = () => {
     setShowDamageDistribution,
     setCalculatorData,
     applyDamage,
-  } = useDamageCalculation(players, addLog);
+  } = useDamageCalculation(players, addLog, npcs);
 
   // ── NPC Attack (NPC → Player) calculator ─────────────────────────────────
   const [npcAttackData, setNpcAttackData] = React.useState(null);
@@ -210,13 +265,20 @@ const HPCounter = () => {
 
     updatedPlayers.forEach(p => updatePlayer(p.id, p));
 
+    // Track damageTaken VP for each player hit by NPC
+    (npcAttackData.targetSquadMembers || []).forEach(target => {
+      const dmg = npcDamageDistribution[`${target.playerId}-${target.unitType}`] || 0;
+      if (dmg > 0) trackVP(target.playerId, 'damageTaken', dmg);
+    });
+
     const npc = getNPCById(npcAttackData.npcId);
     const targets = (npcAttackData.targetSquadMembers || [])
       .filter(t => npcDamageDistribution[`${t.playerId}-${t.unitType}`] > 0)
       .map(t => {
         const tp = players.find(p => p.id === t.playerId);
         const dmg = npcDamageDistribution[`${t.playerId}-${t.unitType}`];
-        return `${tp?.playerName || 'Unknown'}'s ${t.unitType} (${dmg}hp)`;
+        const unitName = unitNameByType(tp, t.unitType);
+        return `${tp?.playerName || 'Unknown'}'s ${unitName} for ${dmg}hp`;
       }).join(', ');
 
     addLog(`👾 "${npc?.name}" used "${npcAttackData.attack?.name}" → ${targets}`);
@@ -351,16 +413,37 @@ const HPCounter = () => {
 
   const unitDisplayName = (player, heldBy) => {
     if (!heldBy) return 'unassigned';
-    if (heldBy === 'commander') return 'Commander';
+    if (heldBy === 'commander') return player.commanderStats?.customName || player.commander || 'Commander';
     return player.subUnits?.find(u => u.unitType === heldBy)?.name || heldBy;
+  };
+
+  // Helper: get a unit's display name from player + unitType string
+  const unitNameByType = (player, unitType) => {
+    if (!unitType || unitType === 'commander') return player?.commanderStats?.customName || player?.commander || 'Commander';
+    if (unitType === 'special') return player?.subUnits?.[0]?.name || 'Special';
+    const idx = parseInt(unitType.replace('soldier', ''));
+    return player?.subUnits?.[idx]?.name || `Unit ${idx}`;
   };
 
   const handleConfirmNpcLoot = (assignedItems) => {
     if (!npcLootClaim) return;
     const { player } = npcLootClaim;
+    const droppedIds = assignedItems.map(it => it.droppedItemId).filter(Boolean);
     const newItems = assignedItems.map(buildLootItem);
-    updatePlayer(player.id, { inventory: [...(player.inventory || []), ...newItems] });
-    newItems.forEach(it => addLog(`📦 ${player.playerName}'s ${unitDisplayName(player, it.heldBy)} received: ${it.name}`));
+    let inv = (player.inventory || []).filter(it => !droppedIds.includes(it.id));
+    inv = [...inv, ...newItems];
+    updatePlayer(player.id, { inventory: inv });
+    newItems.forEach(it => {
+      const unitLabel = unitNameByType(player, it.heldBy);
+      const dropped = droppedIds.length ? assignedItems.find(a => a.droppedItemId && a.heldBy === it.heldBy) : null;
+      if (dropped?.droppedItemId) {
+        const droppedName = (player.inventory || []).find(i => i.id === dropped.droppedItemId)?.name || 'item';
+        addLog(`↕ ${player.playerName}'s ${unitLabel} swapped "${droppedName}" for "${it.name}"`);
+      } else {
+        addLog(`📦 ${player.playerName}'s ${unitLabel} received: ${it.name}`);
+      }
+    });
+    trackVP(player.id, 'itemsObtained', newItems.length);
     setNpcLootClaim(null);
   };
 
@@ -407,7 +490,7 @@ const HPCounter = () => {
     const item = (targetPlayer.inventory || []).find(it => it.id === itemId);
     if (!item) return;
     updatePlayer(targetPlayer.id, { inventory: (targetPlayer.inventory || []).filter(it => it.id !== itemId) });
-    addLog(`💥 "${item.name}" was destroyed from ${targetPlayer.playerName}'s ${item.heldBy}`);
+    addLog(`💥 "${item.name}" was destroyed from ${targetPlayer.playerName}'s ${unitDisplayName(targetPlayer, item.heldBy)}`);
     setDestroyModal(null);
   };
 
@@ -432,6 +515,7 @@ const HPCounter = () => {
   const handleConfirmChestLoot = (assignedItems) => {
     if (!chestLootClaim) return;
     const { player, requiredKeyName } = chestLootClaim;
+    const droppedIds = assignedItems.map(it => it.droppedItemId).filter(Boolean);
     const newItems = assignedItems.map(buildLootItem);
     // Remove key from inventory and add new items in one update
     let baseInventory = player.inventory || [];
@@ -444,7 +528,7 @@ const HPCounter = () => {
     setChestLootClaim(null);
   };
 
-  const handleDropLoot = (item, playerId, unitType) => {
+  const handleDropLoot = (item, playerId, unitType, droppedItem = null) => {
     const player = players.find(p => p.id === playerId);
     if (!player) return;
     const lootItem = {
@@ -454,14 +538,136 @@ const HPCounter = () => {
       tier: item.tier,
       effect: item.effect,
       heldBy: unitType,
+      isQuestItem: item.isQuestItem || false,
     };
-    updatePlayer(playerId, { inventory: [...(player.inventory || []), lootItem] });
-    const unitLabel = unitType === 'commander' ? 'Commander' : unitType;
-    addLog(`🎁 ${player.playerName}'s ${unitLabel} received: ${item.name}`);
+    const unitLabel = unitNameByType(player, unitType);
+    let newInventory = [...(player.inventory || []), lootItem];
+    if (droppedItem) {
+      newInventory = newInventory.filter(it => it.id !== droppedItem.id);
+      addLog(`↕ ${player.playerName}'s ${unitLabel} swapped "${droppedItem.name}" for "${item.name}"`);
+    } else {
+      addLog(`🎁 ${player.playerName}'s ${unitLabel} received: ${item.name}`);
+    }
+    updatePlayer(playerId, { inventory: newInventory });
+    if (!item.isQuestItem) trackVP(playerId, 'itemsObtained', 1);
   };
   const handleSquadRevive = (playerId, isSuccessful) => {
     processSquadRevive(playerId, isSuccessful);
+    trackVP(playerId, 'revivesUsed', 1);
     handleCloseSquadRevive();
+  };
+
+
+
+  // ── Core awards engine — works on any players+vpStats snapshot ──────────────
+  const AWARD_CATS = [
+    { id: 'npcDamage',       label: 'Monster Hunter',    icon: '🐉', pts: 1, statKey: 'npcDamage',       higher: true  },
+    { id: 'pvpDamage',       label: 'The Reaper',       icon: '⚔️',  pts: 1, statKey: 'pvpDamage',      higher: true  },
+    { id: 'damageTaken',     label: 'Punching Bag',        icon: '🛡️',  pts: 1, statKey: 'damageTaken',    higher: true  },
+    { id: 'leastDamageTaken',label: 'Ghost Protocol',   icon: '🧊', pts: 1, statKey: 'damageTaken',    higher: false },
+    { id: 'leastDeaths',     label: 'Least Deaths',       icon: '💪', pts: 1, statKey: 'revivesUsed',    higher: false },
+    { id: 'immortal',        label: 'Immortal',           icon: '✨', pts: 2, statKey: 'revivesUsed',    higher: false, zeroOnly: true },
+    { id: 'itemsObtained',   label: 'Scavenger',    icon: '📦', pts: 1, statKey: 'itemsObtained',   higher: true  },
+    { id: 'finalBossKill',   label: 'Kingslayer',       icon: '👑', pts: 2, statKey: 'finalBossKill',  higher: true  },
+    { id: 'firstBlood',      label: 'First Blood',      icon: '🩸', pts: 1, statKey: 'firstBlood',     higher: true  },
+    { id: 'warmonger',       label: 'Warmonger',        icon: '⚡', pts: 1, statKey: 'warmonger',      higher: true  },
+  ];
+
+  const runAwardsFromData = (sourcePlayers, sourceVpStats, sessionName) => {
+    const awards = [];
+    const newVpStats = JSON.parse(JSON.stringify(vpStats)); // copy of CURRENT tracker vpStats
+
+    AWARD_CATS.forEach(cat => {
+      const scores = sourcePlayers.map(p => {
+        const s = sourceVpStats[p.id] || {};
+        const val = s[cat.statKey] || 0;
+        return { player: p, val };
+      });
+      if (scores.length === 0) return;
+
+      // Immortal: award every player with zero revives (not just the "best")
+      if (cat.zeroOnly) {
+        scores.filter(s => s.val === 0).forEach(({ player }) => {
+          awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: 0, sessionName });
+          const pid = player.id;
+          if (!newVpStats[pid]) newVpStats[pid] = {};
+          if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
+          newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value: 0, awardedAt: new Date().toISOString() });
+        });
+        return;
+      }
+
+      const top = cat.higher
+        ? Math.max(...scores.map(s => s.val))
+        : Math.min(...scores.map(s => s.val));
+      if (cat.higher && top <= 0) return;
+      if (!cat.higher && scores.every(s => s.val === 0)) return;
+
+      scores.filter(s => s.val === top).forEach(({ player }) => {
+        awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: top, sessionName });
+        const pid = player.id;
+        if (!newVpStats[pid]) newVpStats[pid] = {};
+        if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
+        newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value: top, awardedAt: new Date().toISOString() });
+      });
+    });
+
+    // Manual awards from sourceVpStats
+    sourcePlayers.forEach(p => {
+      (sourceVpStats[p.id]?.manualAwards || []).forEach(a => {
+        awards.push({ categoryId: a.categoryId, label: a.reason, icon: '🏅', pts: a.points, playerId: p.id, playerName: p.playerName, playerColor: p.playerColor, value: a.points, sessionName, isManual: true });
+        const pid = p.id;
+        if (!newVpStats[pid]) newVpStats[pid] = {};
+        if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
+        newVpStats[pid].sessionAwards.push({ categoryId: a.categoryId, label: a.reason, icon: '🏅', pts: a.points, sessionName, awardedAt: a.awardedAt || new Date().toISOString() });
+      });
+    });
+
+    setVpStats(newVpStats);
+    setSessionCount(prev => prev + 1);
+    setEndSessionModal(false);
+    setSessionNameInput('');
+
+    if (awards.length === 0) {
+      alert('No tracked stats to award — try entering stats manually.');
+      return;
+    }
+    setAwardShowcase({ awards, index: 0, sessionName });
+  };
+
+  // Called when DM loads an old save file — checks if vpStats exist, else opens manual entry
+  const handleEndSessionFromFile = (state, fileName) => {
+    const sessionName = sessionNameInput.trim() || fileName.replace('.json', '') || 'Imported Session';
+    const importedVpStats = state.vpStats || {};
+    const importedPlayers = state.players || [];
+
+    // Check if any player has any tracked stat
+    const hasAnyStats = importedPlayers.some(p => {
+      const s = importedVpStats[p.id] || {};
+      return (s.npcDamage || 0) + (s.pvpDamage || 0) + (s.damageTaken || 0) + (s.revivesUsed || 0) + (s.finalBossKill || 0) + (s.warmonger || 0) > 0;
+    });
+
+    setEndSessionModal(false);
+    setSessionNameInput('');
+
+    if (hasAnyStats) {
+      // Has data — run awards directly
+      runAwardsFromData(importedPlayers, importedVpStats, sessionName);
+    } else {
+      // No VP data — open manual entry form
+      const initStats = {};
+      importedPlayers.forEach(p => { initStats[p.id] = {}; });
+      setManualStatsModal({ players: importedPlayers, stats: initStats, sessionName });
+    }
+  };
+
+
+
+  // ── End Session — compute awards and open showcase ───────────────────────
+
+  const handleEndSession = () => {
+    const name = sessionNameInput.trim() || 'Unnamed Session';
+    runAwardsFromData(players, vpStats, name);
   };
 
   // ── Save / Load ────────────────────────────────────────────────────────────
@@ -470,7 +676,7 @@ const HPCounter = () => {
       players, currentRound, combatLog, gameMode,
       customModeSettings, currentPlayerIndex,
       playersWhoActedThisRound, gameStarted,
-      npcs, lootPool, chests,
+      npcs, lootPool, chests, vpStats,
       savedAt: new Date().toISOString()
     };
     const blob = new Blob([JSON.stringify(gameState, null, 2)], { type: 'application/json' });
@@ -500,6 +706,7 @@ const HPCounter = () => {
           if (state.npcs) setNpcs(state.npcs);
           if (state.lootPool) setLootPool(state.lootPool);
           if (state.chests) setChests(state.chests);
+          if (state.vpStats) setVpStats(state.vpStats);
           addLog(`Game loaded from ${new Date(state.savedAt).toLocaleString()}`);
           alert('Game loaded successfully!');
         } catch {
@@ -623,6 +830,7 @@ const HPCounter = () => {
               localStorage.removeItem('hpCounterLootPool');
               localStorage.removeItem('hpCounterNPCs');
               localStorage.removeItem('hpCounterChests');
+              localStorage.removeItem('hpCounterVPStats');
               window.location.reload();
             }
           }} style={styles.resetBtn}>🔄 RESET</button>
@@ -635,11 +843,32 @@ const HPCounter = () => {
           <LogPanel battleLog={combatLog} onClearLog={clearLog} />
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button onClick={() => setEndSessionModal(true)} style={{
+            ...styles.resetCombatBtn,
+            background: 'rgba(251,191,36,0.1)',
+            border: '1px solid rgba(251,191,36,0.4)',
+            color: '#fbbf24',
+          }}>🏆 End Session</button>
           <button onClick={() => {
-            if (window.confirm('Reset Combat? All units will be restored to full HP and revives. Loot, NPCs, and chests are kept.')) {
-              resetCombat();
+            if (window.confirm('Start New Session? All player and NPC HP/revives reset. Loot and chests are preserved.')) {
+              startNewSession(resetAllNPCs);
+              // Reset all live VP trackers back to 0 (session awards history preserved)
+              setVpStats(prev => {
+                const next = { ...prev };
+                Object.keys(next).forEach(id => {
+                  next[id] = {
+                    ...next[id],
+                    npcDamage: 0, pvpDamage: 0, damageTaken: 0,
+                    revivesUsed: 0, finalBossKill: 0, warmonger: 0,
+                    firstBlood: 0, itemsObtained: 0,
+                  };
+                });
+                return next;
+              });
+              setFirstBloodAwarded(false);
+    setFirstBloodAwarded(false);
             }
-          }} style={styles.resetCombatBtn}>🔄 Reset Combat</button>
+          }} style={styles.resetCombatBtn}>🔄 New Session</button>
           <button onClick={saveGameToFile} style={styles.saveBtn}>💾 SAVE</button>
           <button onClick={loadGameFromFile} style={styles.loadBtn}>📂 LOAD</button>
         </div>
@@ -755,6 +984,26 @@ const HPCounter = () => {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>{chests.filter(c => !c.isOpened).length}</span>
               )}
+            </button>
+            <button
+              onClick={() => setActivePanel('vp')}
+              style={{
+                padding: '0.85rem 1.75rem',
+                background: activePanel === 'vp'
+                  ? 'linear-gradient(135deg, #1e3a8a, #1e40af)'
+                  : 'transparent',
+                border: 'none',
+                color: activePanel === 'vp' ? '#93c5fd' : '#6b7280',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: '800',
+                fontSize: '1rem',
+                letterSpacing: '0.05em',
+                transition: 'all 0.2s',
+                boxShadow: activePanel === 'vp' ? '0 4px 12px rgba(59,130,246,0.2)' : 'none',
+              }}
+            >
+              🏆 Victory
             </button>
           </div>
         </div>
@@ -910,7 +1159,10 @@ const HPCounter = () => {
                     onUpdate={updatePlayer}
                     onRemove={removePlayer}
                     onToggleSquad={toggleSquad}
-                    onOpenCalculator={openCalculator}
+                    onOpenCalculator={(attackerId, action, unitType) => {
+                      if (attackerId) trackVP(attackerId, 'warmonger', 1);
+                      openCalculator(attackerId, action, unitType);
+                    }}
                     onUseRevive={useRevive}
                     onOpenSquadRevive={handleOpenSquadRevive}
                     allPlayers={players}
@@ -953,6 +1205,18 @@ const HPCounter = () => {
         )}
 
         {/* ── DM Panel (campaign only) ── */}
+        {isCampaign && activePanel === 'vp' && (
+          <div style={{ flex: 1 }}>
+            <VictoryPanel
+              players={players}
+              vpStats={vpStats}
+              onAwardPoints={(playerId, points, reason, categoryId) => {
+                awardVPPoints(playerId, points, reason, categoryId);
+              }}
+            />
+          </div>
+        )}
+
         {isCampaign && activePanel === 'dm' && (
           <div style={{ flex: 1 }}>
             <DMPanel
@@ -976,6 +1240,9 @@ const HPCounter = () => {
               onOpenNPCAttack={openNPCAttack}
               getNPCById={getNPCById}
               currentTurnId={currentCampaignNPCId}
+              onIncrementAttack={(npcId, reset) => {
+                setNpcs(prev => prev.map(n => n.id !== npcId ? n : { ...n, attackCount: reset ? 0 : (n.attackCount || 0) + 1 }));
+              }}
               npcsWhoActedThisRound={npcsWhoActedThisRound}
               players={players}
               onDropLoot={handleDropLoot}
@@ -1029,6 +1296,27 @@ const HPCounter = () => {
           onUpdateDistribution={updateDamageDistribution}
           onApply={() => {
             applyDamage((updatedPlayers) => {
+              // Track VP stats from damage
+              const calc = calculatorData;
+              const attackerId = calc?.attackerId;
+              if (attackerId) {
+                // Check if any damage will land — for firstBlood
+                const anyPlayerDmg = (calc?.targetSquadMembers || []).some(t => !t.isNPC && (damageDistribution[`${t.playerId}-${t.unitType}`] || 0) > 0);
+                const anyNPCDmg = (calc?.targetSquadMembers || []).some(t => t.isNPC && (damageDistribution[`npc-${t.npcId}`] || 0) > 0);
+                if ((anyPlayerDmg || anyNPCDmg) && !firstBloodAwarded) {
+                  trackVP(attackerId, 'firstBlood', 1);
+                  setFirstBloodAwarded(true);
+                  addLog(`🩸 First Blood! ${players.find(p => p.id === attackerId)?.playerName || 'Unknown'} draws first!`);
+                }
+                calc?.targetSquadMembers?.forEach(target => {
+                  const dmgKey = `${target.playerId}-${target.unitType}`;
+                  const dmg = damageDistribution[dmgKey] || 0;
+                  if (dmg > 0) {
+                    trackVP(attackerId, 'pvpDamage', dmg);
+                    trackVP(target.playerId, 'damageTaken', dmg);
+                  }
+                });
+              }
               // Detect newly killed player units — check for steal
               updatedPlayers.forEach(updatedP => {
                 const originalP = players.find(p => p.id === updatedP.id);
@@ -1049,12 +1337,17 @@ const HPCounter = () => {
               updatedPlayers.forEach(p => updatePlayer(p.id, p));
               // Also apply NPC damage if any targeted NPCs
               if (calculatorData?.targetSquadMembers) {
+                const attacker = players.find(p => p.id === calculatorData?.attackerId);
+                const attackerPlayerName = attacker?.playerName || 'Unknown';
+                const attackerUnitType = calculatorData?.attackingUnitType || 'commander';
+                const attackerUnitName = unitNameByType(attacker, attackerUnitType);
                 calculatorData.targetSquadMembers.forEach(t => {
                   if (t.isNPC) {
                     const dmg = damageDistribution[`npc-${t.npcId}`] || 0;
                     if (dmg > 0) {
                       lastAttackerIdRef.current = calculatorData?.attackerId ?? null;
-                      applyDamageToNPC(t.npcId, dmg);
+                      applyDamageToNPC(t.npcId, dmg, attackerPlayerName, attackerUnitName);
+                      if (calculatorData?.attackerId) trackVP(calculatorData.attackerId, 'npcDamage', dmg);
                     }
                   }
                 });
@@ -1168,6 +1461,166 @@ const HPCounter = () => {
           onConfirm={confirmActivation}
         />
       )}
+
+      {/* ── End Session Name Modal ── */}
+      {endSessionModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ background: '#1a0f0a', border: '2px solid rgba(251,191,36,0.5)', borderRadius: '12px', padding: '1.5rem', width: '100%', maxWidth: '480px' }}>
+            <div style={{ color: '#fbbf24', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em', marginBottom: '0.25rem' }}>🏆 END SESSION</div>
+            <div style={{ color: '#6b7280', fontSize: '0.75rem', marginBottom: '1rem' }}>Give this session a name, then calculate awards from the current tracker state or a save file.</div>
+            <input
+              style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(201,169,97,0.4)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#e5d5b5', fontFamily: 'inherit', fontSize: '0.9rem', width: '100%', outline: 'none', marginBottom: '1rem', boxSizing: 'border-box' }}
+              value={sessionNameInput}
+              onChange={e => setSessionNameInput(e.target.value)}
+              placeholder="e.g. The Sleeping Giant"
+              onKeyDown={e => e.key === 'Enter' && handleEndSession()}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <button onClick={handleEndSession} style={{ flex: 2, padding: '0.65rem', background: 'linear-gradient(135deg, #92400e, #78350f)', border: '2px solid #fbbf24', borderRadius: '8px', color: '#fbbf24', fontWeight: '900', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.85rem' }}>
+                ⚡ Use Current Stats
+              </button>
+              <button onClick={() => {
+                const inp = document.createElement('input');
+                inp.type = 'file'; inp.accept = '.json';
+                inp.onchange = (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    try {
+                      const state = JSON.parse(ev.target.result);
+                      if (!state.players || !Array.isArray(state.players)) { alert('Invalid save file!'); return; }
+                      handleEndSessionFromFile(state, file.name);
+                    } catch { alert('Failed to read save file.'); }
+                  };
+                  reader.readAsText(file);
+                };
+                inp.click();
+              }} style={{ flex: 1, padding: '0.65rem', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(201,169,97,0.3)', borderRadius: '8px', color: '#c9a961', fontWeight: '800', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.78rem' }}>
+                📂 From File
+              </button>
+            </div>
+            <button onClick={() => { setEndSessionModal(false); setSessionNameInput(''); }} style={{ width: '100%', padding: '0.5rem', background: 'transparent', border: 'none', color: '#4b5563', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.78rem' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Manual Stats Entry Modal (for old save files with no vpStats) ── */}
+      {manualStatsModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 2001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ background: '#1a0f0a', border: '2px solid rgba(251,191,36,0.5)', borderRadius: '12px', padding: '1.5rem', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ color: '#fbbf24', fontWeight: '900', fontSize: '1rem', marginBottom: '0.25rem' }}>📋 ENTER SESSION STATS</div>
+            <div style={{ color: '#6b7280', fontSize: '0.72rem', marginBottom: '1.25rem' }}>
+              No VP data found in that save file. Enter what you remember for each player — leave blank for 0.
+            </div>
+            {(manualStatsModal.players || []).map(p => (
+              <div key={p.id} style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${p.playerColor || '#555'}40`, borderRadius: '8px', padding: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ color: p.playerColor || '#c9a961', fontWeight: '800', fontSize: '0.85rem', marginBottom: '0.6rem' }}>{p.playerName}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                  {[
+                    { key: 'npcDamage',    label: '🐉 Monster Hunter — NPC Damage' },
+                    { key: 'pvpDamage',    label: '⚔️ The Reaper — PvP Damage' },
+                    { key: 'damageTaken',  label: '🛡️ Punching Bag / 🧊 Ghost Protocol — Damage Taken' },
+                    { key: 'revivesUsed',  label: '💪 Least Deaths / ✨ Immortal — Times Revived (0 = Immortal)' },
+                    { key: 'finalBossKill',label: '👑 Kingslayer — Boss Kill (0 or 1)' },
+                    { key: 'warmonger',    label: '⚡ Warmonger — Attacks Initiated' },
+                    { key: 'firstBlood',   label: '🩸 First Blood — First Hit (0 or 1)' },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <div style={{ color: '#6b7280', fontSize: '0.6rem', fontWeight: '700', marginBottom: '2px' }}>{f.label}</div>
+                      <input
+                        type="number" min="0"
+                        style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(201,169,97,0.25)', borderRadius: '6px', padding: '0.3rem 0.5rem', color: '#e5d5b5', fontFamily: 'inherit', fontSize: '0.8rem', width: '100%', outline: 'none', boxSizing: 'border-box' }}
+                        value={(manualStatsModal.stats[p.id]?.[f.key]) ?? ''}
+                        onChange={e => setManualStatsModal(prev => ({
+                          ...prev,
+                          stats: { ...prev.stats, [p.id]: { ...(prev.stats[p.id] || {}), [f.key]: e.target.value === '' ? '' : Number(e.target.value) } }
+                        }))}
+                        placeholder="0"
+                      />
+                    </div>
+                  ))}
+                  <div>
+                    <div style={{ color: '#6b7280', fontSize: '0.6rem', fontWeight: '700', marginBottom: '2px' }}>📦 Items</div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(201,169,97,0.15)', borderRadius: '6px', padding: '0.3rem 0.5rem', color: '#9ca3af', fontSize: '0.8rem' }}>
+                      {(p.inventory || []).length} (auto)
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <button onClick={() => setManualStatsModal(null)} style={{ flex: 1, padding: '0.65rem', background: 'transparent', border: '1px solid rgba(90,74,58,0.4)', borderRadius: '8px', color: '#6b7280', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={() => {
+                const ms = manualStatsModal;
+                const builtVpStats = {};
+                ms.players.forEach(p => {
+                  const s = ms.stats[p.id] || {};
+                  builtVpStats[p.id] = {
+                    npcDamage:    Number(s.npcDamage)    || 0,
+                    pvpDamage:    Number(s.pvpDamage)    || 0,
+                    damageTaken:  Number(s.damageTaken)  || 0,
+                    revivesUsed:  Number(s.revivesUsed)  || 0,
+                    finalBossKill:Number(s.finalBossKill)|| 0,
+                    warmonger:    Number(s.warmonger)    || 0,
+                    firstBlood:   Number(s.firstBlood)   || 0,
+                  };
+                });
+                runAwardsFromData(ms.players, builtVpStats, ms.sessionName);
+                setManualStatsModal(null);
+              }} style={{ flex: 2, padding: '0.65rem', background: 'linear-gradient(135deg, #92400e, #78350f)', border: '2px solid #fbbf24', borderRadius: '8px', color: '#fbbf24', fontWeight: '900', cursor: 'pointer', fontFamily: 'inherit' }}>
+                Calculate Awards →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Award Showcase Modal ── */}
+      {awardShowcase && (() => {
+        const { awards, index, sessionName } = awardShowcase;
+        const award = awards[index];
+        const isLast = index === awards.length - 1;
+        const isFirst = index === 0;
+        const valLabel = () => {
+          if (award.isManual) return award.label;
+          if (award.categoryId === 'itemsObtained')    return `${award.value} items obtained`;
+          if (award.categoryId === 'leastDeaths')       return `only ${award.value} revives used`;
+          if (award.categoryId === 'immortal')          return 'not a single death all session';
+          if (award.categoryId === 'leastDamageTaken')  return `only ${award.value} damage taken`;
+          if (award.categoryId === 'finalBossKill')     return 'delivered the killing blow';
+          if (award.categoryId === 'firstBlood')        return 'drew first blood this session';
+          if (award.categoryId === 'warmonger')         return `initiated ${award.value} attacks`;
+          return `${award.value} damage dealt`;
+        };
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 2002, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+            <div style={{ background: '#1a0f0a', border: '3px solid rgba(251,191,36,0.7)', borderRadius: '16px', padding: '2rem 1.5rem', width: '100%', maxWidth: '440px', textAlign: 'center' }}>
+              <div style={{ color: '#6b7280', fontSize: '0.62rem', fontWeight: '800', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '1.75rem' }}>
+                {sessionName} · Award {index + 1} of {awards.length}
+              </div>
+              <div style={{ fontSize: '5rem', marginBottom: '0.75rem', lineHeight: 1 }}>{award.icon}</div>
+              <div style={{ color: '#9ca3af', fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{award.label}</div>
+              <div style={{ color: award.playerColor || '#c9a961', fontWeight: '900', fontSize: '2rem', marginBottom: '0.4rem', textShadow: `0 0 20px ${award.playerColor || '#c9a961'}66` }}>
+                {award.playerName}
+              </div>
+              <div style={{ color: '#6b7280', fontSize: '0.8rem', marginBottom: '1.5rem' }}>{valLabel()}</div>
+              <div style={{ display: 'inline-block', padding: '0.5rem 2rem', background: 'rgba(251,191,36,0.12)', border: '2px solid rgba(251,191,36,0.5)', borderRadius: '10px', color: '#fbbf24', fontWeight: '900', fontSize: '1.75rem', letterSpacing: '0.05em', marginBottom: '2rem' }}>
+                +{award.pts} VP
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button disabled={isFirst} onClick={() => setAwardShowcase(prev => ({ ...prev, index: prev.index - 1 }))}
+                  style={{ flex: 1, padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: `1px solid ${isFirst ? 'transparent' : 'rgba(90,74,58,0.4)'}`, borderRadius: '8px', color: isFirst ? '#1f2937' : '#9ca3af', fontWeight: '800', cursor: isFirst ? 'default' : 'pointer', fontFamily: 'inherit' }}>← Prev</button>
+                {isLast
+                  ? <button onClick={() => setAwardShowcase(null)} style={{ flex: 2, padding: '0.75rem', background: 'linear-gradient(135deg, #065f46, #047857)', border: '2px solid #10b981', borderRadius: '8px', color: '#d1fae5', fontWeight: '900', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.95rem' }}>✓ Finish</button>
+                  : <button onClick={() => setAwardShowcase(prev => ({ ...prev, index: prev.index + 1 }))} style={{ flex: 2, padding: '0.75rem', background: 'linear-gradient(135deg, #92400e, #78350f)', border: '2px solid #fbbf24', borderRadius: '8px', color: '#fbbf24', fontWeight: '900', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.95rem' }}>Next →</button>
+                }
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

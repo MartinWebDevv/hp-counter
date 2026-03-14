@@ -230,9 +230,9 @@ export const useGameState = () => {
     if (player) {
       if (isSuccessful) {
         const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
-        addLog(`${player.playerName}'s commander revived with ${newMaxHP}hp (new max)!`);
+        addLog(`${player.playerName}'s ${player.commanderStats?.customName || player.commander || 'Commander'} revived with ${newMaxHP}hp (new max)!`);
       } else {
-        addLog(`${player.playerName}'s commander failed to revive - eliminated from game!`);
+        addLog(`${player.playerName}'s ${player.commanderStats?.customName || player.commander || 'Commander'} failed to revive — eliminated from the game!`);
       }
     }
   };
@@ -302,11 +302,11 @@ export const useGameState = () => {
           reviveQueue: newQueue,
         };
 
-        addLog(`✅ ${player.playerName}'s ${unit.name || `Unit ${unitIndex}`} revived with ${restoredHP}hp! (immune this round)`);
+        addLog(`✅ ${player.playerName}'s ${unit.name || `Unit ${unitIndex + 1}`} revived with ${restoredHP}hp! (immune this round)`);
         return updatedPlayer;
       } else {
         // Fail: stays in queue, no life lost
-        addLog(`❌ ${player.playerName}'s ${unit.name || `Unit ${unitIndex}`} failed to revive - still in queue.`);
+        addLog(`❌ ${player.playerName}'s ${unit.name || `Unit ${unitIndex + 1}`} failed to revive — still in queue.`);
         return player; // No change
       }
     }));
@@ -508,9 +508,10 @@ export const useGameState = () => {
     setGameStarted(gameState.gameStarted || false);
   };
 
-  const resetCombat = () => {
+  const startNewSession = (resetNPCsFn) => {
     const modeConfig = getModeValues();
     const soldierLives = getSoldierLives();
+    // Reset all player HP, revives, queues — keep inventory/loot
     setPlayers(prev => prev.map(player => ({
       ...player,
       selectedUnit: 'commander',
@@ -537,7 +538,9 @@ export const useGameState = () => {
     setCurrentPlayerIndex(0);
     setPlayersWhoActedThisRound([]);
     setGameStarted(false);
-    addLog('⚔️ Combat reset — all units restored to full HP and revives.');
+    // NPC reset handled by caller (useNPCState)
+    if (resetNPCsFn) resetNPCsFn();
+    addLog('🔄 New session started — all units restored. Loot and chests preserved.');
   };
 
   return {
@@ -567,7 +570,7 @@ export const useGameState = () => {
     lootPool,
     setLootPool,
     resetGame,
-    resetCombat,
+    startNewSession,
     loadGameState,
     processSquadRevive,
     checkSquadWipe,

@@ -4,7 +4,7 @@ import { calculateTotalAvailableDamage } from "../utils/statsUtils";
 /**
  * Custom hook for managing damage calculation and distribution
  */
-export const useDamageCalculation = (players, addLog) => {
+export const useDamageCalculation = (players, addLog, npcs = []) => {
   const [showCalculator, setShowCalculator] = useState(false);
   const [showDamageDistribution, setShowDamageDistribution] = useState(false);
   const [calculatorData, setCalculatorData] = useState(null);
@@ -30,6 +30,7 @@ export const useDamageCalculation = (players, addLog) => {
       soloHits: 0,
       targetSquadMembers: [],
       targetIsSquad: false,
+      npcs,
     });
     setShowCalculator(true);
   };
@@ -176,12 +177,12 @@ export const useDamageCalculation = (players, addLog) => {
     
     let attackerName = '';
     if (calculatorData.attackingUnitType === 'commander') {
-      attackerName = attacker?.commanderCustomName || attacker?.commander || 'Commander';
+      attackerName = attacker?.commanderStats?.customName || attacker?.commander || 'Commander';
     } else if (calculatorData.attackingUnitType === 'special') {
-      attackerName = attacker?.subUnits[0]?.name || 'Special Unit';
+      attackerName = attacker?.subUnits?.[0]?.name || 'Special';
     } else {
       const soldierIndex = parseInt(calculatorData.attackingUnitType.replace('soldier', ''));
-      attackerName = attacker?.subUnits[soldierIndex]?.name || `Soldier ${soldierIndex}`;
+      attackerName = attacker?.subUnits?.[soldierIndex]?.name || `Unit ${soldierIndex}`;
     }
 
     const actionVerb =
@@ -191,27 +192,38 @@ export const useDamageCalculation = (players, addLog) => {
           ? "attacked"
           : "used special weapon on";
 
-    const targetDetails = calculatorData.targetSquadMembers
-      .filter((m) => damageDistribution[`${m.playerId}-${m.unitType}`] > 0)
-      .map((m) => {
+    // Build target details — handles both player and NPC targets
+    const allTargetDetails = [];
+
+    // Player targets
+    calculatorData.targetSquadMembers
+      .filter((m) => !m.isNPC && damageDistribution[`${m.playerId}-${m.unitType}`] > 0)
+      .forEach((m) => {
         const target = players.find((p) => p.id === m.playerId);
         const damage = damageDistribution[`${m.playerId}-${m.unitType}`];
-        
         let unitName = '';
         if (m.unitType === 'commander') {
-          unitName = target?.commanderCustomName || target?.commander || 'Commander';
+          unitName = target?.commanderStats?.customName || target?.commander || 'Commander';
         } else if (m.unitType === 'special') {
-          unitName = target?.subUnits[0]?.name || 'Special Unit';
+          unitName = target?.subUnits?.[0]?.name || 'Special';
         } else {
           const soldierIndex = parseInt(m.unitType.replace('soldier', ''));
-          unitName = target?.subUnits[soldierIndex]?.name || `Soldier ${soldierIndex}`;
+          unitName = target?.subUnits?.[soldierIndex]?.name || `Unit ${soldierIndex}`;
         }
-        
-        return `${target?.playerName || "Unknown"}'s ${unitName} (${damage}hp)`;
-      })
-      .join(", ");
+        allTargetDetails.push(`${target?.playerName || 'Unknown'}'s ${unitName} for ${damage}hp`);
+      });
 
-    addLog(`${attacker?.playerName || "Unknown"}'s ${attackerName} ${actionVerb} ${targetDetails}`);
+    // NPC targets
+    calculatorData.targetSquadMembers
+      .filter((m) => m.isNPC && damageDistribution[`npc-${m.npcId}`] > 0)
+      .forEach((m) => {
+        const npc = (calculatorData.npcs || []).find(n => n.id === m.npcId);
+        const damage = damageDistribution[`npc-${m.npcId}`];
+        allTargetDetails.push(`${npc?.name || 'NPC'} for ${damage}hp`);
+      });
+
+    const targetDetails = allTargetDetails.join(', ') || 'no targets';
+    addLog(`${attacker?.playerName || 'Unknown'}'s ${attackerName} ${actionVerb} ${targetDetails}`);
 
     closeCalculator();
   };

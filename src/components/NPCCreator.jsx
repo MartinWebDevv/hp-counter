@@ -24,6 +24,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
     phases: initialNPC.phases || [],
     hasPhases: initialNPC.hasPhases || false,
     lootTable: initialNPC.lootTable || [],
+    isFinalBoss: initialNPC.isFinalBoss || false,
   }));
 
   // ── Field helpers ────────────────────────────────────────────────────────
@@ -443,6 +444,31 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
               </button>
             </>
           )}
+        </div>
+
+        {/* ── Final Boss Toggle ── */}
+        <div onClick={() => set('isFinalBoss', !npc.isFinalBoss)} style={{
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+          padding: '0.6rem 0.85rem', marginBottom: '0.75rem',
+          background: npc.isFinalBoss ? 'rgba(220,38,38,0.12)' : 'rgba(0,0,0,0.25)',
+          border: `2px solid ${npc.isFinalBoss ? 'rgba(220,38,38,0.6)' : 'rgba(90,74,58,0.3)'}`,
+          borderRadius: '8px', cursor: 'pointer',
+        }}>
+          <div style={{
+            width: '16px', height: '16px', borderRadius: '3px', flexShrink: 0,
+            border: `2px solid ${npc.isFinalBoss ? '#ef4444' : '#4b5563'}`,
+            background: npc.isFinalBoss ? '#ef4444' : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.6rem', color: '#fff', fontWeight: '900',
+          }}>{npc.isFinalBoss && '✓'}</div>
+          <div>
+            <div style={{ color: npc.isFinalBoss ? '#fca5a5' : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>
+              👑 Final Boss
+            </div>
+            <div style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '600' }}>
+              Killing blow awards Final Boss Kill VP to the attacker
+            </div>
+          </div>
         </div>
 
         {/* ── Loot Table ── */}

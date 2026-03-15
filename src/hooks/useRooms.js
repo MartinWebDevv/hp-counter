@@ -190,6 +190,7 @@ export const useRooms = () => {
 
   return {
     rooms,
+    setRooms,
     visibleRooms,
     activeRooms,
     showRoomCreator,

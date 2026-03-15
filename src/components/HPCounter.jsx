@@ -189,7 +189,7 @@ const HPCounter = () => {
 
   // ── Save / Load ───────────────────────────────────────────────────────────
   const saveGameToFile = () => {
-    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, chests, vpStats: vp.vpStats, savedAt: new Date().toISOString() };
+    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, chests, vpStats: vp.vpStats, rooms: roomsState.rooms, savedAt: new Date().toISOString() };
     const blob  = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url   = URL.createObjectURL(blob);
     const a     = document.createElement('a');
@@ -212,6 +212,10 @@ const HPCounter = () => {
           if (state.lootPool) setLootPool(state.lootPool);
           if (state.chests)   setChests(state.chests);
           if (state.vpStats)  vp.setVpStats(state.vpStats);
+          if (state.rooms) {
+            roomsState.setRooms(state.rooms);
+            try { localStorage.setItem('hpCounterRooms', JSON.stringify(state.rooms)); } catch {}
+          }
           addLog(`Game loaded from ${new Date(state.savedAt).toLocaleString()}`);
           alert('Game loaded successfully!');
         } catch { alert('Failed to load save file.'); }

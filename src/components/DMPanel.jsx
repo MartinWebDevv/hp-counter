@@ -187,20 +187,20 @@ const DMPanel = ({
                   <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: npc.id in squadSelected ? '#7c3aed' : 'rgba(0,0,0,0.6)', border: `3px solid ${npc.id in squadSelected ? '#e9d5ff' : 'rgba(124,58,237,0.5)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e9d5ff', fontWeight: '900', fontSize: '0.9rem', marginBottom: npc.id in squadSelected ? '0.5rem' : 0 }}>
                     {npc.id in squadSelected ? '✓' : '+'}
                   </div>
-                  {npc.id in squadSelected && npc.attacks?.length > 1 && (
+                  {npc.id in squadSelected && (npc.attacks || []).filter(a => (a.attackType || 'attack') === 'attack').length > 1 && (
                     <div onClick={e => e.stopPropagation()} style={{ width: '100%' }}>
                       <div style={{ color: '#c4b5fd', fontSize: '0.62rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.3rem', textAlign: 'center' }}>Attack</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'center' }}>
-                        {npc.attacks.map((atk, i) => (
-                          <button key={i} onClick={() => setSquadAttackIndex(npc.id, i)} style={{ padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.62rem', cursor: 'pointer', background: squadSelected[npc.id] === i ? 'rgba(167,139,250,0.3)' : 'rgba(0,0,0,0.5)', border: `1px solid ${squadSelected[npc.id] === i ? '#a78bfa' : 'rgba(124,58,237,0.3)'}`, color: squadSelected[npc.id] === i ? '#e9d5ff' : '#7c3aed' }}>
+                        {npc.attacks.map((atk, realIdx) => (atk.attackType || 'attack') !== 'attack' ? null : (
+                          <button key={realIdx} onClick={() => setSquadAttackIndex(npc.id, realIdx)} style={{ padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.62rem', cursor: 'pointer', background: squadSelected[npc.id] === realIdx ? 'rgba(167,139,250,0.3)' : 'rgba(0,0,0,0.5)', border: `1px solid ${squadSelected[npc.id] === realIdx ? '#a78bfa' : 'rgba(124,58,237,0.3)'}`, color: squadSelected[npc.id] === realIdx ? '#e9d5ff' : '#7c3aed' }}>
                             {atk.name}
                           </button>
                         ))}
                       </div>
                     </div>
                   )}
-                  {npc.id in squadSelected && npc.attacks?.length === 1 && (
-                    <div style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '700' }}>{npc.attacks[0].name}</div>
+                  {npc.id in squadSelected && (npc.attacks || []).filter(a => (a.attackType || 'attack') === 'attack').length === 1 && (
+                    <div style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '700' }}>{(npc.attacks || []).find(a => (a.attackType || 'attack') === 'attack')?.name}</div>
                   )}
                 </div>
               )}

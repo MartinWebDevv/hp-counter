@@ -94,8 +94,32 @@ const HPCounter = () => {
     applyDamageToNPC, setNPCHP, triggerNextPhase, getNPCById, setNpcs, resetAllNPCs,
   } = useNPCState(addLog, (killedNPC) => {
     const attackingPlayer = players.find(p => p.id === lastAttackerIdRef.current) || null;
-    if (killedNPC.lootTable?.length > 0 && npcLootClaimSetterRef.current) {
-      npcLootClaimSetterRef.current({ npc: killedNPC, player: attackingPlayer });
+    const hasLoot = killedNPC.lootMode === 'weighted'
+      ? (killedNPC.lootItemCount || 1) > 0
+      : (killedNPC.lootTable?.length > 0);
+    if (hasLoot && npcLootClaimSetterRef.current) {
+      let resolvedLootTable = killedNPC.lootTable || [];
+      if (killedNPC.lootMode === 'weighted') {
+        const available = lootPool.filter(i => !i.isQuestItem && i.effect?.type !== 'key');
+        const weights = killedNPC.lootTierWeights || { Common: 60, Rare: 30, Legendary: 10 };
+        const tiers = ['Common', 'Rare', 'Legendary'];
+        const total = tiers.reduce((s, t) => s + (weights[t] || 0), 0);
+        const count = killedNPC.lootItemCount || 1;
+        resolvedLootTable = [];
+        if (total > 0 && available.length > 0) {
+          for (let i = 0; i < count; i++) {
+            let rand = Math.random() * total;
+            let tier = 'Common';
+            for (const t of tiers) { rand -= (weights[t] || 0); if (rand <= 0) { tier = t; break; } }
+            const pool = available.filter(it => it.tier === tier);
+            const src = pool.length > 0 ? pool : available;
+            resolvedLootTable.push(src[Math.floor(Math.random() * src.length)]);
+          }
+        }
+      }
+      if (resolvedLootTable.length > 0) {
+        npcLootClaimSetterRef.current({ npc: { ...killedNPC, lootTable: resolvedLootTable }, player: attackingPlayer });
+      }
     }
     if (killedNPC.isFinalBoss && attackingPlayer) {
       vp.trackVP(attackingPlayer.id, 'finalBossKill', 1);
@@ -673,7 +697,7 @@ const NPCCalculator = ({ npcAttackData, players, onClose, onProceed }) => {
   const npcName         = isSquad ? currentMember?.npcName : npcAttackData.npcName;
   const numRolls        = attack?.numRolls || 1;
   const dieType         = attack?.dieType || 'd20';
-  const dieMax          = dieType === 'd20' ? 20 : 10;
+  const dieMax          = dieType === 'd20' ? 20 : dieType === 'd10' ? 10 : dieType === 'd6' ? 6 : 4;
 
   const activeRolls     = isSquad ? currentMemberRolls : rolls;
   const allDoneForCurrent = activeRolls.length >= numRolls;

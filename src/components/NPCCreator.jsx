@@ -4,6 +4,8 @@ const gold = '#c9a961';
 const dark = '#1a0f0a';
 const darker = '#0f0805';
 
+const TIER_WEIGHTS_DEFAULT = { Common: 60, Rare: 30, Legendary: 10 };
+
 const TIER_COLORS_NPC = {
   Common:    { border: 'rgba(156,163,175,0.5)', text: '#9ca3af', bg: 'rgba(156,163,175,0.08)' },
   Rare:      { border: 'rgba(139,92,246,0.5)',  text: '#a78bfa', bg: 'rgba(139,92,246,0.08)'  },
@@ -24,6 +26,9 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
     phases: initialNPC.phases || [],
     hasPhases: initialNPC.hasPhases || false,
     lootTable: initialNPC.lootTable || [],
+    lootMode: initialNPC.lootMode || 'preloaded',   // 'preloaded' | 'weighted'
+    lootItemCount: initialNPC.lootItemCount || 1,
+    lootTierWeights: initialNPC.lootTierWeights || { Common: 60, Rare: 30, Legendary: 10 },
     isFinalBoss: initialNPC.isFinalBoss || false,
   }));
 
@@ -99,6 +104,11 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
     lootTable: (prev.lootTable || []).filter(it => it.id !== id),
   }));
 
+  const setLootWeight = (tier, value) => setNpc(prev => ({
+    ...prev,
+    lootTierWeights: { ...(prev.lootTierWeights || TIER_WEIGHTS_DEFAULT), [tier]: Math.max(0, parseInt(value) || 0) },
+  }));
+
   const setPhaseField = (phaseIndex, field, value) => {
     setNpc(prev => {
       const phases = prev.phases.map((p, i) =>
@@ -150,16 +160,18 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
     if (npc.armor < 0) return 'Armor cannot be negative.';
     for (let i = 0; i < npc.attacks.length; i++) {
       if (!npc.attacks[i].name.trim()) return `Attack ${i + 1} needs a name.`;
-      if (!npc.attacks[i].numRolls || npc.attacks[i].numRolls < 1) return `Attack ${i + 1} needs at least 1 roll.`;
+      if ((npc.attacks[i].attackType || 'attack') === 'attack' && (!npc.attacks[i].numRolls || npc.attacks[i].numRolls < 1)) return `Attack ${i + 1} needs at least 1 roll.`;
     }
     if (npc.hasPhases) {
       for (let i = 0; i < npc.phases.length; i++) {
         const p = npc.phases[i];
-        if (p.triggerHP === '' || p.triggerHP === null || p.triggerHP === undefined) {
-          return `Phase ${i + 2} needs a trigger HP.`;
-        }
-        if (parseInt(p.triggerHP) === 0 && (!p.resurrectHP || p.resurrectHP < 1)) {
-          return `Phase ${i + 2} triggers at 0 HP — please set a resurrection HP.`;
+        if ((p.triggerType || 'hp') === 'hp') {
+          if (p.triggerHP === '' || p.triggerHP === null || p.triggerHP === undefined) {
+            return `Phase ${i + 2} needs a trigger HP.`;
+          }
+          if (parseInt(p.triggerHP) === 0 && (!p.resurrectHP || p.resurrectHP < 1)) {
+            return `Phase ${i + 2} triggers at 0 HP — please set a resurrection HP.`;
+          }
         }
         for (let j = 0; j < p.attacks.length; j++) {
           if (!p.attacks[j].name.trim()) return `Phase ${i + 2}, Attack ${j + 1} needs a name.`;
@@ -176,22 +188,34 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
     onSave({
       ...npc,
       hp,
+      lootMode: npc.lootMode || 'preloaded',
+      lootItemCount: parseInt(npc.lootItemCount) || 1,
+      lootTierWeights: npc.lootTierWeights || TIER_WEIGHTS_DEFAULT,
       maxHp: hp,
       armor: parseInt(npc.armor) || 0,
       attackBonus: parseInt(npc.attackBonus) || 0,
       attacks: npc.attacks.map(a => ({
         ...a,
-        numRolls: parseInt(a.numRolls) || 1,
+        attackType: a.attackType || 'attack',
+        numRolls: (a.attackType || 'attack') === 'attack' ? (parseInt(a.numRolls) || 1) : 0,
+        spawnText: a.spawnText || '',
+        description: a.description || '',
       })),
       phases: npc.hasPhases ? npc.phases.map(p => ({
         ...p,
-        triggerHP: parseInt(p.triggerHP) || 0,
+        triggerType: p.triggerType || 'hp',
+        triggerHP: (p.triggerType || 'hp') === 'manual' ? -1 : (parseInt(p.triggerHP) || 0),
         resurrectHP: p.resurrectHP ? parseInt(p.resurrectHP) : null,
         armor: p.armor !== '' && p.armor !== null ? parseInt(p.armor) : null,
         attackBonus: p.attackBonus !== '' && p.attackBonus !== null ? parseInt(p.attackBonus) : null,
         attacks: p.attacks.map(a => ({
           ...a,
-          numRolls: parseInt(a.numRolls) || 1,
+          attackType: a.attackType || 'attack',
+          numRolls: (a.attackType || 'attack') === 'attack' ? (parseInt(a.numRolls) || 1) : 0,
+          spawnText: a.spawnText || '',
+          spawnDieType: a.spawnDieType || '',
+          spawnNumRolls: parseInt(a.spawnNumRolls) || 1,
+          description: a.description || '',
         })),
       })) : [],
     });
@@ -476,11 +500,22 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(201,169,97,0.2)',
           borderRadius: '8px', padding: '1rem', marginBottom: '1rem',
         }}>
-          <div style={{ color: gold, fontWeight: '800', fontSize: '0.9rem', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-            🎁 Loot Table
-            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', marginLeft: '0.4rem' }}>
-              ({(npc.lootTable || []).length} selected)
-            </span>
+          <div style={{ color: gold, fontWeight: '800', fontSize: '0.9rem', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
+            🎁 Loot Drop
+          </div>
+
+          {/* Mode toggle */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            {[{ value: 'preloaded', label: '📋 Set Items' }, { value: 'weighted', label: '🎲 Weighted Random' }].map(opt => (
+              <div key={opt.value} onClick={() => set('lootMode', opt.value)} style={{
+                flex: 1, textAlign: 'center', padding: '0.45rem',
+                background: npc.lootMode === opt.value ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
+                border: `2px solid ${npc.lootMode === opt.value ? gold : 'rgba(90,74,58,0.3)'}`,
+                borderRadius: '6px', cursor: 'pointer',
+                color: npc.lootMode === opt.value ? gold : '#4b5563',
+                fontWeight: '800', fontSize: '0.78rem',
+              }}>{opt.label}</div>
+            ))}
           </div>
 
           {lootPool.length === 0 ? (
@@ -488,57 +523,122 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
               No items in loot pool yet — add items in the 🎁 Loot tab first.
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '220px', overflowY: 'auto' }}>
-              {lootPool.map(poolItem => {
-                const selected = (npc.lootTable || []).some(it => it.id === poolItem.id);
-                const c = poolItem.isQuestItem ? TIER_COLORS_NPC.Quest : (TIER_COLORS_NPC[poolItem.tier] || TIER_COLORS_NPC.Common);
+            <>
+              {/* Weighted mode */}
+              {npc.lootMode === 'weighted' && (() => {
+                const weights = npc.lootTierWeights || TIER_WEIGHTS_DEFAULT;
+                const totalW = Object.values(weights).reduce((s, v) => s + v, 0);
                 return (
-                  <div key={poolItem.id} onClick={() => toggleLootItem(poolItem)} style={{
-                    display: 'flex', alignItems: 'center', gap: '0.6rem',
-                    padding: '0.5rem 0.75rem',
-                    background: selected ? c.bg : 'rgba(0,0,0,0.25)',
-                    border: `2px solid ${selected ? c.border : 'rgba(55,65,81,0.4)'}`,
-                    borderRadius: '6px', cursor: 'pointer',
-                  }}>
-                    <div style={{
-                      width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
-                      border: `2px solid ${selected ? c.text : '#4b5563'}`,
-                      background: selected ? c.text : 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.55rem', color: '#000', fontWeight: '900',
-                    }}>{selected && '✓'}</div>
-                    <span style={{ flex: 1, color: selected ? c.text : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>
-                      {poolItem.isQuestItem ? '🗝️ ' : '📦 '}{poolItem.name}
-                    </span>
-                    <span style={{
-                      padding: '0.1rem 0.35rem', background: `${c.text}18`,
-                      border: `1px solid ${c.border}`, borderRadius: '4px',
-                      color: c.text, fontSize: '0.58rem', fontWeight: '800',
-                    }}>{poolItem.tier}</span>
-                    {poolItem.isQuestItem && (
-                      <span style={{ color: '#fde68a', fontSize: '0.58rem', fontWeight: '800' }}>QUEST</span>
-                    )}
-                  </div>
+                  <>
+                    <div style={{ marginBottom: '0.65rem' }}>
+                      <label style={labelStyle}>Items to Drop</label>
+                      <input style={{ ...inputStyle, width: '80px', textAlign: 'center' }} type="number" min="1" max="10"
+                        value={npc.lootItemCount || 1}
+                        onChange={e => set('lootItemCount', Math.max(1, parseInt(e.target.value) || 1))} />
+                    </div>
+                    <label style={labelStyle}>Tier Weights (total: {totalW}%)</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                      {['Common', 'Rare', 'Legendary'].map(tier => {
+                        const tc = TIER_COLORS_NPC[tier];
+                        const pct = totalW > 0 ? Math.round(((weights[tier] || 0) / totalW) * 100) : 0;
+                        return (
+                          <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <span style={{ color: tc.text, fontWeight: '800', fontSize: '0.78rem', width: '72px' }}>{tier}</span>
+                            <input type="number" min="0" max="100" value={weights[tier] || 0}
+                              onChange={e => setLootWeight(tier, e.target.value)}
+                              style={{ ...inputStyle, width: '64px', padding: '0.35rem 0.5rem', textAlign: 'center' }} />
+                            <div style={{ flex: 1, height: '6px', background: 'rgba(0,0,0,0.4)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ width: `${pct}%`, height: '100%', background: tc.text, borderRadius: '3px', transition: 'width 0.2s' }} />
+                            </div>
+                            <span style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '700', width: '30px', textAlign: 'right' }}>{pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 );
-              })}
-            </div>
-          )}
+              })()}
 
-          {/* Selected preview */}
-          {(npc.lootTable || []).length > 0 && (
-            <div style={{ marginTop: '0.6rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-              {(npc.lootTable || []).map(it => (
-                <span key={it.id} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                  padding: '0.15rem 0.5rem',
-                  background: 'rgba(201,169,97,0.1)', border: '1px solid rgba(201,169,97,0.3)',
-                  borderRadius: '4px', color: gold, fontSize: '0.65rem', fontWeight: '700',
-                }}>
-                  {it.name}
-                  <span onClick={e => { e.stopPropagation(); removeLootItem(it.id); }} style={{ cursor: 'pointer', color: '#ef4444', fontWeight: '900', marginLeft: '0.1rem' }}>✕</span>
-                </span>
-              ))}
-            </div>
+              {/* Quest item guaranteed drops — available in both modes */}
+              <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(234,179,8,0.2)' }}>
+                <label style={{ ...labelStyle, color: '#fde68a' }}>🗝️ Guaranteed Quest Item Drop (optional)</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxHeight: '120px', overflowY: 'auto' }}>
+                  {lootPool.filter(it => it.isQuestItem).length === 0 ? (
+                    <div style={{ color: '#4b5563', fontSize: '0.75rem' }}>No quest items in loot pool.</div>
+                  ) : lootPool.filter(it => it.isQuestItem).map(poolItem => {
+                    const selected = (npc.lootTable || []).some(it => it.id === poolItem.id);
+                    return (
+                      <div key={poolItem.id} onClick={() => toggleLootItem(poolItem)} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.6rem',
+                        padding: '0.4rem 0.75rem',
+                        background: selected ? 'rgba(234,179,8,0.1)' : 'rgba(0,0,0,0.25)',
+                        border: `2px solid ${selected ? 'rgba(234,179,8,0.5)' : 'rgba(55,65,81,0.4)'}`,
+                        borderRadius: '6px', cursor: 'pointer',
+                      }}>
+                        <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${selected ? '#fde68a' : '#4b5563'}`, background: selected ? '#fde68a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{selected && '✓'}</div>
+                        <span style={{ flex: 1, color: selected ? '#fde68a' : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>🗝️ {poolItem.name}</span>
+                        <span style={{ color: '#fde68a', fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.35rem', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '4px' }}>QUEST</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Preloaded mode */}
+              {npc.lootMode !== 'weighted' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '220px', overflowY: 'auto' }}>
+                  {lootPool.map(poolItem => {
+                    const selected = (npc.lootTable || []).some(it => it.id === poolItem.id);
+                    const tc = poolItem.isQuestItem ? TIER_COLORS_NPC.Quest : (TIER_COLORS_NPC[poolItem.tier] || TIER_COLORS_NPC.Common);
+                    return (
+                      <div key={poolItem.id} onClick={() => toggleLootItem(poolItem)} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.6rem',
+                        padding: '0.5rem 0.75rem',
+                        background: selected ? tc.bg : 'rgba(0,0,0,0.25)',
+                        border: `2px solid ${selected ? tc.border : 'rgba(55,65,81,0.4)'}`,
+                        borderRadius: '6px', cursor: 'pointer',
+                      }}>
+                        <div style={{
+                          width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
+                          border: `2px solid ${selected ? tc.text : '#4b5563'}`,
+                          background: selected ? tc.text : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.55rem', color: '#000', fontWeight: '900',
+                        }}>{selected && '✓'}</div>
+                        <span style={{ flex: 1, color: selected ? tc.text : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>
+                          {poolItem.isQuestItem ? '🗝️ ' : '📦 '}{poolItem.name}
+                        </span>
+                        <span style={{
+                          padding: '0.1rem 0.35rem', background: `${tc.text}18`,
+                          border: `1px solid ${tc.border}`, borderRadius: '4px',
+                          color: tc.text, fontSize: '0.58rem', fontWeight: '800',
+                        }}>{poolItem.tier}</span>
+                        {poolItem.isQuestItem && (
+                          <span style={{ color: '#fde68a', fontSize: '0.58rem', fontWeight: '800' }}>QUEST</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Selected preview (preloaded) */}
+              {npc.lootMode !== 'weighted' && (npc.lootTable || []).length > 0 && (
+                <div style={{ marginTop: '0.6rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {(npc.lootTable || []).map(it => (
+                    <span key={it.id} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                      padding: '0.15rem 0.5rem',
+                      background: 'rgba(201,169,97,0.1)', border: '1px solid rgba(201,169,97,0.3)',
+                      borderRadius: '4px', color: gold, fontSize: '0.65rem', fontWeight: '700',
+                    }}>
+                      {it.name}
+                      <span onClick={e => { e.stopPropagation(); removeLootItem(it.id); }} style={{ cursor: 'pointer', color: '#ef4444', fontWeight: '900', marginLeft: '0.1rem' }}>✕</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -585,64 +685,120 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
 
 // ── AttackRow sub-component ──────────────────────────────────────────────────
 
-const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, labelStyle }) => (
-  <div style={{
-    background: 'rgba(0,0,0,0.3)',
-    border: '1px solid rgba(139,92,246,0.25)',
-    borderRadius: '8px',
-    padding: '0.75rem',
-    marginBottom: '0.5rem',
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-      <span style={{ color: '#a78bfa', fontSize: '0.8rem', fontWeight: '700' }}>Attack {index + 1}</span>
-      {canRemove && (
-        <button onClick={onRemove} style={removeBtnStyle}>✕</button>
+const ATTACK_TYPES = [
+  { value: 'attack', label: '⚔️ Attack', color: '#fca5a5' },
+  { value: 'action', label: '✦ Action',  color: '#a78bfa' },
+  { value: 'spawn',  label: '🐣 Spawn',  color: '#86efac' },
+];
+
+const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, labelStyle }) => {
+  const type = attack.attackType || 'attack';
+  const typeConfig = ATTACK_TYPES.find(t => t.value === type) || ATTACK_TYPES[0];
+  return (
+    <div style={{
+      background: 'rgba(0,0,0,0.3)',
+      border: `1px solid ${type === 'attack' ? 'rgba(139,92,246,0.25)' : type === 'spawn' ? 'rgba(74,222,128,0.25)' : 'rgba(167,139,250,0.25)'}`,
+      borderRadius: '8px', padding: '0.75rem', marginBottom: '0.5rem',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+        <div style={{ display: 'flex', gap: '0.3rem' }}>
+          {ATTACK_TYPES.map(t => (
+            <button key={t.value} onClick={() => onChange('attackType', t.value)} style={{
+              padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: 'inherit',
+              fontWeight: '800', fontSize: '0.62rem', cursor: 'pointer',
+              background: type === t.value ? `rgba(${t.value === 'attack' ? '239,68,68' : t.value === 'action' ? '139,92,246' : '74,222,128'},0.15)` : 'rgba(0,0,0,0.3)',
+              border: `1px solid ${type === t.value ? t.color : 'rgba(90,74,58,0.3)'}`,
+              color: type === t.value ? t.color : '#4b5563',
+            }}>{t.label}</button>
+          ))}
+        </div>
+        {canRemove && <button onClick={onRemove} style={removeBtnStyle}>✕</button>}
+      </div>
+
+      {/* Name — always shown */}
+      <div style={{ marginBottom: '0.5rem' }}>
+        <label style={labelStyle}>Name</label>
+        <input style={inputStyle} value={attack.name} onChange={e => onChange('name', e.target.value)}
+          placeholder={type === 'spawn' ? 'e.g. Summon Minions' : type === 'action' ? 'e.g. Enrage' : 'e.g. Stomp'} />
+      </div>
+
+      {/* Attack-only fields: die type, rolls, range */}
+      {type === 'attack' && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <div>
+              <label style={labelStyle}>Die Type</label>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={attack.dieType} onChange={e => onChange('dieType', e.target.value)}>
+                <option value="d4">D4</option>
+                <option value="d6">D6</option>
+                <option value="d10">D10</option>
+                <option value="d20">D20</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}># Rolls</label>
+              <input style={inputStyle} type="number" min="1" max="10" value={attack.numRolls} onChange={e => onChange('numRolls', e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Range</label>
+            <input style={inputStyle} value={attack.range || ''} onChange={e => onChange('range', e.target.value)} placeholder='e.g. 6" melee, 18" throw' />
+          </div>
+        </>
+      )}
+
+      {/* Action-only: description */}
+      {type === 'action' && (
+        <div>
+          <label style={labelStyle}>Description</label>
+          <input style={inputStyle} value={attack.description || ''} onChange={e => onChange('description', e.target.value)}
+            placeholder='e.g. Increases armor by 2 until next turn' />
+        </div>
+      )}
+
+      {/* Spawn-only: what spawns */}
+      {type === 'spawn' && (
+        <>
+          <div style={{ marginBottom: '0.5rem' }}>
+            <label style={labelStyle}>Spawns</label>
+            <input style={inputStyle} value={attack.spawnText || ''} onChange={e => onChange('spawnText', e.target.value)}
+              placeholder='e.g. 2 Cave Trolls' />
+          </div>
+          {/* Optional dice roll for spawn */}
+          <div style={{ marginBottom: '0.5rem' }}>
+            <label style={labelStyle}>Dice Roll (optional)</label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <select style={{ ...inputStyle, width: 'auto', flex: 1 }}
+                value={attack.spawnDieType || ''}
+                onChange={e => onChange('spawnDieType', e.target.value)}>
+                <option value=''>No roll</option>
+                <option value='d4'>D4</option>
+                <option value='d6'>D6</option>
+                <option value='d10'>D10</option>
+                <option value='d20'>D20</option>
+              </select>
+              {attack.spawnDieType && (
+                <>
+                  <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>×</span>
+                  <input style={{ ...inputStyle, width: '70px', textAlign: 'center' }}
+                    type='number' min='1' max='10'
+                    value={attack.spawnNumRolls || 1}
+                    onChange={e => onChange('spawnNumRolls', Math.max(1, parseInt(e.target.value) || 1))}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Description (optional)</label>
+            <input style={inputStyle} value={attack.description || ''} onChange={e => onChange('description', e.target.value)}
+              placeholder='e.g. Appears at the cave entrance' />
+          </div>
+        </>
       )}
     </div>
-    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
-      <div>
-        <label style={labelStyle}>Name</label>
-        <input
-          style={inputStyle}
-          value={attack.name}
-          onChange={e => onChange('name', e.target.value)}
-          placeholder="e.g. Stomp"
-        />
-      </div>
-      <div>
-        <label style={labelStyle}>Die Type</label>
-        <select
-          style={{ ...inputStyle, cursor: 'pointer' }}
-          value={attack.dieType}
-          onChange={e => onChange('dieType', e.target.value)}
-        >
-          <option value="d20">D20</option>
-          <option value="d10">D10</option>
-        </select>
-      </div>
-      <div>
-        <label style={labelStyle}># Rolls</label>
-        <input
-          style={inputStyle}
-          type="number"
-          min="1"
-          max="10"
-          value={attack.numRolls}
-          onChange={e => onChange('numRolls', e.target.value)}
-        />
-      </div>
-    </div>
-    <div>
-      <label style={labelStyle}>Range</label>
-      <input
-        style={inputStyle}
-        value={attack.range || ''}
-        onChange={e => onChange('range', e.target.value)}
-        placeholder='e.g. 6" melee, 18" throw'
-      />
-    </div>
-  </div>
-);
+  );
+};
 
 // ── PhaseSection sub-component ───────────────────────────────────────────────
 
@@ -680,7 +836,30 @@ const PhaseSection = ({
         />
       </div>
 
-      {/* Trigger HP */}
+      {/* Trigger type toggle */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <label style={labelStyle}>Trigger Type</label>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {[{ value: 'hp', label: '❤️ HP Threshold' }, { value: 'manual', label: '🎯 Manual' }].map(opt => (
+            <div key={opt.value} onClick={() => onFieldChange('triggerType', opt.value)} style={{
+              flex: 1, textAlign: 'center', padding: '0.45rem',
+              background: (phase.triggerType || 'hp') === opt.value ? 'rgba(139,92,246,0.15)' : 'rgba(0,0,0,0.3)',
+              border: `2px solid ${(phase.triggerType || 'hp') === opt.value ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
+              borderRadius: '6px', cursor: 'pointer',
+              color: (phase.triggerType || 'hp') === opt.value ? '#a78bfa' : '#4b5563',
+              fontWeight: '800', fontSize: '0.78rem',
+            }}>{opt.label}</div>
+          ))}
+        </div>
+        {(phase.triggerType || 'hp') === 'manual' && (
+          <div style={{ color: '#6b7280', fontSize: '0.7rem', marginTop: '0.3rem' }}>
+            DM activates this phase manually from the NPC card.
+          </div>
+        )}
+      </div>
+
+      {/* Trigger HP — only shown for HP trigger type */}
+      {(phase.triggerType || 'hp') === 'hp' && (
       <div style={{ display: 'grid', gridTemplateColumns: isResurrection ? '1fr 1fr' : '1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
         <div>
           <label style={labelStyle}>Trigger at HP</label>
@@ -711,6 +890,7 @@ const PhaseSection = ({
           </div>
         )}
       </div>
+      )}
 
       {/* Optional overrides */}
       <div style={{ marginBottom: '0.75rem' }}>

@@ -1,5 +1,4 @@
 import React from 'react';
-import RoundTimerBadge from './RoundTimerBadge';
 
 const gold = '#c9a961';
 
@@ -14,7 +13,6 @@ const NPCCard = ({
   hasActedThisRound = false,
   onActivate,
   onDeactivate,
-  getTimersForNPC = () => [],
   onEdit,
   onRemove,
   onHPChange,
@@ -106,7 +104,6 @@ const NPCCard = ({
             {npc.active ? '⚔️ In Battle' : npc.isDead ? '💀 Defeated' : '💤 Standby'}
             {npc.hasPhases && ` • ${currentPhaseName}`}
           </div>
-          <RoundTimerBadge timers={getTimersForNPC(npc.id)} />
         </div>
 
         {isCurrentTurn && (
@@ -310,76 +307,88 @@ const NPCCard = ({
           </div>
         </div>
 
-        {npc.attacks?.map((attack, i) => (
-          <div key={attack.id || i} style={{
-            background: 'rgba(0,0,0,0.35)',
-            border: '1px solid rgba(139,92,246,0.2)',
-            borderRadius: '8px',
-            padding: '0.75rem',
-            marginBottom: i < npc.attacks.length - 1 ? '0.5rem' : 0,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: gold, fontWeight: '800', fontSize: '0.95rem', marginBottom: '0.35rem' }}>
-                  {attack.name || `Attack ${i + 1}`}
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                  <span style={{
-                    background: 'rgba(139,92,246,0.15)',
-                    border: '1px solid rgba(139,92,246,0.3)',
-                    borderRadius: '4px',
-                    padding: '0.2rem 0.5rem',
-                    color: '#c4b5fd',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {attack.dieType?.toUpperCase()} × {attack.numRolls}
-                  </span>
-                  {attack.range && (
-                    <span style={{
-                      background: 'rgba(20,184,166,0.1)',
-                      border: '1px solid rgba(20,184,166,0.3)',
-                      borderRadius: '4px',
-                      padding: '0.2rem 0.5rem',
-                      color: '#5eead4',
-                      fontSize: '0.75rem',
-                      fontWeight: '700',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      📏 {attack.range}
-                    </span>
-                  )}
-                </div>
-              </div>
+        {npc.attacks?.map((attack, i) => {
+          const type = attack.attackType || 'attack';
+          const isSpawn  = type === 'spawn';
+          const isAction = type === 'action';
+          const disabled = !npc.active || npc.isDead;
+          const borderColor = isSpawn ? 'rgba(74,222,128,0.25)' : isAction ? 'rgba(167,139,250,0.25)' : 'rgba(139,92,246,0.2)';
+          return (
+            <div key={attack.id || i} style={{
+              background: 'rgba(0,0,0,0.35)',
+              border: `1px solid ${borderColor}`,
+              borderRadius: '8px', padding: '0.75rem',
+              marginBottom: i < npc.attacks.length - 1 ? '0.5rem' : 0,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Type badge + name */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.3rem' }}>
+                    {isSpawn  && <span style={{ padding: '0.1rem 0.4rem', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: '4px', color: '#86efac', fontSize: '0.6rem', fontWeight: '800' }}>🐣 SPAWN</span>}
+                    {isAction && <span style={{ padding: '0.1rem 0.4rem', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '4px', color: '#c4b5fd', fontSize: '0.6rem', fontWeight: '800' }}>✦ ACTION</span>}
+                    <div style={{ color: gold, fontWeight: '800', fontSize: '0.95rem' }}>
+                      {attack.name || `Attack ${i + 1}`}
+                    </div>
+                  </div>
 
-              <button
-                onClick={() => onOpenNPCAttack(npc.id, i)}
-                disabled={!npc.active || npc.isDead}
-                style={{
-                  padding: '0.5rem 0.85rem',
-                  background: (!npc.active || npc.isDead)
-                    ? 'rgba(0,0,0,0.2)'
-                    : 'linear-gradient(135deg, #b91c1c, #991b1b)',
-                  border: '2px solid',
-                  borderColor: (!npc.active || npc.isDead) ? '#374151' : '#dc2626',
-                  color: (!npc.active || npc.isDead) ? '#4b5563' : '#fecaca',
-                  borderRadius: '8px',
-                  cursor: (!npc.active || npc.isDead) ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                  fontWeight: '700',
-                  fontSize: '0.85rem',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-              >
-                ⚔️ USE
-              </button>
+                  {/* Metadata tags */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {/* Attack: show dice */}
+                    {!isSpawn && !isAction && (
+                      <span style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '4px', padding: '0.2rem 0.5rem', color: '#c4b5fd', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                        {attack.dieType?.toUpperCase()} × {attack.numRolls}
+                      </span>
+                    )}
+                    {/* Attack: range */}
+                    {!isSpawn && !isAction && attack.range && (
+                      <span style={{ background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.3)', borderRadius: '4px', padding: '0.2rem 0.5rem', color: '#5eead4', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                        📏 {attack.range}
+                      </span>
+                    )}
+                    {/* Spawn: what spawns + optional dice */}
+                    {isSpawn && attack.spawnText && (
+                      <span style={{ background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: '4px', padding: '0.2rem 0.5rem', color: '#86efac', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                        🐣 {attack.spawnText}
+                      </span>
+                    )}
+                    {isSpawn && attack.spawnDieType && (
+                      <span style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: '4px', padding: '0.2rem 0.5rem', color: '#86efac', fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                        {attack.spawnDieType.toUpperCase()} × {attack.spawnNumRolls || 1}
+                      </span>
+                    )}
+                    {/* Action/Spawn: description */}
+                    {(isAction || isSpawn) && attack.description && (
+                      <span style={{ color: '#6b7280', fontSize: '0.72rem', fontStyle: 'italic' }}>{attack.description}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Button — changes per type */}
+                <button
+                  onClick={() => !isSpawn && !isAction && onOpenNPCAttack(npc.id, i)}
+                  disabled={disabled}
+                  style={{
+                    padding: '0.5rem 0.85rem',
+                    background: disabled ? 'rgba(0,0,0,0.2)'
+                      : isSpawn  ? 'linear-gradient(135deg, #065f46, #047857)'
+                      : isAction ? 'linear-gradient(135deg, #4c1d95, #3b0764)'
+                      : 'linear-gradient(135deg, #b91c1c, #991b1b)',
+                    border: '2px solid',
+                    borderColor: disabled ? '#374151' : isSpawn ? '#10b981' : isAction ? '#7c3aed' : '#dc2626',
+                    color: disabled ? '#4b5563' : isSpawn ? '#d1fae5' : isAction ? '#e9d5ff' : '#fecaca',
+                    borderRadius: '8px',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit', fontWeight: '700', fontSize: '0.85rem',
+                    letterSpacing: '0.05em', textTransform: 'uppercase',
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                  }}
+                >
+                  {isSpawn ? '🐣 SPAWN' : isAction ? '✦ USE' : '⚔️ USE'}
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Phase tracker */}
@@ -401,10 +410,12 @@ const NPCCard = ({
             </div>
             {hasNextPhase && (
               <div style={{ color: '#6b7280', fontSize: '0.72rem' }}>
-                Next: <span style={{ color: '#a78bfa' }}>{nextPhase.label}</span> at{' '}
-                {nextPhase.triggerHP === 0
-                  ? <span style={{ color: '#ef4444' }}>death (resurrects {nextPhase.resurrectHP}hp)</span>
-                  : <span style={{ color: '#fbbf24' }}>{nextPhase.triggerHP}hp</span>
+                Next: <span style={{ color: '#a78bfa' }}>{nextPhase.label || `Phase ${npc.currentPhase + 2}`}</span>
+                {(nextPhase.triggerType || 'hp') === 'manual'
+                  ? <span style={{ color: '#c084fc' }}> · 🎯 Manual trigger</span>
+                  : nextPhase.triggerHP === 0
+                    ? <span> at <span style={{ color: '#ef4444' }}>death (resurrects {nextPhase.resurrectHP}hp)</span></span>
+                    : <span> at <span style={{ color: '#fbbf24' }}>{nextPhase.triggerHP}hp</span></span>
                 }
               </div>
             )}

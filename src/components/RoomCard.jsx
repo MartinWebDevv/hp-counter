@@ -640,7 +640,6 @@ const RoomCard = ({
       {/* ── Modals ── */}
       {showActivate && <ActivateModal room={room} players={players} onConfirm={handleActivate} onClose={() => setShowActivate(false)} />}
       {showBetrayal && <BetrayalModal room={room} players={players} onConfirm={b => { onUpdate({ betrayers: b }); setShowBetrayal(false); }} onClose={() => setShowBetrayal(false)} />}
-      {showLoot          && <LootRollModal room={room} lootPool={lootPool} onClose={() => setShowLoot(false)} />}
       {showLootDisburse && lootRollResult && <LootDisburseModal items={lootRollResult} players={players} presentSnapshot={presentSnapshot} onGiveLoot={onGiveLoot} onClose={() => { setShowLootDisburse(false); setLootRollResult(null); setPresentSnapshot([]); }} />}
     </div>
   );

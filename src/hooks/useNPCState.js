@@ -37,9 +37,14 @@ export const useNPCState = (addLog, onNPCKilled) => {
   const blankAttack = () => ({
     id: generateId(),
     name: '',
-    dieType: 'd20',    // 'd20' | 'd10'
-    numRolls: 1,       // number of rolls for this attack
-    range: '',         // e.g. '6" melee', '18" throw'
+    attackType: 'attack',  // 'attack' | 'action' | 'spawn'
+    dieType: 'd20',
+    numRolls: 1,
+    range: '',
+    spawnText: '',         // used when attackType === 'spawn'
+    spawnDieType: '',      // optional dice for spawn (e.g. 'd6')
+    spawnNumRolls: 1,      // how many of that die to roll
+    description: '',       // used for action/spawn type
   });
 
   /**
@@ -50,6 +55,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
     phaseNumber,
     label: `Phase ${phaseNumber}`,
     triggerHP: 0,           // HP at which this phase triggers
+    triggerType: 'hp',      // 'hp' | 'manual'
     resurrectHP: null,      // if triggerHP === 0, NPC comes back at this HP
     name: '',               // optional new name
     armor: null,            // if null, inherits from previous phase
@@ -203,7 +209,10 @@ export const useNPCState = (addLog, onNPCKilled) => {
 
     const nextPhase = npc.phases[nextPhaseIndex];
 
-    // Check trigger
+    // Manual phases never auto-trigger — DM triggers them from the card
+    if ((nextPhase.triggerType || 'hp') === 'manual') return npc;
+
+    // Check HP trigger
     const triggered =
       nextPhase.triggerHP === 0
         ? npc.hp === 0
@@ -252,6 +261,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
       if (!n.hasPhases || n.currentPhase >= n.phases.length) return n;
 
       const nextPhase = n.phases[n.currentPhase];
+      if ((nextPhase.triggerType || 'hp') === 'manual') return n;
       const resurrectHP = nextPhase.triggerHP === 0 ? (nextPhase.resurrectHP || 20) : null;
 
       const phaseAttacksFilled = nextPhase.attacks?.some(a => a.name?.trim());

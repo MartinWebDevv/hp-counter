@@ -5,7 +5,7 @@ import { getModeConfig, DEFAULT_MODE } from '../data/gameModes';
  * Custom hook for managing game state
  * Handles players, rounds, combat log, game modes, and persistence
  */
-export const useGameState = () => {
+export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
   const [players, setPlayers] = useState([]);
   const [currentRound, setCurrentRound] = useState(1);
   const [combatLog, setCombatLog] = useState([]);
@@ -392,6 +392,21 @@ export const useGameState = () => {
     const currentPlayer = players[currentPlayerIndex];
     if (!currentPlayer) return;
 
+    // Decrement this player's commander cooldown on their own turn
+    setPlayers(prev => prev.map(p => {
+      if (p.id !== currentPlayer.id) return p;
+      return {
+        ...p,
+        commanderStats: {
+          ...p.commanderStats,
+          cooldownRounds: Math.max(0, (p.commanderStats?.cooldownRounds || 0) - 1),
+        },
+      };
+    }));
+
+    // Fire per-player timer tick
+    if (onPlayerTurnEnd) onPlayerTurnEnd(currentPlayer.id);
+
     const newPlayersWhoActed = [...playersWhoActedThisRound, currentPlayer.id];
     setPlayersWhoActedThisRound(newPlayersWhoActed);
 
@@ -405,16 +420,9 @@ export const useGameState = () => {
     const allPlayersActed = alivePlayers.every(p => newPlayersWhoActed.includes(p.id));
 
     if (allPlayersActed) {
-      setPlayers(prev => prev.map(player => ({
-        ...player,
-        commanderStats: {
-          ...player.commanderStats,
-          cooldownRounds: Math.max(0, (player.commanderStats.cooldownRounds || 0) - 1)
-        }
-      })));
-      
       setCurrentRound(prev => prev + 1);
       setPlayersWhoActedThisRound([]);
+      if (onRoundAdvance) onRoundAdvance();
       
       let firstAliveIndex = 0;
       while (firstAliveIndex < players.length && isPlayerFullyDead(players[firstAliveIndex])) {

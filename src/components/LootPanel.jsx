@@ -19,6 +19,7 @@ const EFFECT_TYPES = [
   { value: 'key',                label: '🔑 Key' },
   { value: 'destroyItem',        label: '💥 Destroy Enemy Item' },
   { value: 'diceSwap',           label: '⇅ Swap Dice Rolls' },
+  { value: 'closecall',          label: '🛡️ Close Call — Negate All Damage' },
 ];
 
 const TIER_COLORS = {

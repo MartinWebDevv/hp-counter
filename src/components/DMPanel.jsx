@@ -35,6 +35,7 @@ const DMPanel = ({
   onDropLoot,
   lootPool = [],
   onIncrementAttack,
+  getTimersForNPC = () => [],
 }) => {
   const editingNPC = editingNPCId ? getNPCById(editingNPCId) : null;
 
@@ -111,6 +112,7 @@ const DMPanel = ({
               onIncrementAttack={onIncrementAttack}
               players={players}
               onDropLoot={onDropLoot}
+              getTimersForNPC={getTimersForNPC}
             />
           ))}
         </div>

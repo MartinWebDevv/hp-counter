@@ -5,11 +5,13 @@ const CalculatorD20 = ({
   data, 
   players,
   npcs = [],
-  onClose, 
+  onClose: onCloseRaw,
   onProceedToDistribution,
+  onEndTurn = null,
   gameMode = 'd20',
   firstStrike = false,
   onUpdatePlayer = () => {},
+  onAddLog = () => {},
 }) => {
   const [calculatorData, setCalculatorData] = React.useState({ targetNPCId: null, ...data });
   const [attackRolls, setAttackRolls] = useState([]);
@@ -21,6 +23,27 @@ const CalculatorD20 = ({
   const [activeAttackBonus, setActiveAttackBonus] = useState(0);
   const [activeDefenseBonus, setActiveDefenseBonus] = useState(0);
   const [bonusPromptShown, setBonusPromptShown] = useState(false);
+  const [consumedItems, setConsumedItems] = useState([]);
+  const [errorMsg, setErrorMsg] = useState(''); // [{owner, item, originalItem}] — for refund on cancel
+  const [showClosecall, setShowClosecall] = useState(false); // epic negate modal
+  const [closecallOwner, setClosecallOwner] = useState(null);
+
+  // Refund all consumed items then close
+  const onClose = () => {
+    consumedItems.forEach(({ owner, originalItem }) => {
+      const currentPlayer = players.find(p => p.id === owner.id);
+      if (!currentPlayer) return;
+      const alreadyHas = (currentPlayer.inventory || []).find(it => it.id === originalItem.id);
+      if (alreadyHas) {
+        // Item still there — restore uses
+        onUpdatePlayer(owner.id, { inventory: (currentPlayer.inventory || []).map(it => it.id === originalItem.id ? originalItem : it) });
+      } else {
+        // Item was fully consumed — re-add it
+        onUpdatePlayer(owner.id, { inventory: [...(currentPlayer.inventory || []), originalItem] });
+      }
+    });
+    onCloseRaw();
+  };
 
   if (!calculatorData) return null;
 
@@ -30,7 +53,13 @@ const CalculatorD20 = ({
   const gold = '#c9a961';
 
   // Defender player (PvP only — NPC targets have no inventory)
-  const defender = players.find(p => p.id === calculatorData.targetId);
+  // targetId is { playerId, unitType } — extract playerId
+  // Fall back to first targetSquadMembers player if targetId not set
+  const defenderPlayerId = calculatorData.targetId?.playerId
+    ?? calculatorData.targetId
+    ?? calculatorData.targetSquadMembers?.[0]?.playerId
+    ?? null;
+  const defender = defenderPlayerId ? players.find(p => p.id === defenderPlayerId) : null;
 
   // Helper: scan a player's full inventory for a given effect type
   const scanInventory = (player, effectType) => {
@@ -60,6 +89,26 @@ const CalculatorD20 = ({
     ...attackerSwapItems.map(it => ({ ...it, owner: attacker, ownerLabel: 'Attacker' })),
     ...defenderSwapItems.map(it => ({ ...it, owner: defender, ownerLabel: 'Defender' })),
   ];
+
+  // Attack/Defense bonus items — usable directly from inside the calculator
+  const attackBonusItems  = scanInventory(attacker, 'attackBonus');
+  const defenseBonusItems = scanInventory(defender, 'defenseBonus');
+
+  // Close Call — scan defender + any targeted squad members for closecall items
+  const allTargetedPlayers = (() => {
+    const found = new Map();
+    if (defender) found.set(defender.id, defender);
+    (calculatorData.targetSquadMembers || []).forEach(t => {
+      if (!t.isNPC && t.playerId) {
+        const p = players.find(pl => pl.id === t.playerId);
+        if (p) found.set(p.id, p);
+      }
+    });
+    return [...found.values()];
+  })();
+  const closecallItems = allTargetedPlayers.flatMap(p =>
+    scanInventory(p, 'closecall').map(it => ({ ...it, closecallOwner: p }))
+  );
 
   // Get the attacking unit's pending bonuses
   const attackingUnit = calculatorData.attackingUnitType === 'commander'
@@ -246,6 +295,8 @@ const CalculatorD20 = ({
       isSpecial: isSpecialBonus,
       isFirstStrike: firstStrike,
       armorFloored: targetNPCForRoll && effectiveDef > rawDef,
+      attackBonusApplied: activeAttackBonus || 0,
+      defenseBonusApplied: activeDefenseBonus || 0,
     };
     
     const newAttackRolls = [...attackRolls, newRoll];
@@ -253,14 +304,18 @@ const CalculatorD20 = ({
     
     setAttackRolls(newAttackRolls);
     setTotalDamage(newTotal);
+    setErrorMsg('');
     setCurrentAttackIndex(currentAttackIndex + 1);
     setAttackerRoll('');
     setDefenderRoll('');
+    // Bonus is one-shot — clear after this roll
+    setActiveAttackBonus(0);
+    setActiveDefenseBonus(0);
   };
 
   const handleProceed = () => {
     if (attackRolls.length !== numAttacks) {
-      alert(`Please complete all ${numAttacks} attack rolls!`);
+      setErrorMsg(`Complete all ${numAttacks} attack rolls first.`);
       return;
     }
 
@@ -269,12 +324,12 @@ const CalculatorD20 = ({
       // NPC target — valid, proceed
     } else if (calculatorData.targetIsSquad) {
       if (!calculatorData.targetSquadMembers || calculatorData.targetSquadMembers.length === 0) {
-        alert('Please select at least one squad member to target!');
+        setErrorMsg('Select at least one squad member to target.');
         return;
       }
     } else {
       if (!calculatorData.targetId) {
-        alert('Please select a target!');
+        setErrorMsg('Please select a target.');
         return;
       }
     }
@@ -312,12 +367,14 @@ const CalculatorD20 = ({
   // Consume one use of a reroll item and clear the appropriate roll input
   const consumeRerollItem = (item, owner, clearRoll) => {
     if (!owner) return;
+    const originalItem = (owner.inventory || []).find(it => it.id === item.id);
     const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
     const consumed = newUsesRemaining <= 0;
     const newInventory = (owner.inventory || [])
       .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
       .filter(it => it.id !== item.id ? true : !consumed);
     onUpdatePlayer(owner.id, { inventory: newInventory });
+    if (originalItem) setConsumedItems(prev => [...prev, { owner, item: { ...item, effect: { ...item.effect, usesRemaining: newUsesRemaining } }, originalItem }]);
     clearRoll('');
   };
   // Consume a diceSwap item and swap the two current roll inputs
@@ -333,6 +390,37 @@ const CalculatorD20 = ({
     const tmp = attackerRoll;
     setAttackerRoll(defenderRoll);
     setDefenderRoll(tmp);
+  };
+
+  // Consume an attackBonus or defenseBonus item — bonus applies to NEXT roll only, then clears
+  const consumeBonusItem = (item, owner, bonusType) => {
+    if (!owner) return;
+    const originalItem = (owner.inventory || []).find(it => it.id === item.id);
+    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
+    const consumed = newUsesRemaining <= 0;
+    const newInventory = (owner.inventory || [])
+      .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
+      .filter(it => it.id !== item.id ? true : !consumed);
+    onUpdatePlayer(owner.id, { inventory: newInventory });
+    if (originalItem) setConsumedItems(prev => [...prev, { owner, item: { ...item, effect: { ...item.effect, usesRemaining: newUsesRemaining } }, originalItem }]);
+    if (bonusType === 'attack') setActiveAttackBonus(prev => prev + (item.effect?.value || 0));
+    else setActiveDefenseBonus(prev => prev + (item.effect?.value || 0));
+  };
+
+  // Consume a Close Call item — negate this entire interaction
+  const consumeClosecall = (item) => {
+    const owner = item.closecallOwner || defender;
+    if (!owner) return;
+    const originalItem = (owner.inventory || []).find(it => it.id === item.id);
+    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
+    const consumed = newUsesRemaining <= 0;
+    const newInventory = (owner.inventory || [])
+      .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
+      .filter(it => it.id !== item.id ? true : !consumed);
+    onUpdatePlayer(owner.id, { inventory: newInventory });
+    setClosecallOwner(owner);
+    setShowClosecall(true);
+    onAddLog(`🛡️ ${owner.playerName} used Close Call — the attack was completely negated`);
   };
 
   const allRollsComplete = attackRolls.length === numAttacks;
@@ -987,6 +1075,28 @@ const CalculatorD20 = ({
           </div>
         </div>
 
+        {/* Close Call — always visible regardless of roll state */}
+        {closecallItems.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.75rem', justifyContent: 'center' }}>
+            {closecallItems.map(item => (
+              <button key={item.id} onClick={() => consumeClosecall(item)}
+                style={{
+                  padding: '0.35rem 1rem',
+                  background: 'rgba(239,68,68,0.12)',
+                  border: '2px solid rgba(239,68,68,0.5)',
+                  borderRadius: '20px', cursor: 'pointer',
+                  color: '#fca5a5', fontFamily: 'inherit',
+                  fontWeight: '900', fontSize: '0.75rem', letterSpacing: '0.05em',
+                }}>
+                🛡️ Close Call
+                <span style={{ color: '#4b5563', marginLeft: '0.3rem', fontSize: '0.62rem' }}>
+                  {(item.closecallOwner || defender)?.playerName} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Roll Inputs */}
         {!allRollsComplete && (
           <div style={{
@@ -1009,26 +1119,47 @@ const CalculatorD20 = ({
                   ];
                   if (allAtkRerolls.length === 0) return null;
                   return (
-                    <div style={{ marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    <div style={{ marginBottom: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                       {allAtkRerolls.map(item => (
                         <button key={item.id} onClick={() => consumeRerollItem(item, item.owner, setAttackerRoll)}
                           style={{
-                            width: '100%', padding: '0.45rem',
-                            background: 'rgba(0,0,0,0.4)',
-                            border: `2px solid ${item.color}60`,
-                            borderRadius: '7px', cursor: 'pointer',
+                            padding: '0.2rem 0.6rem',
+                            background: 'rgba(0,0,0,0.35)',
+                            border: `1px solid ${item.color}50`,
+                            borderRadius: '20px', cursor: 'pointer',
                             color: item.color, fontFamily: 'inherit',
-                            fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.05em',
+                            fontWeight: '800', fontSize: '0.65rem',
                           }}>
                           {item.label}
-                          <span style={{ color: '#6b7280', fontWeight: '600', marginLeft: '0.4rem' }}>
-                            ({item.usesLeft === Infinity ? '∞' : item.usesLeft} left)
+                          <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                            {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                           </span>
                         </button>
                       ))}
                     </div>
                   );
                 })()}
+                {/* Attack bonus item buttons */}
+                {attackBonusItems.length > 0 && (
+                  <div style={{ marginBottom: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                    {attackBonusItems.map(item => (
+                      <button key={item.id} onClick={() => consumeBonusItem(item, attacker, 'attack')}
+                        style={{
+                          padding: '0.2rem 0.6rem',
+                          background: activeAttackBonus > 0 ? 'rgba(34,197,94,0.2)' : 'rgba(34,197,94,0.08)',
+                          border: `1px solid ${activeAttackBonus > 0 ? 'rgba(34,197,94,0.7)' : 'rgba(34,197,94,0.4)'}`,
+                          borderRadius: '20px', cursor: 'pointer',
+                          color: '#86efac', fontFamily: 'inherit',
+                          fontWeight: '800', fontSize: '0.65rem',
+                        }}>
+                        ⚔️ +{item.effect?.value} atk
+                        <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                          {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <input
                   type="number"
                   min="1"
@@ -1050,22 +1181,44 @@ const CalculatorD20 = ({
                 />
               </div>
 
+              {/* Defense bonus item buttons */}
+              {defenseBonusItems.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.4rem 0' }}>
+                  {defenseBonusItems.map(item => (
+                    <button key={item.id} onClick={() => consumeBonusItem(item, defender, 'defense')}
+                      style={{
+                        padding: '0.2rem 0.6rem',
+                        background: activeDefenseBonus > 0 ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)',
+                        border: `1px solid ${activeDefenseBonus > 0 ? 'rgba(59,130,246,0.7)' : 'rgba(59,130,246,0.4)'}`,
+                        borderRadius: '20px', cursor: 'pointer',
+                        color: '#93c5fd', fontFamily: 'inherit',
+                        fontWeight: '800', fontSize: '0.65rem',
+                      }}>
+                      🛡️ +{item.effect?.value} def
+                      <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                        {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Dice Swap buttons — shown when both rolls are entered */}
               {allSwapItems.length > 0 && attackerRoll && defenderRoll && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', margin: '0.5rem 0' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.4rem 0' }}>
                   {allSwapItems.map(item => (
                     <button key={item.id} onClick={() => consumeDiceSwap(item, item.owner)}
                       style={{
-                        width: '100%', padding: '0.45rem',
+                        padding: '0.2rem 0.6rem',
                         background: 'rgba(99,102,241,0.1)',
-                        border: '2px solid rgba(99,102,241,0.5)',
-                        borderRadius: '7px', cursor: 'pointer',
+                        border: '1px solid rgba(99,102,241,0.4)',
+                        borderRadius: '20px', cursor: 'pointer',
                         color: '#a5b4fc', fontFamily: 'inherit',
-                        fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.05em',
+                        fontWeight: '800', fontSize: '0.65rem',
                       }}>
-                      ⇅ SWAP DICE ROLLS
-                      <span style={{ color: '#4b5563', fontWeight: '600', marginLeft: '0.3rem' }}>
-                        ({item.ownerLabel}'s item · {item.usesLeft === Infinity ? '∞' : item.usesLeft} left)
+                      ⇅ swap
+                      <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                        {item.ownerLabel} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                       </span>
                     </button>
                   ))}
@@ -1084,20 +1237,20 @@ const CalculatorD20 = ({
                   ];
                   if (allDefRerolls.length === 0) return null;
                   return (
-                    <div style={{ marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    <div style={{ marginBottom: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                       {allDefRerolls.map(item => (
                         <button key={item.id} onClick={() => consumeRerollItem(item, item.owner, setDefenderRoll)}
                           style={{
-                            width: '100%', padding: '0.45rem',
-                            background: 'rgba(0,0,0,0.4)',
-                            border: `2px solid ${item.color}60`,
-                            borderRadius: '7px', cursor: 'pointer',
+                            padding: '0.2rem 0.6rem',
+                            background: 'rgba(0,0,0,0.35)',
+                            border: `1px solid ${item.color}50`,
+                            borderRadius: '20px', cursor: 'pointer',
                             color: item.color, fontFamily: 'inherit',
-                            fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.05em',
+                            fontWeight: '800', fontSize: '0.65rem',
                           }}>
                           {item.label}
-                          <span style={{ color: '#6b7280', fontWeight: '600', marginLeft: '0.4rem' }}>
-                            ({item.usesLeft === Infinity ? '∞' : item.usesLeft} left)
+                          <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                            {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                           </span>
                         </button>
                       ))}
@@ -1176,11 +1329,13 @@ const CalculatorD20 = ({
                   Roll {idx + 1}: {roll.attackerRoll}
                   {roll.isSpecial && <span style={{ color: '#fbbf24' }}>+1</span>}
                   {roll.isFirstStrike && <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>⚡+2</span>}
+                  {roll.attackBonusApplied > 0 && <span style={{ color: '#86efac', fontWeight: 'bold' }}>+{roll.attackBonusApplied}</span>}
                   {' '}vs{' '}
                   {roll.armorFloored
                     ? <><span style={{ color: '#6b7280', textDecoration: 'line-through' }}>{roll.defenderRoll}</span><span style={{ color: '#5eead4' }}> {roll.effectiveDefenderRoll}</span><span style={{ color: '#374151', fontSize: '0.7rem' }}> 🛡️floor</span></>
                     : roll.defenderRoll
                   }
+                  {roll.defenseBonusApplied > 0 && <span style={{ color: '#93c5fd', fontWeight: 'bold' }}>+{roll.defenseBonusApplied}</span>}
                 </span>
                 <span style={{ color: roll.damage > 0 ? '#fecaca' : '#86efac', fontWeight: 'bold' }}>
                   {roll.damage > 0 ? `${roll.damage}hp` : 'BLOCKED'}
@@ -1246,6 +1401,45 @@ const CalculatorD20 = ({
             ✕ Cancel
           </button>
         </div>
+      {/* Close Call epic modal */}
+      {showClosecall && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'radial-gradient(ellipse at center, rgba(15,5,2,0.97) 0%, rgba(0,0,0,0.99) 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{ textAlign: 'center', padding: '2rem', maxWidth: '380px', animation: 'fadeIn 0.4s ease' }}>
+            <div style={{ fontSize: '4rem', marginBottom: '0.75rem', lineHeight: 1 }}>🛡️</div>
+            <div style={{
+              fontSize: '2.2rem', fontWeight: '900', letterSpacing: '0.15em',
+              fontFamily: '"Cinzel", Georgia, serif',
+              background: 'linear-gradient(135deg, #fca5a5, #ef4444)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              marginBottom: '0.5rem',
+            }}>CLOSE CALL</div>
+            <div style={{ color: '#fca5a5', fontSize: '1rem', fontWeight: '700', marginBottom: '0.35rem', letterSpacing: '0.08em' }}>
+              {(closecallOwner || defender)?.playerName || 'The Defender'} activated
+            </div>
+            <div style={{ color: '#6b7280', fontSize: '0.82rem', marginBottom: '2rem', lineHeight: 1.5 }}>
+              The attack is completely negated.<br/>No damage. No effect. It never happened.
+            </div>
+            <div style={{
+              display: 'inline-block', padding: '0.4rem 1.5rem',
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)',
+              borderRadius: '8px', color: '#fca5a5', fontSize: '0.72rem',
+              fontWeight: '800', letterSpacing: '0.1em', marginBottom: '2rem',
+            }}>DAMAGE NEGATED</div>
+            <br/>
+            <button onClick={() => { setShowClosecall(false); onCloseRaw(); if (onEndTurn) onEndTurn(); }} style={{
+              padding: '0.75rem 2.5rem',
+              background: 'linear-gradient(135deg, #7f1d1d, #991b1b)',
+              border: '2px solid #ef4444', borderRadius: '10px',
+              color: '#fecaca', fontFamily: 'inherit', fontWeight: '900',
+              fontSize: '0.95rem', cursor: 'pointer', letterSpacing: '0.1em',
+            }}>✕ Close</button>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

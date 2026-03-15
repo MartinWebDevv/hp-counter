@@ -1,4 +1,5 @@
 import React from 'react';
+import RoundTimerBadge from './RoundTimerBadge';
 
 const gold = '#c9a961';
 
@@ -13,6 +14,7 @@ const NPCCard = ({
   hasActedThisRound = false,
   onActivate,
   onDeactivate,
+  getTimersForNPC = () => [],
   onEdit,
   onRemove,
   onHPChange,
@@ -104,6 +106,7 @@ const NPCCard = ({
             {npc.active ? '⚔️ In Battle' : npc.isDead ? '💀 Defeated' : '💤 Standby'}
             {npc.hasPhases && ` • ${currentPhaseName}`}
           </div>
+          <RoundTimerBadge timers={getTimersForNPC(npc.id)} />
         </div>
 
         {isCurrentTurn && (

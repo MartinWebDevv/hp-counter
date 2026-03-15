@@ -13,11 +13,13 @@ const TIER_COLORS = {
 
 const getAllUnits = (player) => {
   if (!player) return [];
-  const units = [{ unitType: 'commander', label: 'Commander', hp: player.commanderStats?.hp ?? 0, maxHp: player.commanderStats?.maxHp ?? 0, isDead: player.commanderStats?.isDead ?? false }];
+  const units = [{ unitType: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', hp: player.commanderStats?.hp ?? 0, maxHp: player.commanderStats?.maxHp ?? 0, isDead: player.commanderStats?.isDead ?? false }];
   if (player.subUnits && player.subUnits.length > 0) {
     player.subUnits.forEach((u, i) => {
-      const unitType = u.unitType || (i === 0 ? 'special' : `soldier${i}`);
-      units.push({ unitType, label: u.name || unitType, hp: u.hp ?? 0, maxHp: u.maxHp ?? 0, isDead: u.hp === 0 });
+      // Always use index-based unitType to match heldBy values stored on items
+      const unitType = i === 0 ? 'special' : `soldier${i}`;
+      const label = u.name?.trim() || (i === 0 ? 'Special' : `Soldier ${i}`);
+      units.push({ unitType, label, hp: u.hp ?? 0, maxHp: u.maxHp ?? 0, isDead: u.hp === 0 });
     });
   }
   return units;
@@ -424,7 +426,11 @@ export const DestroyItemModal = ({ attackerPlayer, targetPlayer: initTarget, tar
   const otherPlayers = (allPlayers || []).filter(p => p.id !== attackerPlayer?.id);
   const targetPlayer = initTarget || otherPlayers.find(p => p.id === parseInt(targetPlayerId));
 
-  const availableUnits = targetPlayer ? getAllUnits(targetPlayer).filter(u => !u.isDead) : [];
+  const availableUnits = targetPlayer ? getAllUnits(targetPlayer).filter(u => {
+    if (u.isDead) return false;
+    // Only show units that actually hold at least one destroyable (non-quest) item
+    return (targetPlayer.inventory || []).some(it => it.heldBy === u.unitType && !it.isQuestItem);
+  }) : [];
   const targetItems = targetPlayer && targetUnitType
     ? (targetPlayer.inventory || []).filter(it => it.heldBy === targetUnitType && !it.isQuestItem)
     : [];

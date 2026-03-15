@@ -517,13 +517,14 @@ const PlayerCard = ({
             const tierColor = item.isQuestItem ? '#fde68a' : ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af');
             const usesLeft = item.effect?.uses === 0 ? Infinity : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
             const canUse = !item.effect || item.effect.type === 'manual' || usesLeft > 0;
-            const isAuto = ['heal','maxHP','attackBonus','defenseBonus'].includes(item.effect?.type);
+            const isAuto = ['heal','maxHP'].includes(item.effect?.type); // attackBonus/defenseBonus used in calculator directly
             const isManual = item.effect?.type === 'manual';
             const isDestroyItem = item.effect?.type === 'destroyItem';
             const isKey = item.effect?.type === 'key';
             const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem);
 
             const handleUseKey = () => {
+              if (!window.confirm(`Use key "${item.name}"? It will be removed from inventory.`)) return;
               const newInventory = (player.inventory || []).filter((_, idx) => idx !== i);
               onUpdate(player.id, { inventory: newInventory });
             };
@@ -546,8 +547,8 @@ const PlayerCard = ({
                 setMaxHpTargetItem({ item, itemIndex: i });
                 return;
               } else if (ef?.type === 'attackBonus' || ef?.type === 'defenseBonus') {
-                const bonusKey = ef.type === 'attackBonus' ? 'pendingAttackBonus' : 'pendingDefenseBonus';
-                onUpdate(player.id, { [bonusKey]: (player[bonusKey] || 0) + ef.value, inventory: newInventory });
+                // Used directly from inside the calculator — no pending state needed
+                onUpdate(player.id, { inventory: newInventory });
               } else if (ef?.type === 'destroyItem') {
                 // Open destroy item modal — DM picks target
                 if (onOpenDestroyModal) onOpenDestroyModal(player);

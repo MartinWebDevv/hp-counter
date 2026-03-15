@@ -24,6 +24,7 @@ export const useCampaignTurn = (
   // ── NPC Attack calculator state ───────────────────────────────────────────
   const [npcAttackData,              setNpcAttackData]              = useState(null);
   const [showNPCCalculator,          setShowNPCCalculator]          = useState(false);
+  const [isSquadAttack,              setIsSquadAttack]              = useState(false);
   const [npcDamageDistribution,      setNpcDamageDistribution]      = useState({});
   const [showNPCDamageDistribution,  setShowNPCDamageDistribution]  = useState(false);
 
@@ -114,6 +115,24 @@ export const useCampaignTurn = (
     setShowNPCDamageDistribution(false);
     setNpcAttackData(null);
     setNpcDamageDistribution({});
+    setIsSquadAttack(false);
+  };
+
+  // ── NPC Squad Attack ──────────────────────────────────────────────────────
+  // squadMembers: [{ npcId, npcName, attackIndex, attack, armor, attackBonus }]
+  const openNPCSquadAttack = (squadMembers) => {
+    setNpcAttackData({
+      isSquad: true,
+      squadMembers,
+      // For squad: no single npcId/attack — calculator sequences through members
+      targetId: null,
+      targetSquadMembers: [],
+      targetIsSquad: false,
+      totalDamage: 0,
+      d20Rolls: [],
+    });
+    setIsSquadAttack(true);
+    setShowNPCCalculator(true);
   };
 
   const unitNameByType = (player, unitType) => {
@@ -159,7 +178,13 @@ export const useCampaignTurn = (
         return `${tp?.playerName || 'Unknown'}'s ${unitNameByType(tp, t.unitType)} for ${dmg}hp`;
       }).join(', ');
 
-    addLog(`👾 "${npc?.name}" used "${npcAttackData.attack?.name}" → ${targets}`);
+    if (npcAttackData.isSquad) {
+      const names = (npcAttackData.squadMembers || []).map(m => m.npcName).join(', ');
+      addLog(`👾 Squad [${names}] attacked → ${targets}`);
+    } else {
+      const npc = getNPCById(npcAttackData.npcId);
+      addLog(`👾 "${npc?.name}" used "${npcAttackData.attack?.name}" → ${targets}`);
+    }
     closeNPCCalculator();
   };
 
@@ -224,6 +249,8 @@ export const useCampaignTurn = (
     buildTurnOrder,
     endCampaignTurn,
     openNPCAttack,
+    openNPCSquadAttack,
+    isSquadAttack,
     closeNPCCalculator,
     applyNPCDamage,
     handleActivateNPC,

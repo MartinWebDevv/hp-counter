@@ -410,6 +410,7 @@ const HPCounter = () => {
               onHPChange={setNPCHP}
               onTriggerPhase={triggerNextPhase}
               onOpenNPCAttack={campaign.openNPCAttack}
+              onOpenNPCSquadAttack={campaign.openNPCSquadAttack}
               getNPCById={getNPCById}
               currentTurnId={currentCampaignNPCId}
               onIncrementAttack={campaign.handleIncrementAttack}
@@ -648,65 +649,220 @@ const HPCounter = () => {
 // ── NPCCalculator (inline) ────────────────────────────────────────────────────
 
 const NPCCalculator = ({ npcAttackData, players, onClose, onProceed }) => {
-  const [rolls, setRolls]               = React.useState([]);
-  const [atkRoll, setAtkRoll]           = React.useState('');
-  const [defRoll, setDefRoll]           = React.useState('');
-  const [totalDamage, setTotalDamage]   = React.useState(0);
-  const [targets, setTargets]           = React.useState([]);
+  const isSquad   = !!npcAttackData.isSquad;
+  const members   = npcAttackData.squadMembers || [];
 
-  const attack   = npcAttackData.attack;
-  const numRolls = attack?.numRolls||1;
-  const dieType  = attack?.dieType||'d20';
-  const dieMax   = dieType==='d20'?20:10;
-  const allDone  = rolls.length>=numRolls;
+  // For squad: track which member we're on and accumulate rolls per member
+  const [squadRollIndex,  setSquadRollIndex]  = React.useState(0); // which member is rolling
+  const [memberRolls,     setMemberRolls]     = React.useState([]); // [[rolls for member0], [rolls for member1], ...]
+  const [currentMemberRolls, setCurrentMemberRolls] = React.useState([]);
+
+  // For solo: original state
+  const [rolls,        setRolls]        = React.useState([]);
+  const [totalDamage,  setTotalDamage]  = React.useState(0);
+
+  const [atkRoll,  setAtkRoll]  = React.useState('');
+  const [defRoll,  setDefRoll]  = React.useState('');
+  const [targets,  setTargets]  = React.useState([]);
+  const [errorMsg, setErrorMsg] = React.useState('');
+
+  // Current NPC being rolled
+  const currentMember   = isSquad ? members[squadRollIndex] : null;
+  const attack          = isSquad ? currentMember?.attack : npcAttackData.attack;
+  const attackBonus     = isSquad ? (currentMember?.attackBonus || 0) : (npcAttackData.attackBonus || 0);
+  const npcName         = isSquad ? currentMember?.npcName : npcAttackData.npcName;
+  const numRolls        = attack?.numRolls || 1;
+  const dieType         = attack?.dieType || 'd20';
+  const dieMax          = dieType === 'd20' ? 20 : 10;
+
+  const activeRolls     = isSquad ? currentMemberRolls : rolls;
+  const allDoneForCurrent = activeRolls.length >= numRolls;
+  const isLastMember    = isSquad ? squadRollIndex >= members.length - 1 : true;
+  const allSquadDone    = isSquad ? (allDoneForCurrent && isLastMember) : allDoneForCurrent;
+  const allDone         = isSquad ? allSquadDone : allDoneForCurrent;
+
+  // Running total across all squad members
+  const squadRunningTotal = memberRolls.reduce((sum, mRolls) => sum + mRolls.reduce((s, r) => s + r.dmg, 0), 0);
+  const currentMemberTotal = currentMemberRolls.reduce((s, r) => s + r.dmg, 0);
+  const displayTotal = isSquad ? (squadRunningTotal + currentMemberTotal) : totalDamage;
 
   const addRoll = () => {
-    const atk=parseInt(atkRoll)||0, bonus=parseInt(npcAttackData.attackBonus)||0, def=parseInt(defRoll)||0;
-    const finalAtk=atk+bonus, dmg=Math.max(0,finalAtk-def);
-    setRolls(p=>[...p,{atk,bonus,finalAtk,def,dmg}]);
-    setTotalDamage(p=>p+dmg); setAtkRoll(''); setDefRoll('');
+    const atk = parseInt(atkRoll) || 0;
+    const def = parseInt(defRoll) || 0;
+    const finalAtk = atk + attackBonus;
+    const dmg = Math.max(0, finalAtk - def);
+    const roll = { atk, bonus: attackBonus, finalAtk, def, dmg };
+
+    if (isSquad) {
+      setCurrentMemberRolls(prev => [...prev, roll]);
+    } else {
+      setRolls(prev => [...prev, roll]);
+      setTotalDamage(prev => prev + dmg);
+    }
+    setAtkRoll(''); setDefRoll('');
+  };
+
+  const advanceToNextMember = () => {
+    // Save current member's rolls
+    const savedRolls = [...memberRolls, currentMemberRolls];
+    setMemberRolls(savedRolls);
+    setCurrentMemberRolls([]);
+    setSquadRollIndex(prev => prev + 1);
+    setAtkRoll(''); setDefRoll('');
   };
 
   const toggleTarget = (playerId, unitType) => {
-    const key=`${playerId}-${unitType}`;
-    setTargets(p => p.find(t=>`${t.playerId}-${t.unitType}`===key) ? p.filter(t=>`${t.playerId}-${t.unitType}`!==key) : [...p,{playerId,unitType}]);
+    const key = `${playerId}-${unitType}`;
+    setTargets(prev => prev.find(t => `${t.playerId}-${t.unitType}` === key)
+      ? prev.filter(t => `${t.playerId}-${t.unitType}` !== key)
+      : [...prev, { playerId, unitType }]
+    );
   };
 
-  const inputStyle = { background:'#1a0f0a', color:gold, padding:'0.75rem', borderRadius:'6px', border:'2px solid #5a4a3a', fontSize:'1.5rem', textAlign:'center', fontFamily:'"Cinzel",Georgia,serif', fontWeight:'bold', width:'100%' };
+  const handleProceed = () => {
+    if (!allDone) { setErrorMsg(`Complete all rolls first.`); return; }
+    if (targets.length === 0) { setErrorMsg('Select at least one target.'); return; }
+
+    let finalRolls, finalTotal;
+    if (isSquad) {
+      const allRolls = [...memberRolls, currentMemberRolls];
+      finalRolls = allRolls.flat();
+      finalTotal = finalRolls.reduce((s, r) => s + r.dmg, 0);
+    } else {
+      finalRolls = rolls;
+      finalTotal = totalDamage;
+    }
+    onProceed({ ...npcAttackData, totalDamage: finalTotal, d20Rolls: finalRolls, targetSquadMembers: targets });
+  };
+
+  const inputStyle = { background: '#1a0f0a', color: gold, padding: '0.75rem', borderRadius: '6px', border: '2px solid #5a4a3a', fontSize: '1.5rem', textAlign: 'center', fontFamily: '"Cinzel",Georgia,serif', fontWeight: 'bold', width: '100%' };
 
   return (
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:'linear-gradient(145deg,#1a0f0a,#0f0805)',border:`3px solid ${gold}`,borderRadius:'12px',padding:'1.5rem',maxWidth:'480px',width:'90%',maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.9)'}}>
-        <h3 style={{color:gold,fontFamily:'"Cinzel",Georgia,serif',textAlign:'center',marginBottom:'1rem',fontSize:'1.2rem'}}>👾 {npcAttackData.npcName} — {attack?.name}</h3>
-        <div style={{textAlign:'center',color:'#8b7355',fontSize:'0.875rem',marginBottom:'1rem'}}>{dieType.toUpperCase()} × {numRolls} | Roll {Math.min(rolls.length+1,numRolls)} of {numRolls}</div>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: `3px solid ${gold}`, borderRadius: '12px', padding: '1.5rem', maxWidth: '500px', width: '90%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.9)' }}>
 
-        <div style={{marginBottom:'1rem',background:'#0a0503',padding:'0.75rem',borderRadius:'6px',border:'1px solid #5a4a3a'}}>
-          <div style={{color:gold,fontSize:'0.8rem',fontWeight:'700',marginBottom:'0.5rem'}}>SELECT TARGETS:</div>
-          {players.map(player=>(
-            <div key={player.id} style={{marginBottom:'0.35rem'}}>
-              <div style={{color:'#8b7355',fontSize:'0.75rem',marginBottom:'0.2rem'}}>{player.playerName}</div>
-              <div style={{display:'flex',flexWrap:'wrap',gap:'0.35rem'}}>
-                {player.commanderStats.hp>0&&<label style={{display:'flex',alignItems:'center',gap:'0.25rem',cursor:'pointer',color:gold,fontSize:'0.75rem'}}><input type='checkbox' checked={!!targets.find(t=>t.playerId===player.id&&t.unitType==='commander')} onChange={()=>toggleTarget(player.id,'commander')} />⚔️ {player.commanderStats.customName||player.commander} ({player.commanderStats.hp}hp)</label>}
-                {player.subUnits.map((unit,idx)=>unit.hp>0&&<label key={idx} style={{display:'flex',alignItems:'center',gap:'0.25rem',cursor:'pointer',color:'#c4b5fd',fontSize:'0.75rem'}}><input type='checkbox' checked={!!targets.find(t=>t.playerId===player.id&&t.unitType===(idx===0?'special':`soldier${idx}`))} onChange={()=>toggleTarget(player.id,idx===0?'special':`soldier${idx}`)} />{idx===0?'⭐':'🛡️'} {unit.name||(idx===0?'Special':`Soldier ${idx}`)} ({unit.hp}hp)</label>)}
+        {/* Header */}
+        <h3 style={{ color: gold, fontFamily: '"Cinzel",Georgia,serif', textAlign: 'center', marginBottom: '0.25rem', fontSize: '1.2rem' }}>
+          {isSquad ? '⚔️ NPC Squad Attack' : `👾 ${npcName} — ${attack?.name}`}
+        </h3>
+
+        {/* Squad progress bar */}
+        {isSquad && (
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center', marginBottom: '0.5rem' }}>
+              {members.map((m, i) => (
+                <div key={m.npcId} style={{ flex: 1, padding: '0.3rem 0.4rem', borderRadius: '6px', textAlign: 'center', background: i < squadRollIndex ? 'rgba(74,222,128,0.12)' : i === squadRollIndex ? 'rgba(124,58,237,0.2)' : 'rgba(0,0,0,0.3)', border: `1px solid ${i < squadRollIndex ? 'rgba(74,222,128,0.4)' : i === squadRollIndex ? '#a78bfa' : 'rgba(90,74,58,0.3)'}` }}>
+                  <div style={{ color: i < squadRollIndex ? '#4ade80' : i === squadRollIndex ? '#e9d5ff' : '#4b5563', fontSize: '0.62rem', fontWeight: '800', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {i < squadRollIndex ? '✓ ' : i === squadRollIndex ? '▶ ' : ''}{m.npcName}
+                  </div>
+                  <div style={{ color: i === squadRollIndex ? '#a78bfa' : '#4b5563', fontSize: '0.58rem' }}>{m.attack?.name}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ textAlign: 'center', color: '#a78bfa', fontSize: '0.78rem', fontWeight: '700' }}>
+              {npcName} — {attack?.name} · {dieType.toUpperCase()} × {numRolls} · Roll {Math.min(activeRolls.length + 1, numRolls)} of {numRolls}
+            </div>
+          </div>
+        )}
+
+        {!isSquad && (
+          <div style={{ textAlign: 'center', color: '#8b7355', fontSize: '0.875rem', marginBottom: '1rem' }}>
+            {dieType.toUpperCase()} × {numRolls} | Roll {Math.min(rolls.length + 1, numRolls)} of {numRolls}
+          </div>
+        )}
+
+        {/* Target selector */}
+        <div style={{ marginBottom: '1rem', background: '#0a0503', padding: '0.75rem', borderRadius: '6px', border: '1px solid #5a4a3a' }}>
+          <div style={{ color: gold, fontSize: '0.8rem', fontWeight: '700', marginBottom: '0.5rem' }}>SELECT TARGETS:</div>
+          {players.map(player => (
+            <div key={player.id} style={{ marginBottom: '0.35rem' }}>
+              <div style={{ color: '#8b7355', fontSize: '0.75rem', marginBottom: '0.2rem' }}>{player.playerName}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {player.commanderStats.hp > 0 && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', color: gold, fontSize: '0.75rem' }}>
+                    <input type='checkbox' checked={!!targets.find(t => t.playerId === player.id && t.unitType === 'commander')} onChange={() => toggleTarget(player.id, 'commander')} />
+                    ⚔️ {player.commanderStats.customName || player.commander} ({player.commanderStats.hp}hp)
+                  </label>
+                )}
+                {player.subUnits.map((unit, idx) => unit.hp > 0 && (
+                  <label key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', color: '#c4b5fd', fontSize: '0.75rem' }}>
+                    <input type='checkbox' checked={!!targets.find(t => t.playerId === player.id && t.unitType === (idx === 0 ? 'special' : `soldier${idx}`))} onChange={() => toggleTarget(player.id, idx === 0 ? 'special' : `soldier${idx}`)} />
+                    {idx === 0 ? '⭐' : '🛡️'} {unit.name || (idx === 0 ? 'Special' : `Soldier ${idx}`)} ({unit.hp}hp)
+                  </label>
+                ))}
               </div>
             </div>
           ))}
         </div>
 
-        {!allDone&&(
-          <div style={{background:'#0a0503',border:`2px solid ${gold}`,borderRadius:'6px',padding:'1rem',marginBottom:'1rem'}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem',marginBottom:'0.75rem'}}>
-              <div><label style={{color:gold,fontSize:'0.8rem',display:'block',marginBottom:'0.4rem'}}>NPC Roll ({dieType.toUpperCase()})</label><input type='number' min='1' max={dieMax} value={atkRoll} onChange={e=>setAtkRoll(e.target.value)} style={inputStyle}/></div>
-              <div><label style={{color:gold,fontSize:'0.8rem',display:'block',marginBottom:'0.4rem'}}>Player Defense (D10)</label><input type='number' min='1' max='10' value={defRoll} onChange={e=>setDefRoll(e.target.value)} style={inputStyle}/></div>
+        {/* Roll input */}
+        {!allDoneForCurrent && (
+          <div style={{ background: '#0a0503', border: `2px solid ${gold}`, borderRadius: '6px', padding: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
+              <div>
+                <label style={{ color: gold, fontSize: '0.8rem', display: 'block', marginBottom: '0.4rem' }}>NPC Roll ({dieType.toUpperCase()})</label>
+                <input type='number' min='1' max={dieMax} value={atkRoll} onChange={e => setAtkRoll(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ color: gold, fontSize: '0.8rem', display: 'block', marginBottom: '0.4rem' }}>Player Defense (D10)</label>
+                <input type='number' min='1' max='10' value={defRoll} onChange={e => setDefRoll(e.target.value)} style={inputStyle} />
+              </div>
             </div>
-            <button onClick={addRoll} disabled={!atkRoll||!defRoll} style={{width:'100%',padding:'0.65rem',background:(atkRoll&&defRoll)?'linear-gradient(135deg,#7c3aed,#6d28d9)':'#1a0f0a',color:(atkRoll&&defRoll)?'#e9d5ff':'#4a3322',border:'2px solid',borderColor:(atkRoll&&defRoll)?'#a78bfa':'#4a3322',borderRadius:'6px',cursor:(atkRoll&&defRoll)?'pointer':'not-allowed',fontFamily:'"Cinzel",Georgia,serif',fontWeight:'bold'}}>+ Add Roll</button>
+            <button onClick={addRoll} disabled={!atkRoll || !defRoll} style={{ width: '100%', padding: '0.65rem', background: (atkRoll && defRoll) ? 'linear-gradient(135deg,#7c3aed,#6d28d9)' : '#1a0f0a', color: (atkRoll && defRoll) ? '#e9d5ff' : '#4a3322', border: '2px solid', borderColor: (atkRoll && defRoll) ? '#a78bfa' : '#4a3322', borderRadius: '6px', cursor: (atkRoll && defRoll) ? 'pointer' : 'not-allowed', fontFamily: '"Cinzel",Georgia,serif', fontWeight: 'bold' }}>
+              + Add Roll
+            </button>
           </div>
         )}
-        {rolls.length>0&&<div style={{background:'#0a0503',padding:'0.75rem',borderRadius:'6px',border:'1px solid #5a4a3a',marginBottom:'1rem'}}>{rolls.map((r,i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:'0.875rem',padding:'0.25rem 0'}}><span style={{color:'#8b7355'}}>Roll {i+1}: {r.atk}{r.bonus>0&&<span style={{color:'#fbbf24'}}>+{r.bonus}</span>} vs {r.def}</span><span style={{color:r.dmg>0?'#fecaca':'#86efac',fontWeight:'bold'}}>{r.dmg>0?`${r.dmg}hp`:'BLOCKED'}</span></div>)}</div>}
-        <div style={{background:'#0a0503',border:`2px solid ${gold}`,borderRadius:'6px',padding:'1rem',textAlign:'center',marginBottom:'1rem'}}><div style={{color:gold,fontSize:'0.8rem'}}>Total Damage</div><div style={{color:'#fecaca',fontSize:'2rem',fontWeight:'bold',fontFamily:'"Cinzel",Georgia,serif'}}>{totalDamage}hp</div></div>
-        <div style={{display:'flex',gap:'1rem'}}>
-          <button onClick={()=>{if(rolls.length<numRolls){alert(`Complete all ${numRolls} rolls first!`);return;}if(targets.length===0){alert('Select at least one target!');return;}onProceed({...npcAttackData,totalDamage,d20Rolls:rolls,targetSquadMembers:targets});}} disabled={!allDone||targets.length===0} style={{flex:1,padding:'0.75rem',fontFamily:'"Cinzel",Georgia,serif',fontWeight:'bold',fontSize:'1rem',borderRadius:'6px',cursor:(allDone&&targets.length>0)?'pointer':'not-allowed',background:(allDone&&targets.length>0)?'linear-gradient(to bottom,#15803d,#14532d)':'#1a0f0a',color:(allDone&&targets.length>0)?'#86efac':'#4a3322',border:'2px solid',borderColor:(allDone&&targets.length>0)?'#16a34a':'#4a3322'}}>✓ Proceed</button>
-          <button onClick={onClose} style={{flex:1,padding:'0.75rem',background:'linear-gradient(to bottom,#7f1d1d,#5f1a1a)',color:'#fecaca',border:'2px solid #991b1b',borderRadius:'6px',cursor:'pointer',fontFamily:'"Cinzel",Georgia,serif',fontWeight:'bold'}}>✕ Cancel</button>
+
+        {/* Current member rolls history */}
+        {activeRolls.length > 0 && (
+          <div style={{ background: '#0a0503', padding: '0.75rem', borderRadius: '6px', border: '1px solid #5a4a3a', marginBottom: '0.5rem' }}>
+            {isSquad && <div style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', marginBottom: '0.3rem' }}>{npcName}</div>}
+            {activeRolls.map((r, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', padding: '0.2rem 0' }}>
+                <span style={{ color: '#8b7355' }}>Roll {i + 1}: {r.atk}{r.bonus > 0 && <span style={{ color: '#fbbf24' }}>+{r.bonus}</span>} vs {r.def}</span>
+                <span style={{ color: r.dmg > 0 ? '#fecaca' : '#86efac', fontWeight: 'bold' }}>{r.dmg > 0 ? `${r.dmg}hp` : 'BLOCKED'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Previous squad member rolls */}
+        {isSquad && memberRolls.some(mr => mr.length > 0) && (
+          <div style={{ marginBottom: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            {memberRolls.map((mr, mi) => mr.length > 0 && (
+              <div key={mi} style={{ background: 'rgba(74,222,128,0.06)', padding: '0.4rem 0.65rem', borderRadius: '5px', border: '1px solid rgba(74,222,128,0.2)' }}>
+                <span style={{ color: '#4ade80', fontSize: '0.62rem', fontWeight: '800' }}>✓ {members[mi]?.npcName}</span>
+                <span style={{ color: '#6b7280', fontSize: '0.62rem', marginLeft: '0.5rem' }}>{mr.reduce((s, r) => s + r.dmg, 0)}hp</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Advance to next NPC (squad mode) */}
+        {isSquad && allDoneForCurrent && !isLastMember && (
+          <button onClick={advanceToNextMember} style={{ width: '100%', padding: '0.65rem', marginBottom: '0.75rem', background: 'linear-gradient(135deg,#1e3a8a,#1e40af)', border: '2px solid #3b82f6', color: '#dbeafe', borderRadius: '6px', cursor: 'pointer', fontFamily: '"Cinzel",Georgia,serif', fontWeight: 'bold' }}>
+            ➡️ Next: {members[squadRollIndex + 1]?.npcName} — {members[squadRollIndex + 1]?.attack?.name}
+          </button>
+        )}
+
+        {/* Total damage */}
+        <div style={{ background: '#0a0503', border: `2px solid ${gold}`, borderRadius: '6px', padding: '1rem', textAlign: 'center', marginBottom: '1rem' }}>
+          <div style={{ color: gold, fontSize: '0.8rem' }}>Total Damage</div>
+          <div style={{ color: '#fecaca', fontSize: '2rem', fontWeight: 'bold', fontFamily: '"Cinzel",Georgia,serif' }}>{displayTotal}hp</div>
+        </div>
+
+        {/* Error */}
+        {errorMsg && (
+          <div style={{ padding: '0.5rem 0.75rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '7px', marginBottom: '0.75rem', color: '#fca5a5', fontSize: '0.78rem', fontWeight: '700', textAlign: 'center' }}>
+            ⚠️ {errorMsg}
+          </div>
+        )}
+
+        {/* Proceed / Cancel */}
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button onClick={handleProceed} disabled={!allDone || targets.length === 0} style={{ flex: 1, padding: '0.75rem', fontFamily: '"Cinzel",Georgia,serif', fontWeight: 'bold', fontSize: '1rem', borderRadius: '6px', cursor: (allDone && targets.length > 0) ? 'pointer' : 'not-allowed', background: (allDone && targets.length > 0) ? 'linear-gradient(to bottom,#15803d,#14532d)' : '#1a0f0a', color: (allDone && targets.length > 0) ? '#86efac' : '#4a3322', border: '2px solid', borderColor: (allDone && targets.length > 0) ? '#16a34a' : '#4a3322' }}>✓ Proceed</button>
+          <button onClick={onClose} style={{ flex: 1, padding: '0.75rem', background: 'linear-gradient(to bottom,#7f1d1d,#5f1a1a)', color: '#fecaca', border: '2px solid #991b1b', borderRadius: '6px', cursor: 'pointer', fontFamily: '"Cinzel",Georgia,serif', fontWeight: 'bold' }}>✕ Cancel</button>
         </div>
       </div>
     </div>

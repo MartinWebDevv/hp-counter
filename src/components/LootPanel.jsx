@@ -315,7 +315,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
 
 // ── Loot Item Card ────────────────────────────────────────────────────────────
 
-const LootItemCard = ({ item, players, onGive, onDelete }) => {
+const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
   const [showGive, setShowGive] = useState(false);
   const c = item.isQuestItem ? TIER_COLORS.Quest : (TIER_COLORS[item.tier] || TIER_COLORS.Common);
   const effectLabel = EFFECT_TYPES.find(e => e.value === item.effect?.type)?.label || '📋 Manual';
@@ -375,14 +375,24 @@ const LootItemCard = ({ item, players, onGive, onDelete }) => {
               </>
             )}
           </div>
-          <button onClick={() => setShowGive(true)} style={{
-            padding: '0.35rem 0.85rem',
-            background: 'linear-gradient(135deg, rgba(139,92,246,0.2), rgba(109,40,217,0.1))',
-            border: '2px solid rgba(139,92,246,0.5)',
-            color: '#c4b5fd', borderRadius: '6px', cursor: 'pointer',
-            fontFamily: 'inherit', fontWeight: '800', fontSize: '0.75rem',
-            letterSpacing: '0.05em',
-          }}>🎁 Give</button>
+          <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+            <button onClick={() => setShowGive(true)} style={{
+              padding: '0.35rem 0.85rem',
+              background: 'linear-gradient(135deg, rgba(139,92,246,0.2), rgba(109,40,217,0.1))',
+              border: '2px solid rgba(139,92,246,0.5)',
+              color: '#c4b5fd', borderRadius: '6px', cursor: 'pointer',
+              fontFamily: 'inherit', fontWeight: '800', fontSize: '0.75rem',
+              letterSpacing: '0.05em',
+            }}>🎁 Give</button>
+            <button onClick={() => onArchive(item)} style={{
+              padding: '0.35rem 0.85rem',
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid rgba(90,74,58,0.4)',
+              color: '#6b7280', borderRadius: '6px', cursor: 'pointer',
+              fontFamily: 'inherit', fontWeight: '800', fontSize: '0.75rem',
+              letterSpacing: '0.05em',
+            }}>🗄️ Archive</button>
+          </div>
         </div>
       </div>
 
@@ -403,6 +413,8 @@ const LootItemCard = ({ item, players, onGive, onDelete }) => {
 const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
   const [showCreator, setShowCreator] = useState(false);
   const [filterTier, setFilterTier] = useState('All');
+  const [archivedItems, setArchivedItems] = useState([]);
+  const [showArchive, setShowArchive] = useState(false);
 
   const handleSave = (item) => {
     setLootPool(prev => [...prev, item]);
@@ -411,6 +423,16 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
 
   const handleDelete = (itemId) => {
     setLootPool(prev => prev.filter(i => i.id !== itemId));
+  };
+
+  const handleArchive = (item) => {
+    setLootPool(prev => prev.filter(i => i.id !== item.id));
+    setArchivedItems(prev => [...prev, item]);
+  };
+
+  const handleReinstate = (item) => {
+    setArchivedItems(prev => prev.filter(i => i.id !== item.id));
+    setLootPool(prev => [...prev, item]);
   };
 
   const filtered = filterTier === 'All'
@@ -481,12 +503,83 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
           players={players}
           onGive={onGiveItem}
           onDelete={handleDelete}
+          onArchive={handleArchive}
         />
       ))}
 
       {filtered.length === 0 && lootPool.length > 0 && (
         <div style={{ textAlign: 'center', color: '#4b5563', padding: '2rem', fontSize: '0.85rem' }}>
           No {filterTier} items in pool.
+        </div>
+      )}
+
+      {/* Archive section */}
+      {archivedItems.length > 0 && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <div
+            onClick={() => setShowArchive(s => !s)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              padding: '0.65rem 1rem', cursor: 'pointer',
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid rgba(90,74,58,0.3)',
+              borderRadius: showArchive ? '8px 8px 0 0' : '8px',
+            }}
+          >
+            <span style={{ fontSize: '0.9rem' }}>🗄️</span>
+            <span style={{ color: '#6b7280', fontWeight: '800', fontSize: '0.82rem', flex: 1, letterSpacing: '0.06em' }}>
+              ARCHIVED ITEMS
+            </span>
+            <span style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '700', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(90,74,58,0.3)', borderRadius: '20px', padding: '0.1rem 0.5rem' }}>
+              {archivedItems.length}
+            </span>
+            <span style={{ color: '#4b5563', fontSize: '0.8rem' }}>{showArchive ? '▲' : '▼'}</span>
+          </div>
+
+          {showArchive && (
+            <div style={{
+              background: 'rgba(0,0,0,0.2)',
+              border: '1px solid rgba(90,74,58,0.3)',
+              borderTop: 'none',
+              borderRadius: '0 0 8px 8px',
+              padding: '0.5rem',
+              display: 'flex', flexDirection: 'column', gap: '0.4rem',
+            }}>
+              {archivedItems.map(item => {
+                const c = item.isQuestItem ? TIER_COLORS.Quest : (TIER_COLORS[item.tier] || TIER_COLORS.Common);
+                return (
+                  <div key={item.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    padding: '0.55rem 0.85rem',
+                    background: 'rgba(0,0,0,0.35)',
+                    border: `1px solid ${c.border}`,
+                    borderLeft: `3px solid ${c.border}`,
+                    borderRadius: '6px', opacity: 0.7,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ color: c.text, fontWeight: '800', fontSize: '0.85rem' }}>{item.name}</span>
+                      <span style={{
+                        marginLeft: '0.5rem',
+                        padding: '0.1rem 0.4rem', background: c.bg,
+                        border: `1px solid ${c.border}`, borderRadius: '4px',
+                        color: c.text, fontSize: '0.6rem', fontWeight: '800',
+                        textTransform: 'uppercase',
+                      }}>{item.isQuestItem ? '🗝️ Quest' : item.tier}</span>
+                    </div>
+                    <button onClick={() => handleReinstate(item)} style={{
+                      padding: '0.3rem 0.75rem',
+                      background: 'rgba(34,197,94,0.1)',
+                      border: '1px solid rgba(34,197,94,0.4)',
+                      borderRadius: '6px', cursor: 'pointer',
+                      color: '#86efac', fontFamily: 'inherit',
+                      fontWeight: '800', fontSize: '0.7rem',
+                      letterSpacing: '0.05em', whiteSpace: 'nowrap', flexShrink: 0,
+                    }}>↩ Re-Instate</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

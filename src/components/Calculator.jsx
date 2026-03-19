@@ -15,6 +15,8 @@ const Calculator = ({
   gameMode = 'classic',
   firstStrike = false,
   onUpdatePlayer = () => {},
+  onAddLog = () => {},
+  onEndTurn = null,
 }) => {
   if (gameMode === 'd20' || gameMode === 'campaign') {
     return (
@@ -26,6 +28,8 @@ const Calculator = ({
         onProceedToDistribution={onProceedToDistribution}
         firstStrike={firstStrike}
         onUpdatePlayer={onUpdatePlayer}
+        onAddLog={onAddLog}
+        onEndTurn={onEndTurn}
       />
     );
   }

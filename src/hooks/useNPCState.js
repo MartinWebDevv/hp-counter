@@ -44,7 +44,9 @@ export const useNPCState = (addLog, onNPCKilled) => {
     spawnText: '',         // used when attackType === 'spawn'
     spawnDieType: '',      // optional dice for spawn (e.g. 'd6')
     spawnNumRolls: 1,      // how many of that die to roll
+    spawnPresets: [],      // [{ name, hp, maxHp, armor, attackBonus }] preset NPCs to spawn
     description: '',       // used for action/spawn type
+    attackEffect: null,    // { type: 'poison'|'stun', value?, duration? }
   });
 
   /**
@@ -108,7 +110,8 @@ export const useNPCState = (addLog, onNPCKilled) => {
       if (exists) {
         return prev.map(n => n.id === npcData.id ? { ...npcData } : n);
       }
-      return [...prev, { ...npcData, active: false, isDead: false, currentPhase: 0 }];
+      // Respect active flag if explicitly set (e.g. spawned NPCs), otherwise default false
+      return [...prev, { ...npcData, active: npcData.active === true ? true : false, isDead: false, currentPhase: 0 }];
     });
     addLog(`📋 NPC "${npcData.name}" ${editingNPCId ? 'updated' : 'created'}.`);
     closeCreator();
@@ -163,13 +166,15 @@ export const useNPCState = (addLog, onNPCKilled) => {
         updated.isDead = true;
         updated.active = false;
         const killLine = killerName
-          ? `💀 "${n.name}" defeated! Final blow by ${killerName}'s ${killerUnit} for ${damageAmount}hp.`
-          : `💀 "${n.name}" has been defeated!`;
+          ? `💀 ${killerName}'s ${killerUnit} killed ${n.name}. Damage dealt: ${damageAmount}hp.`
+          : `💀 ${n.name} has been defeated!`;
         addLog(killLine);
-        // Fire loot callback with the snapshot of the dying NPC
+        // Fire loot callback — weighted loot OR preloaded table OR final boss
         if (onNPCKilled) {
           const payload = { ...updated, lootTable: n.lootTable };
-          if ((n.lootTable || []).length > 0 || n.isFinalBoss) {
+          const hasWeighted = n.lootMode === 'weighted' && (n.lootItemCount || 1) > 0;
+          const hasPreloaded = (n.lootTable || []).length > 0;
+          if (hasWeighted || hasPreloaded || n.isFinalBoss) {
             setTimeout(() => onNPCKilled(payload), 50);
           }
         }
@@ -189,7 +194,11 @@ export const useNPCState = (addLog, onNPCKilled) => {
     setNpcs(prev => prev.map(n => {
       if (n.id !== npcId) return n;
       const clamped = Math.max(0, Math.min(n.maxHp, newHP));
-      return { ...n, hp: clamped, isDead: clamped === 0 };
+      let updated = { ...n, hp: clamped, isDead: clamped === 0, diedInSession: clamped === 0 ? (n.diedInSession || 'Session 1') : n.diedInSession };
+      if (updated.hasPhases && updated.phases.length > 0) {
+        updated = checkPhaseTransition(updated);
+      }
+      return updated;
     }));
   };
 
@@ -261,7 +270,6 @@ export const useNPCState = (addLog, onNPCKilled) => {
       if (!n.hasPhases || n.currentPhase >= n.phases.length) return n;
 
       const nextPhase = n.phases[n.currentPhase];
-      if ((nextPhase.triggerType || 'hp') === 'manual') return n;
       const resurrectHP = nextPhase.triggerHP === 0 ? (nextPhase.resurrectHP || 20) : null;
 
       const phaseAttacksFilled = nextPhase.attacks?.some(a => a.name?.trim());

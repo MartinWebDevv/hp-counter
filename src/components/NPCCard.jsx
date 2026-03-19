@@ -18,9 +18,11 @@ const NPCCard = ({
   onHPChange,
   onTriggerPhase,
   onOpenNPCAttack,
+  onSpawnAttack,
   onIncrementAttack,
   players = [],
   onDropLoot,
+  getTimersForNPC = () => [],
 }) => {
   const [manualHP, setManualHP] = React.useState('');
   const [showLootModal, setShowLootModal] = React.useState(false);
@@ -140,6 +142,47 @@ const NPCCard = ({
 
         <button onClick={() => onEdit(npc.id)} title="Edit NPC" style={iconBtnStyle('#3b82f6')}>✏️</button>
         <button onClick={() => onRemove(npc.id)} title="Remove NPC" style={iconBtnStyle('#dc2626')}>✕</button>
+
+        {/* Phase buttons — only shown if NPC has phases */}
+        {npc.hasPhases && npc.phases?.length > 0 && (
+          <>
+            <div style={{
+              padding: '0.3rem 0.65rem',
+              background: 'rgba(124,58,237,0.15)',
+              border: '1px solid rgba(139,92,246,0.35)',
+              borderRadius: '6px',
+              color: '#a78bfa',
+              fontSize: '0.72rem',
+              fontWeight: '800',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              letterSpacing: '0.04em',
+            }}>
+              {currentPhaseName}
+            </div>
+            {hasNextPhase && (
+              <button
+                onClick={() => onTriggerPhase(npc.id)}
+                style={{
+                  padding: '0.3rem 0.75rem',
+                  background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                  border: '2px solid #a78bfa',
+                  borderRadius: '6px',
+                  color: '#e9d5ff',
+                  fontSize: '0.72rem',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  letterSpacing: '0.04em',
+                }}
+              >
+                ⚡ Next Phase
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Stats row */}
@@ -177,6 +220,8 @@ const NPCCard = ({
         borderRadius: '10px',
         padding: '1rem',
         marginBottom: '0.75rem',
+        display: 'flex',
+        flexDirection: 'column',
       }}>
         <div style={{
           display: 'flex',
@@ -266,6 +311,9 @@ const NPCCard = ({
         borderRadius: '10px',
         padding: '1rem',
         marginBottom: '0.75rem',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '260px',
       }}>
         <div style={{
           color: '#f59e0b',
@@ -307,11 +355,13 @@ const NPCCard = ({
           </div>
         </div>
 
+        <div style={{ overflowY: 'auto', flex: 1, paddingRight: '2px' }}>
         {npc.attacks?.map((attack, i) => {
           const type = attack.attackType || 'attack';
           const isSpawn  = type === 'spawn';
           const isAction = type === 'action';
           const disabled = !npc.active || npc.isDead;
+          const spawnDisabled = npc.isDead; // spawn can fire from inactive NPCs too
           const borderColor = isSpawn ? 'rgba(74,222,128,0.25)' : isAction ? 'rgba(167,139,250,0.25)' : 'rgba(139,92,246,0.2)';
           return (
             <div key={attack.id || i} style={{
@@ -365,19 +415,22 @@ const NPCCard = ({
 
                 {/* Button — changes per type */}
                 <button
-                  onClick={() => !isSpawn && !isAction && onOpenNPCAttack(npc.id, i)}
-                  disabled={disabled}
+                  onClick={() => {
+                    if (isSpawn) { if (onSpawnAttack) onSpawnAttack(attack, npc.name); }
+                    else if (!isAction) onOpenNPCAttack(npc.id, i);
+                  }}
+                  disabled={isSpawn ? spawnDisabled : disabled}
                   style={{
                     padding: '0.5rem 0.85rem',
-                    background: disabled ? 'rgba(0,0,0,0.2)'
+                    background: (isSpawn ? spawnDisabled : disabled) ? 'rgba(0,0,0,0.2)'
                       : isSpawn  ? 'linear-gradient(135deg, #065f46, #047857)'
                       : isAction ? 'linear-gradient(135deg, #4c1d95, #3b0764)'
                       : 'linear-gradient(135deg, #b91c1c, #991b1b)',
                     border: '2px solid',
-                    borderColor: disabled ? '#374151' : isSpawn ? '#10b981' : isAction ? '#7c3aed' : '#dc2626',
-                    color: disabled ? '#4b5563' : isSpawn ? '#d1fae5' : isAction ? '#e9d5ff' : '#fecaca',
+                    borderColor: (isSpawn ? spawnDisabled : disabled) ? '#374151' : isSpawn ? '#10b981' : isAction ? '#7c3aed' : '#dc2626',
+                    color: (isSpawn ? spawnDisabled : disabled) ? '#4b5563' : isSpawn ? '#d1fae5' : isAction ? '#e9d5ff' : '#fecaca',
                     borderRadius: '8px',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    cursor: (isSpawn ? spawnDisabled : disabled) ? 'not-allowed' : 'pointer',
                     fontFamily: 'inherit', fontWeight: '700', fontSize: '0.85rem',
                     letterSpacing: '0.05em', textTransform: 'uppercase',
                     whiteSpace: 'nowrap', flexShrink: 0,
@@ -389,77 +442,12 @@ const NPCCard = ({
             </div>
           );
         })}
+        </div>
       </div>
 
-      {/* Phase tracker */}
-      {npc.hasPhases && npc.phases?.length > 0 && (
-        <div style={{
-          background: 'rgba(124,58,237,0.08)',
-          border: '2px solid rgba(139,92,246,0.3)',
-          borderRadius: '10px',
-          padding: '0.85rem 1rem',
-          marginBottom: '0.75rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '0.75rem',
-        }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ color: '#a78bfa', fontWeight: '800', fontSize: '0.85rem', marginBottom: '0.2rem' }}>
-              🔄 {currentPhaseName}
-            </div>
-            {hasNextPhase && (
-              <div style={{ color: '#6b7280', fontSize: '0.72rem' }}>
-                Next: <span style={{ color: '#a78bfa' }}>{nextPhase.label || `Phase ${npc.currentPhase + 2}`}</span>
-                {(nextPhase.triggerType || 'hp') === 'manual'
-                  ? <span style={{ color: '#c084fc' }}> · 🎯 Manual trigger</span>
-                  : nextPhase.triggerHP === 0
-                    ? <span> at <span style={{ color: '#ef4444' }}>death (resurrects {nextPhase.resurrectHP}hp)</span></span>
-                    : <span> at <span style={{ color: '#fbbf24' }}>{nextPhase.triggerHP}hp</span></span>
-                }
-              </div>
-            )}
-            {!hasNextPhase && (
-              <div style={{ color: '#4b5563', fontSize: '0.72rem' }}>Final phase active</div>
-            )}
-          </div>
-          {hasNextPhase && (
-            <button
-              onClick={() => onTriggerPhase(npc.id)}
-              style={{
-                padding: '0.5rem 0.85rem',
-                background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-                border: '2px solid #a78bfa',
-                color: '#e9d5ff',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontWeight: '800',
-                fontSize: '0.8rem',
-                letterSpacing: '0.05em',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              ⚡ Trigger
-            </button>
-          )}
-        </div>
-      )}
 
-      {/* Drop Loot button — only shown if NPC has loot defined */}
-      {(npc.lootTable?.length > 0) && (
-        <button
-          onClick={() => { setShowLootModal(true); setSelectedLootIdx(0); setSelectedPlayerId(''); setSelectedUnitType(''); }}
-          style={{
-            width: '100%', padding: '0.65rem', marginBottom: '0.5rem',
-            background: 'rgba(139,92,246,0.12)', border: '2px solid rgba(139,92,246,0.4)',
-            color: '#c4b5fd', borderRadius: '8px', cursor: 'pointer',
-            fontFamily: 'inherit', fontWeight: '800', fontSize: '0.85rem',
-            letterSpacing: '0.08em', textTransform: 'uppercase',
-          }}
-        >🎁 Drop Loot</button>
-      )}
+
+
 
       {/* Activate / Deactivate / Defeated */}
       {npc.isDead ? (

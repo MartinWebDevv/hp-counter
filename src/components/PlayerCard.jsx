@@ -14,6 +14,10 @@ const PlayerCard = ({
   isCurrentTurn = false,
   hasActedThisRound = false,
   onOpenDestroyModal,
+  onOpenHandOff,
+  onCommanderDied,
+  getTimersForPlayerUnit,
+  getTokenForPlayer,
 }) => {
   const [showSquad, setShowSquad] = React.useState(false);
   const [showSetup, setShowSetup] = React.useState(false);
@@ -22,6 +26,7 @@ const PlayerCard = ({
   const [maxHpTargetItem, setMaxHpTargetItem] = React.useState(null); // same shape, for maxHP items
   
   const reviveQueue = player.reviveQueue || [];
+  const [deathLootModal, setDeathLootModal] = React.useState(null); // { unitLabel, items }
   const aliveUnits = player.subUnits.filter(u => u.hp > 0).length;
   const totalUnits = player.subUnits.length;
 
@@ -46,6 +51,13 @@ const PlayerCard = ({
         isDead: justDied ? true : (newHP > 0 ? false : player.commanderStats.isDead)
       }
     });
+    if (justDied) {
+      const cmdItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
+      if (cmdItems.length > 0) {
+        const label = player.commanderStats?.customName || player.commander || 'Commander';
+        setDeathLootModal({ unitLabel: label, items: cmdItems });
+      }
+    }
   };
 
   const handleSubUnitHPChange = (index, delta) => {
@@ -58,6 +70,14 @@ const PlayerCard = ({
     const lives = unit.livesRemaining ?? unit.revives ?? 1;
     if (justDied && lives > 0 && !newReviveQueue.includes(index)) {
       newReviveQueue = [...newReviveQueue, index];
+    }
+    if (justDied) {
+      const unitType = index === 0 ? 'special' : `soldier${index}`;
+      const unitItems = (player.inventory || []).filter(it => it.heldBy === unitType);
+      if (unitItems.length > 0) {
+        const label = unit.name?.trim() || (index === 0 ? 'Special' : `Soldier ${index}`);
+        setDeathLootModal({ unitLabel: label, items: unitItems });
+      }
     }
     const allDead = newSubUnits.every(u => u.hp === 0);
     let finalSubUnits = newSubUnits;
@@ -228,6 +248,24 @@ const PlayerCard = ({
           <button onClick={() => handleCommanderHPChange(1)} disabled={cmdHP === cmdMaxHP} style={hpBtn(cmdHP === cmdMaxHP)}>+</button>
         </div>
 
+        {/* Commander status effects */}
+        {(player.commanderStats.statusEffects || []).length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.2rem 0' }}>
+            {(player.commanderStats.statusEffects || []).map((effect, ei) => {
+              const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp × ${effect.duration}r` : effect.type === 'stun' ? `💫 Stun ${effect.duration}r` : `⚡ ${effect.type}`;
+              const colors = effect.type === 'poison' ? { color: '#86efac', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.4)' } : { color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)' };
+              return (
+                <span key={ei} title='Click to remove' onClick={() => {
+                  const newStats = { ...player.commanderStats, statusEffects: (player.commanderStats.statusEffects || []).filter((_, i) => i !== ei) };
+                  onUpdate(player.id, { commanderStats: newStats });
+                }} style={{ fontSize: '0.65rem', fontWeight: '800', borderRadius: '4px', padding: '0.1rem 0.4rem', cursor: 'pointer', color: colors.color, background: colors.bg, border: `1px solid ${colors.border}` }}>
+                  {label} ✕
+                </span>
+              );
+            })}
+          </div>
+        )}
+
         {/* Commander item holding tokens */}
         {(() => {
           const heldItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
@@ -382,13 +420,50 @@ const PlayerCard = ({
                     ))}
                   </div>
                   {!isDead && unit.revivedOnPlayerId && (
-                    <span style={{
-                      fontSize: '0.65rem', fontWeight: '800',
-                      color: '#67e8f9', background: 'rgba(6,182,212,0.12)',
-                      border: '1px solid rgba(6,182,212,0.4)',
-                      borderRadius: '4px', padding: '0.1rem 0.4rem',
-                    }}>🛡️ IMMUNE</span>
+                    <span
+                      title='Click to remove immunity'
+                      onClick={e => {
+                        e.stopPropagation();
+                        const newSubs = player.subUnits.map((u, si) =>
+                          si === index ? { ...u, revivedOnPlayerId: null } : u
+                        );
+                        onUpdate(player.id, { subUnits: newSubs });
+                      }}
+                      style={{
+                        fontSize: '0.65rem', fontWeight: '800',
+                        color: '#67e8f9', background: 'rgba(6,182,212,0.12)',
+                        border: '1px solid rgba(6,182,212,0.4)',
+                        borderRadius: '4px', padding: '0.1rem 0.4rem',
+                        cursor: 'pointer',
+                      }}>🛡️ IMMUNE ✕</span>
                   )}
+                  {/* Status effect tags */}
+                  {!isDead && (unit.statusEffects || []).map((effect, ei) => {
+                    const tagStyle = { fontSize: '0.65rem', fontWeight: '800', borderRadius: '4px', padding: '0.1rem 0.4rem', cursor: 'pointer' };
+                    const label = effect.type === 'poison'
+                      ? `🤢 Poison ${effect.value}hp × ${effect.duration}r`
+                      : effect.type === 'stun'
+                      ? `💫 Stun ${effect.duration}r`
+                      : `⚡ ${effect.type}`;
+                    const colors = effect.type === 'poison'
+                      ? { color: '#86efac', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.4)' }
+                      : { color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)' };
+                    return (
+                      <span key={ei}
+                        title='Click to remove effect'
+                        onClick={e => {
+                          e.stopPropagation();
+                          const newSubs = player.subUnits.map((u, si) =>
+                            si === index ? { ...u, statusEffects: (u.statusEffects || []).filter((_, i) => i !== ei) } : u
+                          );
+                          onUpdate(player.id, { subUnits: newSubs });
+                        }}
+                        style={{ ...tagStyle, color: colors.color, background: colors.bg, border: `1px solid ${colors.border}` }}>
+                        {label} ✕
+                      </span>
+                    );
+                  })}
+
                   {isDead && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                       <span style={{
@@ -517,14 +592,13 @@ const PlayerCard = ({
             const tierColor = item.isQuestItem ? '#fde68a' : ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af');
             const usesLeft = item.effect?.uses === 0 ? Infinity : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
             const canUse = !item.effect || item.effect.type === 'manual' || usesLeft > 0;
-            const isAuto = ['heal','maxHP'].includes(item.effect?.type); // attackBonus/defenseBonus used in calculator directly
+            const isAuto = ['heal','maxHP','attackBonus','defenseBonus'].includes(item.effect?.type);
             const isManual = item.effect?.type === 'manual';
             const isDestroyItem = item.effect?.type === 'destroyItem';
             const isKey = item.effect?.type === 'key';
             const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem);
 
             const handleUseKey = () => {
-              if (!window.confirm(`Use key "${item.name}"? It will be removed from inventory.`)) return;
               const newInventory = (player.inventory || []).filter((_, idx) => idx !== i);
               onUpdate(player.id, { inventory: newInventory });
             };
@@ -547,8 +621,8 @@ const PlayerCard = ({
                 setMaxHpTargetItem({ item, itemIndex: i });
                 return;
               } else if (ef?.type === 'attackBonus' || ef?.type === 'defenseBonus') {
-                // Used directly from inside the calculator — no pending state needed
-                onUpdate(player.id, { inventory: newInventory });
+                const bonusKey = ef.type === 'attackBonus' ? 'pendingAttackBonus' : 'pendingDefenseBonus';
+                onUpdate(player.id, { [bonusKey]: (player[bonusKey] || 0) + ef.value, inventory: newInventory });
               } else if (ef?.type === 'destroyItem') {
                 // Open destroy item modal — DM picks target
                 if (onOpenDestroyModal) onOpenDestroyModal(player);
@@ -614,9 +688,69 @@ const PlayerCard = ({
                     fontFamily: 'inherit',
                   }}>🔑 USE</button>
                 )}
+                {/* Pass item to another unit */}
+                {!item.isQuestItem && onOpenHandOff && (
+                  <button onClick={() => onOpenHandOff(player, item.heldBy, item)} style={{
+                    padding: '0.25rem 0.6rem',
+                    background: 'rgba(99,102,241,0.1)',
+                    border: '1px solid rgba(99,102,241,0.4)',
+                    borderRadius: '5px', cursor: 'pointer',
+                    color: '#a5b4fc',
+                    fontSize: '0.65rem', fontWeight: '900', flexShrink: 0,
+                    fontFamily: 'inherit',
+                  }}>🤝 PASS</button>
+                )}
+                {/* Manual drop — remove item from inventory */}
+                {!item.isQuestItem && (
+                  <button onClick={() => {
+                    if (!window.confirm(`Drop "${item.name}"? It will be removed from inventory.`)) return;
+                    onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
+                  }} style={{
+                    padding: '0.25rem 0.6rem',
+                    background: 'rgba(127,29,29,0.15)',
+                    border: '1px solid rgba(127,29,29,0.4)',
+                    borderRadius: '5px', cursor: 'pointer',
+                    color: '#fca5a5',
+                    fontSize: '0.65rem', fontWeight: '900', flexShrink: 0,
+                    fontFamily: 'inherit',
+                  }}>🗑 DROP</button>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Death Loot Drop Modal ── */}
+      {deathLootModal && (
+        <div onClick={() => setDeathLootModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: '3px solid rgba(239,68,68,0.6)', borderRadius: '12px', padding: '1.5rem', width: '360px', maxWidth: '95%', boxShadow: '0 20px 60px rgba(0,0,0,0.95)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>💀</div>
+              <div style={{ color: '#fca5a5', fontWeight: '900', fontSize: '1rem', fontFamily: '"Cinzel",Georgia,serif' }}>{deathLootModal.unitLabel} has fallen!</div>
+              <div style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '0.25rem' }}>They dropped the following items:</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+              {deathLootModal.items.map(item => {
+                const tc = { Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af';
+                return (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.75rem', background: `${tc}12`, border: `1px solid ${tc}35`, borderRadius: '7px' }}>
+                    <span>{item.isQuestItem ? '🗝️' : '📦'}</span>
+                    <span style={{ color: tc, fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{item.name}</span>
+                    <span style={{ color: '#4b5563', fontSize: '0.62rem' }}>{item.tier}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={() => {
+              // Remove all dropped items from inventory
+              const droppedIds = new Set(deathLootModal.items.map(it => it.id));
+              onUpdate(player.id, { inventory: (player.inventory || []).filter(it => !droppedIds.has(it.id)) });
+              setDeathLootModal(null);
+            }} style={{ width: '100%', padding: '0.75rem', background: 'linear-gradient(135deg,#b91c1c,#991b1b)', border: '2px solid #dc2626', color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem' }}>
+              🗺️ Items Dropped — Remove from Inventory
+            </button>
+          </div>
         </div>
       )}
 

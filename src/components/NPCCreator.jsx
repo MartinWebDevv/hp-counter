@@ -199,7 +199,11 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
         attackType: a.attackType || 'attack',
         numRolls: (a.attackType || 'attack') === 'attack' ? (parseInt(a.numRolls) || 1) : 0,
         spawnText: a.spawnText || '',
+        spawnDieType: a.spawnDieType || '',
+        spawnNumRolls: parseInt(a.spawnNumRolls) || 1,
+        spawnPresets: a.spawnPresets || [],
         description: a.description || '',
+        attackEffect: a.attackEffect || null,
       })),
       phases: npc.hasPhases ? npc.phases.map(p => ({
         ...p,
@@ -215,7 +219,9 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           spawnText: a.spawnText || '',
           spawnDieType: a.spawnDieType || '',
           spawnNumRolls: parseInt(a.spawnNumRolls) || 1,
+          spawnPresets: a.spawnPresets || [],
           description: a.description || '',
+          attackEffect: a.attackEffect || null,
         })),
       })) : [],
     });
@@ -756,22 +762,17 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
         </div>
       )}
 
-      {/* Spawn-only: what spawns */}
+      {/* Spawn-only: preset NPC builder */}
       {type === 'spawn' && (
         <>
+          {/* Optional dice roll */}
           <div style={{ marginBottom: '0.5rem' }}>
-            <label style={labelStyle}>Spawns</label>
-            <input style={inputStyle} value={attack.spawnText || ''} onChange={e => onChange('spawnText', e.target.value)}
-              placeholder='e.g. 2 Cave Trolls' />
-          </div>
-          {/* Optional dice roll for spawn */}
-          <div style={{ marginBottom: '0.5rem' }}>
-            <label style={labelStyle}>Dice Roll (optional)</label>
+            <label style={labelStyle}>Dice Roll (optional — determines quantity)</label>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <select style={{ ...inputStyle, width: 'auto', flex: 1 }}
                 value={attack.spawnDieType || ''}
                 onChange={e => onChange('spawnDieType', e.target.value)}>
-                <option value=''>No roll</option>
+                <option value=''>No roll — fixed count</option>
                 <option value='d4'>D4</option>
                 <option value='d6'>D6</option>
                 <option value='d10'>D10</option>
@@ -789,12 +790,94 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
               )}
             </div>
           </div>
+
+          {/* Preset NPC templates */}
+          <div style={{ marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+              <label style={labelStyle}>Spawn Presets</label>
+              <button type='button' onClick={() => onChange('spawnPresets', [...(attack.spawnPresets || []), { name: '', hp: 10, maxHp: 10, armor: 0, attackBonus: 0 }])}
+                style={{ padding: '0.2rem 0.55rem', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.4)', borderRadius: '5px', cursor: 'pointer', color: '#86efac', fontSize: '0.65rem', fontWeight: '800', fontFamily: 'inherit' }}>
+                + Add NPC Type
+              </button>
+            </div>
+            {(attack.spawnPresets || []).length === 0 && (
+              <div style={{ color: '#4b5563', fontSize: '0.72rem', fontStyle: 'italic', padding: '0.4rem' }}>Add NPC types that will be spawned when this attack is used.</div>
+            )}
+            {(attack.spawnPresets || []).map((preset, pi) => (
+              <div key={pi} style={{ background: 'rgba(74,222,128,0.05)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.4rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <span style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '800' }}>NPC Type {pi + 1}</span>
+                  <button type='button' onClick={() => onChange('spawnPresets', (attack.spawnPresets || []).filter((_, i) => i !== pi))}
+                    style={{ padding: '0.1rem 0.4rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#fca5a5', fontSize: '0.6rem', fontFamily: 'inherit' }}>✕</button>
+                </div>
+                <div style={{ marginBottom: '0.4rem' }}>
+                  <label style={labelStyle}>NPC Name</label>
+                  <input style={inputStyle} value={preset.name} onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], name: e.target.value}; onChange('spawnPresets', p); }} placeholder='e.g. Cave Troll' />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
+                  <div>
+                    <label style={labelStyle}>HP</label>
+                    <input style={inputStyle} type='number' min='1' value={preset.hp}
+                      onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], hp: parseInt(e.target.value)||1, maxHp: parseInt(e.target.value)||1}; onChange('spawnPresets', p); }} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Armor</label>
+                    <input style={inputStyle} type='number' min='0' value={preset.armor || 0}
+                      onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], armor: parseInt(e.target.value)||0}; onChange('spawnPresets', p); }} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Atk Bonus</label>
+                    <input style={inputStyle} type='number' min='0' value={preset.attackBonus || 0}
+                      onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], attackBonus: parseInt(e.target.value)||0}; onChange('spawnPresets', p); }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
           <div>
             <label style={labelStyle}>Description (optional)</label>
             <input style={inputStyle} value={attack.description || ''} onChange={e => onChange('description', e.target.value)}
               placeholder='e.g. Appears at the cave entrance' />
           </div>
         </>
+      )}
+
+      {/* Attack effect — available on attack type */}
+      {type === 'attack' && (
+        <div style={{ marginTop: '0.5rem' }}>
+          <label style={labelStyle}>Apply Effect (optional)</label>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+            {[{ value: null, label: 'None' }, { value: 'poison', label: '🤢 Poison' }, { value: 'stun', label: '💫 Stun' }].map(opt => (
+              <div key={String(opt.value)} onClick={() => onChange('attackEffect', opt.value ? { type: opt.value, value: opt.value === 'poison' ? 2 : 0, duration: 2 } : null)}
+                style={{ padding: '0.25rem 0.6rem', borderRadius: '20px', cursor: 'pointer', fontWeight: '800', fontSize: '0.68rem', fontFamily: 'inherit',
+                  background: (attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? 'rgba(167,139,250,0.15)' : 'rgba(0,0,0,0.3)',
+                  border: `1px solid ${(attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
+                  color: (attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? '#a78bfa' : '#4b5563',
+                }}>{opt.label}</div>
+            ))}
+          </div>
+          {attack.attackEffect?.type === 'poison' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+              <div>
+                <label style={labelStyle}>Damage per Round</label>
+                <input style={inputStyle} type='number' min='1' value={attack.attackEffect.value || 2}
+                  onChange={e => onChange('attackEffect', { ...attack.attackEffect, value: parseInt(e.target.value)||1 })} />
+              </div>
+              <div>
+                <label style={labelStyle}>Duration (rounds)</label>
+                <input style={inputStyle} type='number' min='1' value={attack.attackEffect.duration || 2}
+                  onChange={e => onChange('attackEffect', { ...attack.attackEffect, duration: parseInt(e.target.value)||1 })} />
+              </div>
+            </div>
+          )}
+          {attack.attackEffect?.type === 'stun' && (
+            <div>
+              <label style={labelStyle}>Duration (rounds)</label>
+              <input style={inputStyle} type='number' min='1' value={attack.attackEffect.duration || 1}
+                onChange={e => onChange('attackEffect', { ...attack.attackEffect, duration: parseInt(e.target.value)||1 })} />
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

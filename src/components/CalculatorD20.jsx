@@ -13,7 +13,7 @@ const CalculatorD20 = ({
   onUpdatePlayer = () => {},
   onAddLog = () => {},
 }) => {
-  const [calculatorData, setCalculatorData] = React.useState({ targetNPCId: null, ...data });
+  const [calculatorData, setCalculatorData] = React.useState({ targetNPCId: null, targetNPCIds: [], ...data });
   const [attackRolls, setAttackRolls] = useState([]);
   const [currentAttackIndex, setCurrentAttackIndex] = useState(0);
   const [attackerRoll, setAttackerRoll] = useState('');
@@ -24,7 +24,8 @@ const CalculatorD20 = ({
   const [activeDefenseBonus, setActiveDefenseBonus] = useState(0);
   const [bonusPromptShown, setBonusPromptShown] = useState(false);
   const [consumedItems, setConsumedItems] = useState([]);
-  const [errorMsg, setErrorMsg] = useState(''); // [{owner, item, originalItem}] — for refund on cancel
+  const [errorMsg, setErrorMsg] = useState('');
+  const [showItemPanel, setShowItemPanel] = useState(false); // [{owner, item, originalItem}] — for refund on cancel
   const [showClosecall, setShowClosecall] = useState(false); // epic negate modal
   const [closecallOwner, setClosecallOwner] = useState(null);
 
@@ -249,9 +250,8 @@ const CalculatorD20 = ({
     const finalAtkRoll = (firstStrike ? baseRoll + 2 : baseRoll) + activeAttackBonus;
 
     // Apply NPC armor floor to defense roll
-    const targetNPC = calculatorData.targetNPCId
-      ? npcs.find(n => n.id === calculatorData.targetNPCId)
-      : null;
+    const firstNPCId = (calculatorData.targetNPCIds?.[0]) || calculatorData.targetNPCId;
+    const targetNPC = firstNPCId ? npcs.find(n => n.id === firstNPCId) : null;
     const effectiveDefRoll = targetNPC
       ? Math.max(defRoll, targetNPC.armor || 0)
       : defRoll;
@@ -279,9 +279,8 @@ const CalculatorD20 = ({
       isSpecialBonus = isFirstRoll && hasSpecialInSquad;
     }
     
-    const targetNPCForRoll = calculatorData.targetNPCId
-      ? npcs.find(n => n.id === calculatorData.targetNPCId)
-      : null;
+    const firstNPCId2 = (calculatorData.targetNPCIds?.[0]) || calculatorData.targetNPCId;
+    const targetNPCForRoll = firstNPCId2 ? npcs.find(n => n.id === firstNPCId2) : null;
     const rawDef = parseInt(defenderRoll);
     const effectiveDef = (targetNPCForRoll
       ? Math.max(rawDef, targetNPCForRoll.armor || 0)
@@ -320,7 +319,7 @@ const CalculatorD20 = ({
     }
 
     // Check target selection
-    if (calculatorData.targetNPCId) {
+    if (calculatorData.targetNPCIds?.length > 0) {
       // NPC target — valid, proceed
     } else if (calculatorData.targetIsSquad) {
       if (!calculatorData.targetSquadMembers || calculatorData.targetSquadMembers.length === 0) {
@@ -336,12 +335,11 @@ const CalculatorD20 = ({
 
     // Create targetSquadMembers array
     let targetMembers;
-    if (calculatorData.targetNPCId) {
-      // NPC target — encode as a special member entry
-      targetMembers = [{
-        isNPC: true,
-        npcId: calculatorData.targetNPCId,
-      }];
+    if (calculatorData.targetNPCIds?.length > 0) {
+      // Multiple NPC targets — one entry per NPC
+      targetMembers = (calculatorData.targetNPCIds || []).map(npcId => ({ isNPC: true, npcId }));
+    } else if (calculatorData.targetNPCId) {
+      targetMembers = [{ isNPC: true, npcId: calculatorData.targetNPCId }];
     } else if (calculatorData.targetIsSquad && calculatorData.targetSquadMembers?.length > 0) {
       targetMembers = calculatorData.targetSquadMembers;
     } else {
@@ -367,26 +365,30 @@ const CalculatorD20 = ({
   // Consume one use of a reroll item and clear the appropriate roll input
   const consumeRerollItem = (item, owner, clearRoll) => {
     if (!owner) return;
-    const originalItem = (owner.inventory || []).find(it => it.id === item.id);
-    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
-    const consumed = newUsesRemaining <= 0;
-    const newInventory = (owner.inventory || [])
+    const livePlayer = players.find(p => p.id === owner.id) || owner;
+    const originalItem = (livePlayer.inventory || []).find(it => it.id === item.id);
+    if (!originalItem) return;
+    const newUsesRemaining = originalItem.effect.uses === 0 ? Infinity : ((originalItem.effect.usesRemaining ?? originalItem.effect.uses ?? 1) - 1);
+    const consumed = isFinite(newUsesRemaining) && newUsesRemaining <= 0;
+    const newInventory = (livePlayer.inventory || [])
       .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
       .filter(it => it.id !== item.id ? true : !consumed);
-    onUpdatePlayer(owner.id, { inventory: newInventory });
-    if (originalItem) setConsumedItems(prev => [...prev, { owner, item: { ...item, effect: { ...item.effect, usesRemaining: newUsesRemaining } }, originalItem }]);
+    onUpdatePlayer(livePlayer.id, { inventory: newInventory });
+    setConsumedItems(prev => [...prev, { owner: livePlayer, item: { ...originalItem, effect: { ...originalItem.effect, usesRemaining: newUsesRemaining } }, originalItem }]);
     clearRoll('');
   };
   // Consume a diceSwap item and swap the two current roll inputs
   const consumeDiceSwap = (item, owner) => {
     if (!attackerRoll || !defenderRoll) return;
-    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
-    const consumed = newUsesRemaining <= 0;
-    const newInventory = (owner.inventory || [])
+    const livePlayer = players.find(p => p.id === owner.id) || owner;
+    const liveItem = (livePlayer.inventory || []).find(it => it.id === item.id);
+    if (!liveItem) return;
+    const newUsesRemaining = liveItem.effect.uses === 0 ? Infinity : ((liveItem.effect.usesRemaining ?? liveItem.effect.uses ?? 1) - 1);
+    const consumed = isFinite(newUsesRemaining) && newUsesRemaining <= 0;
+    const newInventory = (livePlayer.inventory || [])
       .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
       .filter(it => it.id !== item.id ? true : !consumed);
-    onUpdatePlayer(owner.id, { inventory: newInventory });
-    // Swap the values
+    onUpdatePlayer(livePlayer.id, { inventory: newInventory });
     const tmp = attackerRoll;
     setAttackerRoll(defenderRoll);
     setDefenderRoll(tmp);
@@ -395,32 +397,36 @@ const CalculatorD20 = ({
   // Consume an attackBonus or defenseBonus item — bonus applies to NEXT roll only, then clears
   const consumeBonusItem = (item, owner, bonusType) => {
     if (!owner) return;
-    const originalItem = (owner.inventory || []).find(it => it.id === item.id);
-    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
-    const consumed = newUsesRemaining <= 0;
-    const newInventory = (owner.inventory || [])
+    const livePlayer = players.find(p => p.id === owner.id) || owner;
+    const liveItem = (livePlayer.inventory || []).find(it => it.id === item.id);
+    if (!liveItem) return;
+    const newUsesRemaining = liveItem.effect.uses === 0 ? Infinity : ((liveItem.effect.usesRemaining ?? liveItem.effect.uses ?? 1) - 1);
+    const consumed = isFinite(newUsesRemaining) && newUsesRemaining <= 0;
+    const newInventory = (livePlayer.inventory || [])
       .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
       .filter(it => it.id !== item.id ? true : !consumed);
-    onUpdatePlayer(owner.id, { inventory: newInventory });
-    if (originalItem) setConsumedItems(prev => [...prev, { owner, item: { ...item, effect: { ...item.effect, usesRemaining: newUsesRemaining } }, originalItem }]);
-    if (bonusType === 'attack') setActiveAttackBonus(prev => prev + (item.effect?.value || 0));
-    else setActiveDefenseBonus(prev => prev + (item.effect?.value || 0));
+    onUpdatePlayer(livePlayer.id, { inventory: newInventory });
+    setConsumedItems(prev => [...prev, { owner: livePlayer, item: { ...liveItem, effect: { ...liveItem.effect, usesRemaining: newUsesRemaining } }, originalItem: liveItem }]);
+    if (bonusType === 'attack') setActiveAttackBonus(prev => prev + (liveItem.effect?.value || 0));
+    else setActiveDefenseBonus(prev => prev + (liveItem.effect?.value || 0));
   };
 
   // Consume a Close Call item — negate this entire interaction
   const consumeClosecall = (item) => {
-    const owner = item.closecallOwner || defender;
-    if (!owner) return;
-    const originalItem = (owner.inventory || []).find(it => it.id === item.id);
-    const newUsesRemaining = item.effect.uses === 0 ? Infinity : (item.usesLeft - 1);
-    const consumed = newUsesRemaining <= 0;
-    const newInventory = (owner.inventory || [])
+    const ownerSnap = item.closecallOwner || defender;
+    if (!ownerSnap) return;
+    const livePlayer = players.find(p => p.id === ownerSnap.id) || ownerSnap;
+    const liveItem = (livePlayer.inventory || []).find(it => it.id === item.id);
+    if (!liveItem) return;
+    const newUsesRemaining = liveItem.effect.uses === 0 ? Infinity : ((liveItem.effect.usesRemaining ?? liveItem.effect.uses ?? 1) - 1);
+    const consumed = isFinite(newUsesRemaining) && newUsesRemaining <= 0;
+    const newInventory = (livePlayer.inventory || [])
       .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
       .filter(it => it.id !== item.id ? true : !consumed);
-    onUpdatePlayer(owner.id, { inventory: newInventory });
-    setClosecallOwner(owner);
+    onUpdatePlayer(livePlayer.id, { inventory: newInventory });
+    setClosecallOwner(livePlayer);
     setShowClosecall(true);
-    onAddLog(`🛡️ ${owner.playerName} used Close Call — the attack was completely negated`);
+    onAddLog(`🛡️ ${livePlayer.playerName} used Close Call — the attack was completely negated`);
   };
 
   const allRollsComplete = attackRolls.length === numAttacks;
@@ -510,6 +516,87 @@ const CalculatorD20 = ({
             )}
           </div>
         )}
+
+        {/* Use Item panel */}
+        {(() => {
+          const CALC_ITEM_TYPES = ['rerollAttack','rerollDefense','forceAttackReroll','forceDefenseReroll','attackBonus','defenseBonus','diceSwap','closecall'];
+          const allCalcItems = [attacker, defender].filter(Boolean).flatMap(p =>
+            (p.inventory || [])
+              .filter(it => CALC_ITEM_TYPES.includes(it.effect?.type))
+              .map(it => {
+                const usesLeft = it.effect.uses === 0 ? Infinity : (it.effect.usesRemaining ?? it.effect.uses ?? 1);
+                const unitName = it.heldBy === 'commander'
+                  ? (p.commanderStats?.customName || p.commander || 'Commander')
+                  : it.heldBy === 'special' ? (p.subUnits?.[0]?.name?.trim() || 'Special')
+                  : (p.subUnits?.[parseInt(it.heldBy?.replace('soldier',''))]?.name?.trim() || it.heldBy);
+                return { ...it, usesLeft, playerName: p.playerName, unitName, owner: p };
+              })
+              .filter(it => it.usesLeft > 0)
+          );
+          if (allCalcItems.length === 0) return null;
+          return (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <button onClick={() => setShowItemPanel(s => !s)} style={{
+                width: '100%', padding: '0.45rem', background: showItemPanel ? 'rgba(99,102,241,0.15)' : 'rgba(0,0,0,0.3)',
+                border: `1px solid ${showItemPanel ? 'rgba(99,102,241,0.5)' : 'rgba(90,74,58,0.3)'}`, borderRadius: showItemPanel ? '6px 6px 0 0' : '6px',
+                color: showItemPanel ? '#a5b4fc' : '#6b7280', fontFamily: 'inherit', fontWeight: '800',
+                fontSize: '0.72rem', cursor: 'pointer', letterSpacing: '0.05em',
+              }}>
+                🎒 Use Item ({allCalcItems.length} available) {showItemPanel ? '▲' : '▼'}
+              </button>
+              {showItemPanel && (
+                <div style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(99,102,241,0.3)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.5rem' }}>
+                  {(() => {
+                    // Group items by player
+                    const groups = {};
+                    const groupOrder = [];
+                    allCalcItems.forEach(item => {
+                      if (!groups[item.playerName]) { groups[item.playerName] = []; groupOrder.push(item.playerName); }
+                      groups[item.playerName].push(item);
+                    });
+                    return groupOrder.map(playerName => (
+                      <div key={playerName} style={{ marginBottom: '0.5rem' }}>
+                        {/* Player header */}
+                        <div style={{ color: '#8b7355', fontSize: '0.62rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '0.2rem 0.4rem', marginBottom: '0.25rem', borderBottom: '1px solid rgba(90,74,58,0.3)' }}>
+                          {playerName}
+                        </div>
+                        {groups[playerName].map((item, idx) => {
+                          const tc = ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af');
+                          const typeLabel = {
+                            rerollAttack: '⟳ Reroll Attack', rerollDefense: '⟳ Reroll Defense',
+                            forceAttackReroll: '⚡ Force Attacker Reroll', forceDefenseReroll: '⚡ Force Defender Reroll',
+                            attackBonus: `⚔️ +${item.effect?.value} Atk Bonus`, defenseBonus: `🛡️ +${item.effect?.value} Def Bonus`,
+                            diceSwap: '⇅ Swap Dice Rolls', closecall: '🛡️ Close Call',
+                          }[item.effect?.type] || item.effect?.type;
+                          const handleUse = () => {
+                            if (item.effect?.type === 'rerollAttack') consumeRerollItem({ ...item, usesLeft: item.usesLeft }, item.owner, setAttackerRoll);
+                            else if (item.effect?.type === 'rerollDefense') consumeRerollItem({ ...item, usesLeft: item.usesLeft }, item.owner, setDefenderRoll);
+                            else if (item.effect?.type === 'forceAttackReroll') consumeRerollItem({ ...item, usesLeft: item.usesLeft }, item.owner, setAttackerRoll);
+                            else if (item.effect?.type === 'forceDefenseReroll') consumeRerollItem({ ...item, usesLeft: item.usesLeft }, item.owner, setDefenderRoll);
+                            else if (item.effect?.type === 'attackBonus') consumeBonusItem({ ...item, usesLeft: item.usesLeft }, item.owner, 'attack');
+                            else if (item.effect?.type === 'defenseBonus') consumeBonusItem({ ...item, usesLeft: item.usesLeft }, item.owner, 'defense');
+                            else if (item.effect?.type === 'diceSwap') consumeDiceSwap({ ...item, usesLeft: item.usesLeft, owner: item.owner, ownerLabel: item.playerName }, item.owner);
+                            else if (item.effect?.type === 'closecall') consumeClosecall({ ...item, usesLeft: item.usesLeft, closecallOwner: item.owner });
+                            setShowItemPanel(false);
+                          };
+                          return (
+                            <div key={idx} onClick={handleUse} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.6rem', marginBottom: '0.2rem', background: `${tc}10`, border: `1px solid ${tc}25`, borderRadius: '6px', cursor: 'pointer' }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ color: tc, fontWeight: '800', fontSize: '0.78rem' }}>{item.name}</div>
+                                <div style={{ color: '#6b7280', fontSize: '0.62rem' }}>{item.unitName} · {typeLabel}</div>
+                              </div>
+                              <span style={{ color: '#4b5563', fontSize: '0.62rem', flexShrink: 0 }}>{item.usesLeft === Infinity ? '∞' : item.usesLeft}✕</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Title */}
         <h3 style={{
@@ -702,23 +789,29 @@ const CalculatorD20 = ({
                   marginBottom: '0.6rem',
                 }}>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
-                  <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC</span>
+                  <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC{(calculatorData.targetNPCIds?.length || 0) > 0 && <span style={{ color: '#ef4444', marginLeft: '0.4rem' }}>({calculatorData.targetNPCIds.length} selected)</span>}</span>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                   {npcs.filter(n => n.active && !n.isDead).map(npc => {
-                    const isSelected = calculatorData.targetNPCId === npc.id;
+                    const ids = calculatorData.targetNPCIds || [];
+                    const isSelected = ids.includes(npc.id);
                     const hpPct = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
                     const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
                     return (
                       <div
                         key={npc.id}
-                        onClick={() => setCalculatorData({
-                          ...calculatorData,
-                          targetNPCId: isSelected ? null : npc.id,
-                          targetId: null,
-                          targetSquadMembers: [],
-                        })}
+                        onClick={() => {
+                          const ids = calculatorData.targetNPCIds || [];
+                          const newIds = isSelected ? ids.filter(id => id !== npc.id) : [...ids, npc.id];
+                          setCalculatorData({
+                            ...calculatorData,
+                            targetNPCIds: newIds,
+                            targetNPCId: newIds[0] || null, // keep first for backward compat
+                            targetId: null,
+                            targetSquadMembers: [],
+                          });
+                        }}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '0.75rem',
                           padding: '0.6rem 0.85rem',
@@ -733,7 +826,7 @@ const CalculatorD20 = ({
                       >
                         {/* Selection indicator */}
                         <div style={{
-                          width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+                          width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0,
                           border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`,
                           background: isSelected ? '#ef4444' : 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -914,23 +1007,29 @@ const CalculatorD20 = ({
                   marginBottom: '0.6rem',
                 }}>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
-                  <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC</span>
+                  <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC{(calculatorData.targetNPCIds?.length || 0) > 0 && <span style={{ color: '#ef4444', marginLeft: '0.4rem' }}>({calculatorData.targetNPCIds.length} selected)</span>}</span>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                   {npcs.filter(n => n.active && !n.isDead).map(npc => {
-                    const isSelected = calculatorData.targetNPCId === npc.id;
+                    const ids = calculatorData.targetNPCIds || [];
+                    const isSelected = ids.includes(npc.id);
                     const hpPct = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
                     const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
                     return (
                       <div
                         key={npc.id}
-                        onClick={() => setCalculatorData({
-                          ...calculatorData,
-                          targetNPCId: isSelected ? null : npc.id,
-                          targetId: null,
-                          targetSquadMembers: [],
-                        })}
+                        onClick={() => {
+                          const ids = calculatorData.targetNPCIds || [];
+                          const newIds = isSelected ? ids.filter(id => id !== npc.id) : [...ids, npc.id];
+                          setCalculatorData({
+                            ...calculatorData,
+                            targetNPCIds: newIds,
+                            targetNPCId: newIds[0] || null, // keep first for backward compat
+                            targetId: null,
+                            targetSquadMembers: [],
+                          });
+                        }}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '0.75rem',
                           padding: '0.6rem 0.85rem',
@@ -945,7 +1044,7 @@ const CalculatorD20 = ({
                       >
                         {/* Selection indicator */}
                         <div style={{
-                          width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+                          width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0,
                           border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`,
                           background: isSelected ? '#ef4444' : 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1004,44 +1103,29 @@ const CalculatorD20 = ({
                     const canSelect = isSelected || (calculatorData.targetSquadMembers?.length || 0) < 3;
 
                     return (
-                      <label key={idx} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.5rem',
-                        marginBottom: '0.25rem',
-                        background: isSelected ? '#2a1810' : 'transparent',
-                        border: isSelected ? '1px solid ' + gold : '1px solid transparent',
-                        borderRadius: '4px',
-                        color: '#8b7355',
-                        fontSize: '0.75rem',
-                        cursor: canSelect ? 'pointer' : 'not-allowed',
-                        opacity: canSelect ? 1 : 0.5,
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={!canSelect}
-                          onChange={(e) => {
-                            let newTargets = [...(calculatorData.targetSquadMembers || [])];
-                            if (e.target.checked) {
-                              newTargets.push({
-                                playerId: calculatorData.targetId.playerId,
-                                unitType,
-                                unitIndex: idx,
-                              });
-                            } else {
-                              newTargets = newTargets.filter(m => m.unitType !== unitType);
-                            }
-                            setCalculatorData({
-                              ...calculatorData,
-                              targetSquadMembers: newTargets,
-                            });
-                          }}
-                          style={{ width: '14px', height: '14px' }}
-                        />
-                        {unit.name || (idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`)} ({unit.hp}hp)
-                      </label>
+                      <div key={idx}
+                        onClick={() => {
+                          if (!canSelect) return;
+                          let newTargets = [...(calculatorData.targetSquadMembers || [])];
+                          if (isSelected) {
+                            newTargets = newTargets.filter(m => m.unitType !== unitType);
+                          } else {
+                            newTargets.push({ playerId: calculatorData.targetId.playerId, unitType, unitIndex: idx });
+                          }
+                          setCalculatorData({ ...calculatorData, targetSquadMembers: newTargets });
+                        }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          padding: '0.5rem 0.75rem', marginBottom: '0.25rem',
+                          background: isSelected ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.25)',
+                          border: `1px solid ${isSelected ? gold : 'rgba(90,74,58,0.3)'}`,
+                          borderRadius: '6px', cursor: canSelect ? 'pointer' : 'not-allowed',
+                          opacity: canSelect ? 1 : 0.5, userSelect: 'none',
+                        }}>
+                        <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${isSelected ? gold : '#5a4a3a'}`, background: isSelected ? gold : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{isSelected ? '✓' : ''}</div>
+                        <span style={{ color: isSelected ? gold : '#8b7355', fontWeight: '700', fontSize: '0.8rem', flex: 1 }}>{unit.name || (idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`)}</span>
+                        <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>{unit.hp}hp</span>
+                      </div>
                     );
                   })}
                 </div>
@@ -1075,9 +1159,25 @@ const CalculatorD20 = ({
           </div>
         </div>
 
-        {/* Close Call — always visible regardless of roll state */}
-        {closecallItems.length > 0 && (
+        {/* Close Call + Dice Swap — always visible at top */}
+        {(closecallItems.length > 0 || allSwapItems.length > 0) && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.75rem', justifyContent: 'center' }}>
+            {allSwapItems.map(item => (
+              <button key={item.id} onClick={() => consumeDiceSwap(item, item.owner)}
+                style={{
+                  padding: '0.35rem 1rem',
+                  background: 'rgba(99,102,241,0.12)',
+                  border: '2px solid rgba(99,102,241,0.5)',
+                  borderRadius: '20px', cursor: 'pointer',
+                  color: '#a5b4fc', fontFamily: 'inherit',
+                  fontWeight: '900', fontSize: '0.75rem', letterSpacing: '0.05em',
+                }}>
+                ⇅ Swap Dice
+                <span style={{ color: '#4b5563', marginLeft: '0.3rem', fontSize: '0.62rem' }}>
+                  {item.owner?.playerName} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
+                </span>
+              </button>
+            ))}
             {closecallItems.map(item => (
               <button key={item.id} onClick={() => consumeClosecall(item)}
                 style={{
@@ -1131,6 +1231,9 @@ const CalculatorD20 = ({
                             fontWeight: '800', fontSize: '0.65rem',
                           }}>
                           {item.label}
+                          <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                            {item.owner?.playerName || ''}
+                          </span>
                           <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                             {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                           </span>
@@ -1153,6 +1256,9 @@ const CalculatorD20 = ({
                           fontWeight: '800', fontSize: '0.65rem',
                         }}>
                         ⚔️ +{item.effect?.value} atk
+                        <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                          {attacker?.playerName || ''}
+                        </span>
                         <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                           {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                         </span>
@@ -1195,6 +1301,9 @@ const CalculatorD20 = ({
                         fontWeight: '800', fontSize: '0.65rem',
                       }}>
                       🛡️ +{item.effect?.value} def
+                      <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                        {defender?.playerName || ''}
+                      </span>
                       <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                         {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                       </span>
@@ -1203,27 +1312,7 @@ const CalculatorD20 = ({
                 </div>
               )}
 
-              {/* Dice Swap buttons — shown when both rolls are entered */}
-              {allSwapItems.length > 0 && attackerRoll && defenderRoll && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.4rem 0' }}>
-                  {allSwapItems.map(item => (
-                    <button key={item.id} onClick={() => consumeDiceSwap(item, item.owner)}
-                      style={{
-                        padding: '0.2rem 0.6rem',
-                        background: 'rgba(99,102,241,0.1)',
-                        border: '1px solid rgba(99,102,241,0.4)',
-                        borderRadius: '20px', cursor: 'pointer',
-                        color: '#a5b4fc', fontFamily: 'inherit',
-                        fontWeight: '800', fontSize: '0.65rem',
-                      }}>
-                      ⇅ swap
-                      <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
-                        {item.ownerLabel} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
+
 
               <div>
                 <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
@@ -1249,6 +1338,9 @@ const CalculatorD20 = ({
                             fontWeight: '800', fontSize: '0.65rem',
                           }}>
                           {item.label}
+                          <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                            {item.owner?.playerName || ''}
+                          </span>
                           <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                             {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                           </span>
@@ -1366,10 +1458,10 @@ const CalculatorD20 = ({
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button
             onClick={handleProceed}
-            disabled={!allRollsComplete || (!calculatorData.targetId && !calculatorData.targetNPCId)}
+            disabled={!allRollsComplete || (!calculatorData.targetId && !(calculatorData.targetNPCIds?.length > 0) && !calculatorData.targetNPCId)}
             style={{
               flex: 1,
-              background: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? 'linear-gradient(to bottom, #15803d, #14532d)' : '#1a0f0a',
+              background: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCIds?.length > 0 || calculatorData.targetNPCId)) ? 'linear-gradient(to bottom, #15803d, #14532d)' : '#1a0f0a',
               color: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? '#86efac' : '#4a3322',
               padding: '0.75rem',
               borderRadius: '6px',

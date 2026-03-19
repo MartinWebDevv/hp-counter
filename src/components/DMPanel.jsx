@@ -9,6 +9,7 @@ const gold = '#c9a961';
  * Renders NPC cards in the same grid layout as player cards.
  * Each NPC gets its own full standalone card — no sidebar, no collapsed panels.
  */
+
 const DMPanel = ({
   npcs,
   activeNPCs,
@@ -36,14 +37,15 @@ const DMPanel = ({
   onDropLoot,
   lootPool = [],
   onIncrementAttack,
+  onSpawnAttack,
   getTimersForNPC = () => [],
+  currentRound = 1,
 }) => {
   const editingNPC = editingNPCId ? getNPCById(editingNPCId) : null;
   const [squadMode,        setSquadMode]        = React.useState(false);
   const [squadSelected,    setSquadSelected]    = React.useState({}); // { npcId: attackIndex }
 
-  const orderedNPCs = [...activeNPCs, ...inactiveNPCs, ...deadNPCs];
-
+  const orderedNPCs = [...activeNPCs, ...inactiveNPCs];
   const toggleSquadNPC = (npcId) => {
     setSquadSelected(prev => {
       if (npcId in prev) {
@@ -160,6 +162,7 @@ const DMPanel = ({
 
       {/* NPC grid — same 2-column layout as player cards */}
       {npcs.length > 0 && (
+        <div style={{ position: 'relative' }}>
         <div style={{
           display: 'grid',
           gridTemplateColumns: orderedNPCs.length === 1 ? '1fr' : '48% 48%',
@@ -167,9 +170,10 @@ const DMPanel = ({
           padding: '0 0.5%',
           maxWidth: orderedNPCs.length === 1 ? '50%' : '100%',
           margin: orderedNPCs.length === 1 ? '0 auto' : '0',
+          alignItems: 'start',
         }}>
           {orderedNPCs.map(npc => (
-            <div key={npc.id} style={{ position: 'relative' }}>
+            <div key={npc.id} style={{ position: 'relative', isolation: 'isolate' }}>
               {/* Squad mode overlay */}
               {squadMode && !npc.isDead && npc.active && (
                 <div
@@ -216,6 +220,7 @@ const DMPanel = ({
               onHPChange={onHPChange}
               onTriggerPhase={onTriggerPhase}
               onOpenNPCAttack={onOpenNPCAttack}
+              onSpawnAttack={onSpawnAttack}
               onIncrementAttack={onIncrementAttack}
               players={players}
               onDropLoot={onDropLoot}
@@ -224,7 +229,10 @@ const DMPanel = ({
             </div>
           ))}
         </div>
+        </div>
       )}
+
+
 
       {/* NPC Creator Modal */}
       {showNPCCreator && (

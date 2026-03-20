@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
 import { GAME_MODES, validateCustomMode } from '../data/gameModes';
 
 const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
@@ -39,7 +40,6 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
     }
   };
 
-  const gold = '#c9a961';
 
   return (
     <div
@@ -58,7 +58,7 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
         onClick={(e) => e.stopPropagation()}
         style={{
           background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-          border: '3px solid ' + gold,
+          border: `2px solid `,
           borderRadius: '12px',
           padding: '2rem',
           maxWidth: '600px',
@@ -69,11 +69,11 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
         }}
       >
         <h2 style={{
-          color: gold,
+          color: colors.gold,
           fontSize: '1.75rem',
           marginBottom: '1.5rem',
           textAlign: 'center',
-          fontFamily: '"Cinzel", Georgia, serif',
+          fontFamily: fonts.display,
           textShadow: '2px 2px 4px rgba(0,0,0,1)',
         }}>
           Select Game Mode
@@ -88,7 +88,7 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
               style={{
                 background: selectedMode === mode.id ? '#2a1810' : '#0a0503',
                 border: '2px solid',
-                borderColor: selectedMode === mode.id ? gold : '#5a4a3a',
+                borderColor: selectedMode === mode.id ? colors.gold : '#5a4a3a',
                 borderRadius: '8px',
                 padding: '1rem',
                 cursor: 'pointer',
@@ -99,15 +99,15 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                 <span style={{ fontSize: '2rem' }}>{mode.icon}</span>
                 <div>
                   <h3 style={{
-                    color: gold,
+                    color: colors.gold,
                     margin: 0,
                     fontSize: '1.2rem',
-                    fontFamily: '"Cinzel", Georgia, serif'
+                    fontFamily: fonts.display
                   }}>
                     {mode.name}
                   </h3>
                   <p style={{
-                    color: '#8b7355',
+                    color: colors.textMuted,
                     margin: '0.25rem 0 0 0',
                     fontSize: '0.875rem'
                   }}>
@@ -123,7 +123,7 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   gap: '0.5rem',
                   marginTop: '0.75rem',
                   fontSize: '0.75rem',
-                  color: '#8b7355'
+                  color: colors.textMuted
                 }}>
                   <div>Commander HP: {mode.commanderHP}</div>
                   <div>Squad HP: {mode.squadHP}</div>
@@ -140,23 +140,23 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
         {selectedMode === 'custom' && (
           <div style={{
             background: '#0a0503',
-            border: '2px solid ' + gold,
+            border: '2px solid ' + colors.gold,
             borderRadius: '8px',
             padding: '1rem',
             marginBottom: '1rem'
           }}>
             <h4 style={{
-              color: gold,
+              color: colors.gold,
               marginTop: 0,
               marginBottom: '1rem',
-              fontFamily: '"Cinzel", Georgia, serif'
+              fontFamily: fonts.display
             }}>
               Custom Settings
             </h4>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div>
-                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Commander HP:
                 </label>
                 <input
@@ -166,18 +166,18 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   onChange={(e) => handleCustomChange('commanderHP', e.target.value)}
                   style={{
                     width: '100%',
-                    background: '#1a0f0a',
-                    color: gold,
+                    background: surfaces.elevated,
+                    color: colors.gold,
                     padding: '0.5rem',
                     borderRadius: '4px',
-                    border: '1px solid #5a4a3a',
-                    fontFamily: '"Cinzel", Georgia, serif'
+                    border: borders.warm,
+                    fontFamily: fonts.display
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Squad HP:
                 </label>
                 <input
@@ -187,18 +187,18 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   onChange={(e) => handleCustomChange('squadHP', e.target.value)}
                   style={{
                     width: '100%',
-                    background: '#1a0f0a',
-                    color: gold,
+                    background: surfaces.elevated,
+                    color: colors.gold,
                     padding: '0.5rem',
                     borderRadius: '4px',
-                    border: '1px solid #5a4a3a',
-                    fontFamily: '"Cinzel", Georgia, serif'
+                    border: borders.warm,
+                    fontFamily: fonts.display
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Commander Revives:
                 </label>
                 <input
@@ -208,18 +208,18 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   onChange={(e) => handleCustomChange('commanderRevives', e.target.value)}
                   style={{
                     width: '100%',
-                    background: '#1a0f0a',
-                    color: gold,
+                    background: surfaces.elevated,
+                    color: colors.gold,
                     padding: '0.5rem',
                     borderRadius: '4px',
-                    border: '1px solid #5a4a3a',
-                    fontFamily: '"Cinzel", Georgia, serif'
+                    border: borders.warm,
+                    fontFamily: fonts.display
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Squad Revives:
                 </label>
                 <input
@@ -229,18 +229,18 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   onChange={(e) => handleCustomChange('squadRevives', e.target.value)}
                   style={{
                     width: '100%',
-                    background: '#1a0f0a',
-                    color: gold,
+                    background: surfaces.elevated,
+                    color: colors.gold,
                     padding: '0.5rem',
                     borderRadius: '4px',
-                    border: '1px solid #5a4a3a',
-                    fontFamily: '"Cinzel", Georgia, serif'
+                    border: borders.warm,
+                    fontFamily: fonts.display
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Squad Lives:
                 </label>
                 <input
@@ -250,12 +250,12 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
                   onChange={(e) => handleCustomChange('squadLives', e.target.value)}
                   style={{
                     width: '100%',
-                    background: '#1a0f0a',
-                    color: gold,
+                    background: surfaces.elevated,
+                    color: colors.gold,
                     padding: '0.5rem',
                     borderRadius: '4px',
-                    border: '1px solid #5a4a3a',
-                    fontFamily: '"Cinzel", Georgia, serif'
+                    border: borders.warm,
+                    fontFamily: fonts.display
                   }}
                 />
               </div>
@@ -292,7 +292,7 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
               borderRadius: '6px',
               border: '2px solid #16a34a',
               cursor: 'pointer',
-              fontFamily: '"Cinzel", Georgia, serif',
+              fontFamily: fonts.display,
               fontWeight: 'bold',
               fontSize: '1rem',
             }}
@@ -309,7 +309,7 @@ const GameModeSelector = ({ currentMode, onModeChange, onClose }) => {
               borderRadius: '6px',
               border: '2px solid #991b1b',
               cursor: 'pointer',
-              fontFamily: '"Cinzel", Georgia, serif',
+              fontFamily: fonts.display,
               fontWeight: 'bold',
               fontSize: '1rem',
             }}

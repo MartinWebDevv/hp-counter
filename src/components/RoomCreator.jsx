@@ -1,50 +1,52 @@
 import React, { useState } from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors } from '../theme';
 
-const gold = '#c9a961';
-const dark = '#1a0f0a';
-const darker = '#0f0805';
+
+
+
 
 const TIER_COLORS = {
-  Common:    { border: 'rgba(156,163,175,0.5)', text: '#9ca3af', bg: 'rgba(156,163,175,0.08)' },
-  Rare:      { border: 'rgba(139,92,246,0.5)',  text: '#a78bfa', bg: 'rgba(139,92,246,0.08)'  },
+  Common:    { border: 'rgba(156,163,175,0.5)', text: colors.textSecondary, bg: 'rgba(156,163,175,0.08)' },
+  Rare:      { border: 'rgba(139,92,246,0.5)',  text: colors.purpleLight, bg: 'rgba(139,92,246,0.08)'  },
   Legendary: { border: 'rgba(245,158,11,0.5)',  text: '#fbbf24', bg: 'rgba(245,158,11,0.08)'  },
 };
 
 const TIER_WEIGHTS_DEFAULT = { Common: 60, Rare: 30, Legendary: 10 };
 
 const inputStyle = {
-  background: '#120a06', border: '1px solid #5a4a3a', borderRadius: '6px',
-  padding: '0.5rem 0.75rem', color: gold, fontFamily: 'inherit',
+  background: surfaces.insetDeep, border: borders.warm, borderRadius: '6px',
+  padding: '0.5rem 0.75rem', color: colors.gold, fontFamily: fonts.body,
   fontSize: '0.9rem', width: '100%', outline: 'none', boxSizing: 'border-box',
 };
 
 const labelStyle = {
-  color: '#8b7355', fontSize: '0.75rem', fontWeight: '700',
+  color: colors.textMuted, fontSize: '0.75rem', fontWeight: '700',
   letterSpacing: '0.08em', textTransform: 'uppercase',
   display: 'block', marginBottom: '0.3rem',
 };
 
 const sectionStyle = {
-  background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(201,169,97,0.2)',
+  background: 'rgba(0,0,0,0.25)', border: `1px solid ${colors.goldBorder}`,
   borderRadius: '10px', padding: '1rem', marginBottom: '1rem',
 };
 
 const sectionTitle = {
-  color: gold, fontSize: '0.85rem', fontWeight: '800',
+  color: colors.gold, fontSize: '0.85rem', fontWeight: '800',
   letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.75rem',
+  fontFamily: fonts.display,
 };
 
 const Toggle = ({ value, onChange, label }) => (
   <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}>
     <div onClick={onChange} style={{
       width: '40px', height: '22px', borderRadius: '11px',
-      background: value ? '#7c3aed' : '#374151',
-      border: `2px solid ${value ? '#a78bfa' : '#4b5563'}`,
+      background: value ? colors.purple : colors.textDisabled,
+      border: `2px solid ${value ? colors.purpleLight : colors.textFaint}`,
       position: 'relative', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
     }}>
-      <div style={{ position: 'absolute', top: '2px', left: value ? '18px' : '2px', width: '14px', height: '14px', borderRadius: '50%', background: value ? '#e9d5ff' : '#9ca3af', transition: 'left 0.2s' }} />
+      <div style={{ position: 'absolute', top: '2px', left: value ? '18px' : '2px', width: '14px', height: '14px', borderRadius: '50%', background: value ? '#e9d5ff' : colors.textSecondary, transition: 'left 0.2s' }} />
     </div>
-    <span style={{ color: '#9ca3af', fontSize: '0.82rem', fontWeight: '600' }}>{label}</span>
+    <span style={{ color: colors.textSecondary, fontSize: '0.82rem', fontWeight: '600' }}>{label}</span>
   </label>
 );
 
@@ -83,9 +85,9 @@ const RoomCreator = ({ initialRoom, onSave, onClose, lootPool = [] }) => {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: `linear-gradient(145deg,${dark},${darker})`, border: `3px solid ${gold}`, borderRadius: '14px', padding: '1.5rem', width: '95%', maxWidth: '620px', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: surfaces.elevated, border: `2px solid ${colors.gold}`, borderRadius: '14px', padding: '1.5rem', width: '95%', maxWidth: '620px', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
 
-        <h2 style={{ color: gold, fontSize: '1.4rem', fontFamily: '"Cinzel",Georgia,serif', textAlign: 'center', marginBottom: '1.5rem', letterSpacing: '0.1em' }}>
+        <h2 style={{ color: colors.gold, fontSize: '1.4rem', fontFamily: fonts.display, textAlign: 'center', marginBottom: '1.5rem', letterSpacing: '0.1em' }}>
           {initialRoom.name ? `✏️ Edit: ${initialRoom.name}` : '🚪 Create Room'}
         </h2>
 
@@ -110,7 +112,7 @@ const RoomCreator = ({ initialRoom, onSave, onClose, lootPool = [] }) => {
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.25rem' }}>
                 <Toggle value={room.timerEnabled} onChange={() => set('timerEnabled', !room.timerEnabled)} label='' />
                 {room.timerEnabled && <input style={{ ...inputStyle, width: '80px', textAlign: 'center' }} type='number' min='1' value={room.timerRounds} onChange={e => set('timerRounds', e.target.value)} placeholder='3' />}
-                {room.timerEnabled && <span style={{ color: '#6b7280', fontSize: '0.72rem' }}>rounds</span>}
+                {room.timerEnabled && <span style={{ color: colors.textMuted, fontSize: '0.72rem' }}>rounds</span>}
               </div>
             </div>
           </div>
@@ -143,9 +145,9 @@ const RoomCreator = ({ initialRoom, onSave, onClose, lootPool = [] }) => {
               <div key={opt.value} onClick={() => set('lootMode', opt.value)} style={{
                 flex: 1, textAlign: 'center', padding: '0.45rem 0.25rem',
                 background: (room.lootMode || 'none') === opt.value ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
-                border: `2px solid ${(room.lootMode || 'none') === opt.value ? gold : 'rgba(90,74,58,0.3)'}`,
+                border: `2px solid ${(room.lootMode || 'none') === opt.value ? colors.gold : 'rgba(90,74,58,0.3)'}`,
                 borderRadius: '6px', cursor: 'pointer',
-                color: (room.lootMode || 'none') === opt.value ? gold : '#4b5563',
+                color: (room.lootMode || 'none') === opt.value ? colors.gold : colors.textFaint,
                 fontWeight: '800', fontSize: '0.72rem',
               }}>{opt.label}</div>
             ))}
@@ -172,7 +174,7 @@ const RoomCreator = ({ initialRoom, onSave, onClose, lootPool = [] }) => {
                       <div style={{ flex: 1, height: '6px', background: 'rgba(0,0,0,0.4)', borderRadius: '3px', overflow: 'hidden' }}>
                         <div style={{ width: `${pct}%`, height: '100%', background: tc.text, borderRadius: '3px', transition: 'width 0.2s' }} />
                       </div>
-                      <span style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '700', width: '30px', textAlign: 'right' }}>{pct}%</span>
+                      <span style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '700', width: '30px', textAlign: 'right' }}>{pct}%</span>
                     </div>
                   );
                 })}
@@ -192,9 +194,9 @@ const RoomCreator = ({ initialRoom, onSave, onClose, lootPool = [] }) => {
                   const sel = (room.lootPreloadedItems || []).includes(item.id);
                   return (
                     <div key={item.id} onClick={() => togglePreload(item.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.75rem', background: sel ? tc.bg : 'rgba(0,0,0,0.3)', border: `2px solid ${sel ? tc.border : 'rgba(90,74,58,0.3)'}`, borderRadius: '6px', cursor: 'pointer' }}>
-                      <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${sel ? tc.text : '#4b5563'}`, background: sel ? tc.text : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{sel && '✓'}</div>
-                      <span style={{ color: sel ? tc.text : '#6b7280', fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>📦 {item.name}</span>
-                      <span style={{ color: '#4b5563', fontSize: '0.65rem' }}>{item.tier}</span>
+                      <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${sel ? tc.text : colors.textFaint}`, background: sel ? tc.text : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{sel && '✓'}</div>
+                      <span style={{ color: sel ? tc.text : colors.textMuted, fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>📦 {item.name}</span>
+                      <span style={{ color: colors.textFaint, fontSize: '0.65rem' }}>{item.tier}</span>
                     </div>
                   );
                 })}
@@ -206,12 +208,12 @@ const RoomCreator = ({ initialRoom, onSave, onClose, lootPool = [] }) => {
         {/* ── DM Notes ── */}
         <div style={{ marginBottom: '1rem' }}>
           <label style={labelStyle}>DM Notes (private)</label>
-          <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: '52px', lineHeight: 1.4, fontSize: '0.82rem', color: '#8b7355' }} value={room.notes} onChange={e => set('notes', e.target.value)} placeholder='Private reminders, contingencies...' />
+          <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: '52px', lineHeight: 1.4, fontSize: '0.82rem', color: colors.textMuted }} value={room.notes} onChange={e => set('notes', e.target.value)} placeholder='Private reminders, contingencies...' />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-          <button onClick={handleSave} style={{ padding: '0.9rem', background: 'linear-gradient(135deg,#059669,#047857)', border: '2px solid #10b981', color: '#d1fae5', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '1rem' }}>✓ Save Room</button>
-          <button onClick={onClose} style={{ padding: '0.9rem', background: 'linear-gradient(135deg,#b91c1c,#991b1b)', border: '2px solid #dc2626', color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '1rem' }}>✕ Cancel</button>
+          <button onClick={handleSave} style={{ padding: '0.9rem', background: 'linear-gradient(135deg,#059669,#047857)', border: '2px solid #10b981', color: '#d1fae5', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '1rem' }}>✓ Save Room</button>
+          <button onClick={onClose} style={{ padding: '0.9rem', background: 'linear-gradient(135deg,#b91c1c,#991b1b)', border: '2px solid #dc2626', color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '1rem' }}>✕ Cancel</button>
         </div>
       </div>
     </div>

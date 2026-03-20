@@ -1,8 +1,9 @@
 import React from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors } from '../theme';
 import NPCCard from './NPCCard';
 import NPCCreator from './NPCCreator';
 
-const gold = '#c9a961';
+
 
 /**
  * DMPanel
@@ -92,7 +93,7 @@ const DMPanel = ({
             color: '#fecaca',
             borderRadius: '10px',
             cursor: 'pointer',
-            fontFamily: 'inherit',
+            fontFamily: fonts.body,
             fontWeight: '800',
             fontSize: '1rem',
             letterSpacing: '0.1em',
@@ -112,7 +113,7 @@ const DMPanel = ({
               border: `2px solid ${squadMode ? '#a78bfa' : 'rgba(124,58,237,0.5)'}`,
               color: squadMode ? '#e9d5ff' : '#a78bfa',
               borderRadius: '10px', cursor: 'pointer',
-              fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem',
+              fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem',
               letterSpacing: '0.08em', textTransform: 'uppercase',
               transition: 'all 0.2s',
             }}
@@ -132,10 +133,10 @@ const DMPanel = ({
             disabled={squadCount < 2}
             onClick={launchSquadAttack}
             style={{
-              padding: '0.55rem 1.25rem', borderRadius: '8px', fontFamily: 'inherit', fontWeight: '900', fontSize: '0.82rem', cursor: squadCount >= 2 ? 'pointer' : 'not-allowed',
-              background: squadCount >= 2 ? 'linear-gradient(135deg,#7c3aed,#6d28d9)' : '#1a0f0a',
-              border: `2px solid ${squadCount >= 2 ? '#a78bfa' : '#374151'}`,
-              color: squadCount >= 2 ? '#e9d5ff' : '#374151',
+              padding: '0.55rem 1.25rem', borderRadius: '8px', fontFamily: fonts.body, fontWeight: '900', fontSize: '0.82rem', cursor: squadCount >= 2 ? 'pointer' : 'not-allowed',
+              background: squadCount >= 2 ? 'linear-gradient(135deg,#7c3aed,#6d28d9)' : surfaces.elevated,
+              border: `2px solid ${squadCount >= 2 ? '#a78bfa' : colors.textDisabled}`,
+              color: squadCount >= 2 ? '#e9d5ff' : colors.textDisabled,
             }}
           >
             ⚔️ Launch Attack
@@ -148,10 +149,10 @@ const DMPanel = ({
         <div style={{
           textAlign: 'center',
           padding: '4rem 2rem',
-          color: '#4b5563',
+          color: colors.textFaint,
         }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👾</div>
-          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: '#6b7280' }}>
+          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: colors.textMuted }}>
             No NPCs yet
           </div>
           <div style={{ fontSize: '0.85rem' }}>
@@ -196,7 +197,7 @@ const DMPanel = ({
                       <div style={{ color: '#c4b5fd', fontSize: '0.62rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.3rem', textAlign: 'center' }}>Attack</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'center' }}>
                         {npc.attacks.map((atk, realIdx) => (atk.attackType || 'attack') !== 'attack' ? null : (
-                          <button key={realIdx} onClick={() => setSquadAttackIndex(npc.id, realIdx)} style={{ padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.62rem', cursor: 'pointer', background: squadSelected[npc.id] === realIdx ? 'rgba(167,139,250,0.3)' : 'rgba(0,0,0,0.5)', border: `1px solid ${squadSelected[npc.id] === realIdx ? '#a78bfa' : 'rgba(124,58,237,0.3)'}`, color: squadSelected[npc.id] === realIdx ? '#e9d5ff' : '#7c3aed' }}>
+                          <button key={realIdx} onClick={() => setSquadAttackIndex(npc.id, realIdx)} style={{ padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.62rem', cursor: 'pointer', background: squadSelected[npc.id] === realIdx ? 'rgba(167,139,250,0.3)' : 'rgba(0,0,0,0.5)', border: `1px solid ${squadSelected[npc.id] === realIdx ? '#a78bfa' : 'rgba(124,58,237,0.3)'}`, color: squadSelected[npc.id] === realIdx ? '#e9d5ff' : '#7c3aed' }}>
                             {atk.name}
                           </button>
                         ))}

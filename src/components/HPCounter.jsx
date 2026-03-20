@@ -113,6 +113,15 @@ const HPCounter = () => {
     try { localStorage.setItem('hpCounterPastSessionChests', JSON.stringify(pastSessionChests)); } catch {}
   }, [pastSessionChests]);
 
+  // Past session Room archive
+  const [pastSessionRooms, setPastSessionRooms] = React.useState(() => {
+    try { const s = localStorage.getItem('hpCounterPastSessionRooms'); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem('hpCounterPastSessionRooms', JSON.stringify(pastSessionRooms)); } catch {}
+  }, [pastSessionRooms]);
+
   const {
     npcs, activeNPCs, inactiveNPCs, deadNPCs,
     showNPCCreator, editingNPCId,
@@ -247,8 +256,17 @@ const HPCounter = () => {
       }));
       setPastSessionChests(prev => [...prev, { sessionName, chests: chestSnapshot }]);
     }
+    // Archive rooms snapshot
+    if (roomsState.rooms.length > 0) {
+      const roomSnapshot = roomsState.rooms.map(r => ({
+        id: r.id, name: r.name, description: r.description,
+        status: r.status || 'Idle',
+      }));
+      setPastSessionRooms(prev => [...prev, { sessionName, rooms: roomSnapshot }]);
+    }
     setNpcs([]);
     setChests([]);
+    roomsState.setRooms([]);
   };
 
   // ── Damage calculation ────────────────────────────────────────────────────
@@ -303,7 +321,7 @@ const HPCounter = () => {
 
   // ── Save / Load ───────────────────────────────────────────────────────────
   const saveGameToFile = () => {
-    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, chests, vpStats: vp.vpStats, rooms: roomsState.rooms, pastSessionNPCs, pastSessionChests, savedAt: new Date().toISOString() };
+    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, chests, vpStats: vp.vpStats, rooms: roomsState.rooms, pastSessionNPCs, pastSessionChests, pastSessionRooms, savedAt: new Date().toISOString() };
     const blob  = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url   = URL.createObjectURL(blob);
     const a     = document.createElement('a');
@@ -332,6 +350,8 @@ const HPCounter = () => {
           // Restore session Chest archive
           setPastSessionChests(state.pastSessionChests || []);
           try { localStorage.setItem('hpCounterPastSessionChests', JSON.stringify(state.pastSessionChests || [])); } catch {};
+          setPastSessionRooms(state.pastSessionRooms || []);
+          try { localStorage.setItem('hpCounterPastSessionRooms', JSON.stringify(state.pastSessionRooms || [])); } catch {};
           if (state.rooms) {
             roomsState.setRooms(state.rooms);
             try { localStorage.setItem('hpCounterRooms', JSON.stringify(state.rooms)); } catch {}
@@ -637,6 +657,17 @@ const HPCounter = () => {
               onUpdateRoom={roomsState.updateRoom}
               onGiveLoot={loot.handleDropLoot}
             />
+          )}
+
+          {isCampaign && activePanel === 'rooms' && pastSessionRooms.length > 0 && (
+            <div style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+                📅 Past Sessions
+              </div>
+              {[...pastSessionRooms].reverse().map((session, si) => (
+                <SessionRoomArchiveEntry key={si} session={session} />
+              ))}
+            </div>
           )}
 
           {isCampaign && activePanel === 'timers' && (
@@ -1480,6 +1511,55 @@ const SessionChestArchiveEntry = ({ session }) => {
               }}>{chest.isOpened ? 'OPENED' : 'UNOPENED'}</span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ── SessionRoomArchiveEntry (inline) ─────────────────────────────────────────
+const SessionRoomArchiveEntry = ({ session }) => {
+  const [open, setOpen] = React.useState(false);
+  const passed  = session.rooms.filter(r => r.status === 'Passed').length;
+  const failed  = session.rooms.filter(r => r.status === 'Failed').length;
+  const idle    = session.rooms.filter(r => r.status !== 'Passed' && r.status !== 'Failed').length;
+
+  const statusStyle = (status) => {
+    if (status === 'Passed') return { label: '✅ Passed',  color: colors.green,       border: colors.greenBorder,  bg: colors.greenSubtle  };
+    if (status === 'Failed') return { label: '❌ Failed',  color: '#fca5a5',           border: colors.redBorder,    bg: colors.redSubtle    };
+    if (status === 'Active') return { label: '⚔️ Active',  color: '#fca5a5',           border: colors.redBorder,    bg: colors.redSubtle    };
+    if (status === 'Locked') return { label: '🔒 Locked',  color: colors.amber,        border: colors.amberBorder,  bg: colors.amberSubtle  };
+    return                          { label: '😴 Idle',    color: colors.textMuted,    border: 'rgba(75,85,99,0.3)', bg: 'rgba(75,85,99,0.06)' };
+  };
+
+  return (
+    <div style={{ border: '1px solid rgba(75,85,99,0.4)', borderRadius: '10px', background: 'rgba(0,0,0,0.25)' }}>
+      <div onClick={() => setOpen(s => !s)} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', cursor: 'pointer' }}>
+        <span style={{ fontSize: '0.9rem' }}>📅</span>
+        <span style={{ color: colors.gold, fontWeight: '800', fontSize: '0.85rem', flex: 1, fontFamily: fonts.display }}>{session.sessionName}</span>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          {passed > 0 && <span style={{ color: colors.green,    fontSize: '0.65rem', fontWeight: '700' }}>✅{passed}</span>}
+          {failed > 0 && <span style={{ color: '#fca5a5',        fontSize: '0.65rem', fontWeight: '700' }}>❌{failed}</span>}
+          {idle   > 0 && <span style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '700' }}>🚪{idle}</span>}
+        </div>
+        <span style={{ color: colors.textFaint, fontSize: '0.8rem' }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <div style={{ padding: '0.6rem 0.75rem', borderTop: '1px solid rgba(75,85,99,0.25)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+          {session.rooms.map(room => {
+            const tag = statusStyle(room.status);
+            return (
+              <div key={room.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', padding: '0.5rem 0.65rem', background: tag.bg, border: `1px solid ${tag.border}`, borderRadius: '6px' }}>
+                <span style={{ fontSize: '1rem', flexShrink: 0 }}>🚪</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: room.status === 'Passed' ? colors.green : room.status === 'Failed' ? '#fca5a5' : colors.textSecondary, fontWeight: '800', fontSize: '0.85rem' }}>{room.name}</div>
+                  {room.description && <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.1rem' }}>{room.description}</div>}
+                </div>
+                <span style={{ padding: '0.1rem 0.4rem', fontSize: '0.6rem', fontWeight: '800', borderRadius: '20px', flexShrink: 0, color: tag.color, background: tag.bg, border: `1px solid ${tag.border}` }}>{tag.label}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

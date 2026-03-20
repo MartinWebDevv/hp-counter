@@ -1,4 +1,5 @@
 import React from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
 
 /**
  * SquadReviveModal
@@ -74,13 +75,13 @@ const SquadReviveModal = ({ player, onRevive, onClose }) => {
                           width: '28px',
                           height: '28px',
                           borderRadius: '50%',
-                          background: isNext ? '#eab308' : '#4b5563',
+                          background: isNext ? '#eab308' : colors.textFaint,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           fontWeight: '900',
                           fontSize: '0.85rem',
-                          color: isNext ? '#1a0f0a' : '#9ca3af',
+                          color: isNext ? surfaces.elevated : colors.textSecondary,
                           flexShrink: 0,
                         }}>
                           {pos + 1}
@@ -94,7 +95,7 @@ const SquadReviveModal = ({ player, onRevive, onClose }) => {
                             {getUnitLabel(unitIndex)}
                             {isNext && <span style={{ marginLeft: '0.5rem', color: '#eab308', fontSize: '0.75rem' }}>← NEXT</span>}
                           </div>
-                          <div style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
+                          <div style={{ color: colors.textSecondary, fontSize: '0.8rem' }}>
                             💀 Dead • {lives} {lives === 1 ? 'life' : 'lives'} remaining
                           </div>
                         </div>
@@ -169,8 +170,8 @@ const overlayStyle = {
 };
 
 const modalStyle = {
-  background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-  border: '3px solid #d4af37',
+  background: surfaces.elevated,
+  border: `2px solid `,
   borderRadius: '14px',
   padding: '2rem',
   maxWidth: '480px',
@@ -182,16 +183,16 @@ const modalStyle = {
 
 const titleStyle = {
   margin: 0,
-  color: '#d4af37',
+  color: colors.gold,
   fontSize: '1.5rem',
   fontWeight: '900',
   letterSpacing: '0.15em',
-  fontFamily: '"Cinzel", Georgia, serif',
+  fontFamily: fonts.display,
 };
 
 const subtitleStyle = {
   margin: '0.25rem 0 0',
-  color: '#8b7355',
+  color: colors.textMuted,
   fontSize: '0.9rem',
   letterSpacing: '0.1em',
 };
@@ -206,7 +207,7 @@ const emptyQueueStyle = {
 };
 
 const queueLabelStyle = {
-  color: '#8b7355',
+  color: colors.textMuted,
   fontSize: '0.75rem',
   fontWeight: '700',
   letterSpacing: '0.15em',
@@ -234,7 +235,7 @@ const reviveAttemptStyle = {
 };
 
 const attemptLabelStyle = {
-  color: '#8b7355',
+  color: colors.textMuted,
   fontSize: '0.75rem',
   fontWeight: '700',
   letterSpacing: '0.1em',
@@ -263,7 +264,7 @@ const successBtnStyle = {
   color: '#d1fae5',
   borderRadius: '8px',
   cursor: 'pointer',
-  fontFamily: 'inherit',
+  fontFamily: fonts.body,
   fontWeight: '800',
   fontSize: '0.9rem',
   textTransform: 'uppercase',
@@ -278,7 +279,7 @@ const failBtnStyle = {
   color: '#fecaca',
   borderRadius: '8px',
   cursor: 'pointer',
-  fontFamily: 'inherit',
+  fontFamily: fonts.body,
   fontWeight: '800',
   fontSize: '0.9rem',
   textTransform: 'uppercase',
@@ -287,7 +288,7 @@ const failBtnStyle = {
 };
 
 const failNoteStyle = {
-  color: '#78716c',
+  color: colors.textFaint,
   fontSize: '0.75rem',
   textAlign: 'center',
   margin: 0,
@@ -301,7 +302,7 @@ const closeBtnStyle = {
   color: '#a78bfa',
   borderRadius: '8px',
   cursor: 'pointer',
-  fontFamily: 'inherit',
+  fontFamily: fonts.body,
   fontWeight: '700',
   fontSize: '0.9rem',
   letterSpacing: '0.1em',

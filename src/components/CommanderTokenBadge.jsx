@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors } from '../theme';
 
 /**
  * CommanderTokenBadge
@@ -12,10 +13,10 @@ const CommanderTokenBadge = ({ token }) => {
   if (!token) return null;
 
   const config = {
-    cooldown:  { color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)', label: `🪙 Token — ${token.cooldownRoundsLeft}r cooldown` },
-    unclaimed: { color: '#4ade80', bg: 'rgba(74,222,128,0.1)',  border: 'rgba(74,222,128,0.4)', label: '🪙 Token — Unclaimed' },
-    held:      { color: '#fca5a5', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.4)',  label: `🪙 Token — Held by ${token.heldByPlayerName}` },
-  }[token.status] || { color: '#9ca3af', bg: 'transparent', border: 'rgba(90,74,58,0.3)', label: '🪙 Token' };
+    cooldown:  { color: colors.amber,          bg: colors.amberSubtle,  border: colors.amberBorder,  label: `🪙 Token — ${token.cooldownRoundsLeft}r cooldown` },
+    unclaimed: { color: colors.green,          bg: colors.greenSubtle,  border: colors.greenBorder,  label: '🪙 Token — Unclaimed' },
+    held:      { color: '#fca5a5',              bg: colors.redSubtle,    border: colors.redBorder,    label: `🪙 Token — Held by ${token.heldByPlayerName}` },
+  }[token.status] || { color: colors.textSecondary, bg: 'transparent', border: 'rgba(255,255,255,0.06)', label: '🪙 Token' };
 
   const tooltip = {
     cooldown:  `Your token dropped. Other factions can claim it in ${token.cooldownRoundsLeft} round${token.cooldownRoundsLeft !== 1 ? 's' : ''}.`,
@@ -40,10 +41,10 @@ const CommanderTokenBadge = ({ token }) => {
       {hovered && tooltip && (
         <div style={{
           position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
-          background: '#0a0503', border: '1px solid rgba(201,169,97,0.4)', borderRadius: '6px',
+          background: surfaces.elevated, border: '1px solid rgba(201,169,97,0.4)', borderRadius: '6px',
           padding: '0.35rem 0.65rem', whiteSpace: 'nowrap', zIndex: 9999, pointerEvents: 'none',
         }}>
-          <div style={{ color: '#e8dcc4', fontSize: '0.7rem' }}>{tooltip}</div>
+          <div style={{ color: colors.textPrimary, fontSize: '0.7rem' }}>{tooltip}</div>
           <div style={{ position: 'absolute', bottom: '-5px', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid rgba(201,169,97,0.4)' }} />
         </div>
       )}

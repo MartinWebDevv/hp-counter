@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
 
-const gold = '#c9a961';
-const dark = '#1a0f0a';
-const darker = '#0f0805';
+
+
+
 
 const TIER_WEIGHTS_DEFAULT = { Common: 60, Rare: 30, Legendary: 10 };
 
 const TIER_COLORS_NPC = {
-  Common:    { border: 'rgba(156,163,175,0.5)', text: '#9ca3af', bg: 'rgba(156,163,175,0.08)' },
+  Common:    { border: 'rgba(156,163,175,0.5)', text: colors.textSecondary, bg: 'rgba(156,163,175,0.08)' },
   Rare:      { border: 'rgba(139,92,246,0.5)',  text: '#a78bfa', bg: 'rgba(139,92,246,0.08)'  },
   Legendary: { border: 'rgba(245,158,11,0.5)', text: '#fbbf24', bg: 'rgba(245,158,11,0.08)'  },
   Quest:     { border: 'rgba(234,179,8,0.6)',   text: '#fde68a', bg: 'rgba(234,179,8,0.1)'    },
@@ -231,17 +232,17 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
 
   const inputStyle = {
     background: '#120a06',
-    border: '1px solid #5a4a3a',
+    border: borders.warm,
     borderRadius: '6px',
     padding: '0.5rem 0.75rem',
-    color: gold,
-    fontFamily: 'inherit',
+    color: colors.gold,
+    fontFamily: fonts.body,
     fontSize: '0.9rem',
     width: '100%',
   };
 
   const labelStyle = {
-    color: '#8b7355',
+    color: colors.textMuted,
     fontSize: '0.75rem',
     fontWeight: '700',
     letterSpacing: '0.08em',
@@ -259,7 +260,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
   };
 
   const sectionTitleStyle = {
-    color: gold,
+    color: colors.gold,
     fontSize: '0.85rem',
     fontWeight: '800',
     letterSpacing: '0.1em',
@@ -285,7 +286,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
       <div
         style={{
           background: `linear-gradient(145deg, ${dark}, ${darker})`,
-          border: `3px solid ${gold}`,
+          border: `3px solid ${colors.gold}`,
           borderRadius: '14px',
           padding: '1.5rem',
           width: '95%',
@@ -298,9 +299,9 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
       >
         {/* Header */}
         <h2 style={{
-          color: gold,
+          color: colors.gold,
           fontSize: '1.4rem',
-          fontFamily: '"Cinzel", Georgia, serif',
+          fontFamily: fonts.display,
           textAlign: 'center',
           marginBottom: '1.5rem',
           letterSpacing: '0.1em',
@@ -346,7 +347,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                 onChange={e => set('armor', e.target.value)}
                 placeholder="0 = none"
               />
-              <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>
+              <span style={{ color: colors.textMuted, fontSize: '0.7rem' }}>
                 Min defense roll
               </span>
             </div>
@@ -361,7 +362,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                 onChange={e => set('attackBonus', e.target.value)}
                 placeholder="0 = none"
               />
-              <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>
+              <span style={{ color: colors.textMuted, fontSize: '0.7rem' }}>
                 Added to every attack roll
               </span>
             </div>
@@ -418,14 +419,14 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: npc.hasPhases ? '1rem' : 0 }}>
             <div style={sectionTitleStyle}>🔄 Phases</div>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-              <span style={{ color: '#8b7355', fontSize: '0.8rem' }}>Does this NPC have phases?</span>
+              <span style={{ color: colors.textMuted, fontSize: '0.8rem' }}>Does this NPC have phases?</span>
               <div
                 onClick={() => set('hasPhases', !npc.hasPhases)}
                 style={{
                   width: '44px',
                   height: '24px',
                   borderRadius: '12px',
-                  background: npc.hasPhases ? '#7c3aed' : '#374151',
+                  background: npc.hasPhases ? '#7c3aed' : colors.textDisabled,
                   border: npc.hasPhases ? '2px solid #a78bfa' : '2px solid #4b5563',
                   position: 'relative',
                   cursor: 'pointer',
@@ -439,7 +440,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                   width: '16px',
                   height: '16px',
                   borderRadius: '50%',
-                  background: npc.hasPhases ? '#e9d5ff' : '#9ca3af',
+                  background: npc.hasPhases ? '#e9d5ff' : colors.textSecondary,
                   transition: 'left 0.2s',
                 }} />
               </div>
@@ -449,7 +450,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           {npc.hasPhases && (
             <>
               {npc.phases.length === 0 && (
-                <p style={{ color: '#6b7280', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+                <p style={{ color: colors.textMuted, fontSize: '0.8rem', marginBottom: '0.75rem' }}>
                   No phases yet. Add a phase below — Phase 1 is always the base stats above.
                 </p>
               )}
@@ -486,16 +487,16 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
         }}>
           <div style={{
             width: '16px', height: '16px', borderRadius: '3px', flexShrink: 0,
-            border: `2px solid ${npc.isFinalBoss ? '#ef4444' : '#4b5563'}`,
+            border: `2px solid ${npc.isFinalBoss ? '#ef4444' : colors.textFaint}`,
             background: npc.isFinalBoss ? '#ef4444' : 'transparent',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: '0.6rem', color: '#fff', fontWeight: '900',
           }}>{npc.isFinalBoss && '✓'}</div>
           <div>
-            <div style={{ color: npc.isFinalBoss ? '#fca5a5' : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>
+            <div style={{ color: npc.isFinalBoss ? '#fca5a5' : colors.textMuted, fontWeight: '800', fontSize: '0.82rem' }}>
               👑 Final Boss
             </div>
-            <div style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '600' }}>
+            <div style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '600' }}>
               Killing blow awards Final Boss Kill VP to the attacker
             </div>
           </div>
@@ -506,7 +507,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(201,169,97,0.2)',
           borderRadius: '8px', padding: '1rem', marginBottom: '1rem',
         }}>
-          <div style={{ color: gold, fontWeight: '800', fontSize: '0.9rem', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
+          <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.9rem', letterSpacing: '0.08em', marginBottom: '0.75rem' }}>
             🎁 Loot Drop
           </div>
 
@@ -516,16 +517,16 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
               <div key={opt.value} onClick={() => set('lootMode', opt.value)} style={{
                 flex: 1, textAlign: 'center', padding: '0.45rem',
                 background: npc.lootMode === opt.value ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
-                border: `2px solid ${npc.lootMode === opt.value ? gold : 'rgba(90,74,58,0.3)'}`,
+                border: `2px solid ${npc.lootMode === opt.value ? colors.gold : 'rgba(90,74,58,0.3)'}`,
                 borderRadius: '6px', cursor: 'pointer',
-                color: npc.lootMode === opt.value ? gold : '#4b5563',
+                color: npc.lootMode === opt.value ? colors.gold : colors.textFaint,
                 fontWeight: '800', fontSize: '0.78rem',
               }}>{opt.label}</div>
             ))}
           </div>
 
           {lootPool.length === 0 ? (
-            <p style={{ color: '#4b5563', fontSize: '0.8rem', margin: 0 }}>
+            <p style={{ color: colors.textFaint, fontSize: '0.8rem', margin: 0 }}>
               No items in loot pool yet — add items in the 🎁 Loot tab first.
             </p>
           ) : (
@@ -556,7 +557,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                             <div style={{ flex: 1, height: '6px', background: 'rgba(0,0,0,0.4)', borderRadius: '3px', overflow: 'hidden' }}>
                               <div style={{ width: `${pct}%`, height: '100%', background: tc.text, borderRadius: '3px', transition: 'width 0.2s' }} />
                             </div>
-                            <span style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '700', width: '30px', textAlign: 'right' }}>{pct}%</span>
+                            <span style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '700', width: '30px', textAlign: 'right' }}>{pct}%</span>
                           </div>
                         );
                       })}
@@ -570,7 +571,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                 <label style={{ ...labelStyle, color: '#fde68a' }}>🗝️ Guaranteed Quest Item Drop (optional)</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', maxHeight: '120px', overflowY: 'auto' }}>
                   {lootPool.filter(it => it.isQuestItem).length === 0 ? (
-                    <div style={{ color: '#4b5563', fontSize: '0.75rem' }}>No quest items in loot pool.</div>
+                    <div style={{ color: colors.textFaint, fontSize: '0.75rem' }}>No quest items in loot pool.</div>
                   ) : lootPool.filter(it => it.isQuestItem).map(poolItem => {
                     const selected = (npc.lootTable || []).some(it => it.id === poolItem.id);
                     return (
@@ -581,8 +582,8 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                         border: `2px solid ${selected ? 'rgba(234,179,8,0.5)' : 'rgba(55,65,81,0.4)'}`,
                         borderRadius: '6px', cursor: 'pointer',
                       }}>
-                        <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${selected ? '#fde68a' : '#4b5563'}`, background: selected ? '#fde68a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{selected && '✓'}</div>
-                        <span style={{ flex: 1, color: selected ? '#fde68a' : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>🗝️ {poolItem.name}</span>
+                        <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${selected ? '#fde68a' : colors.textFaint}`, background: selected ? '#fde68a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{selected && '✓'}</div>
+                        <span style={{ flex: 1, color: selected ? '#fde68a' : colors.textMuted, fontWeight: '800', fontSize: '0.82rem' }}>🗝️ {poolItem.name}</span>
                         <span style={{ color: '#fde68a', fontSize: '0.6rem', fontWeight: '800', padding: '0.1rem 0.35rem', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '4px' }}>QUEST</span>
                       </div>
                     );
@@ -606,12 +607,12 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                       }}>
                         <div style={{
                           width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
-                          border: `2px solid ${selected ? tc.text : '#4b5563'}`,
+                          border: `2px solid ${selected ? tc.text : colors.textFaint}`,
                           background: selected ? tc.text : 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: '0.55rem', color: '#000', fontWeight: '900',
                         }}>{selected && '✓'}</div>
-                        <span style={{ flex: 1, color: selected ? tc.text : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>
+                        <span style={{ flex: 1, color: selected ? tc.text : colors.textMuted, fontWeight: '800', fontSize: '0.82rem' }}>
                           {poolItem.isQuestItem ? '🗝️ ' : '📦 '}{poolItem.name}
                         </span>
                         <span style={{
@@ -636,7 +637,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
                       display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
                       padding: '0.15rem 0.5rem',
                       background: 'rgba(201,169,97,0.1)', border: '1px solid rgba(201,169,97,0.3)',
-                      borderRadius: '4px', color: gold, fontSize: '0.65rem', fontWeight: '700',
+                      borderRadius: '4px', color: colors.gold, fontSize: '0.65rem', fontWeight: '700',
                     }}>
                       {it.name}
                       <span onClick={e => { e.stopPropagation(); removeLootItem(it.id); }} style={{ cursor: 'pointer', color: '#ef4444', fontWeight: '900', marginLeft: '0.1rem' }}>✕</span>
@@ -659,7 +660,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
               color: '#d1fae5',
               borderRadius: '8px',
               cursor: 'pointer',
-              fontFamily: 'inherit',
+              fontFamily: fonts.body,
               fontWeight: '800',
               fontSize: '1rem',
               letterSpacing: '0.05em',
@@ -676,7 +677,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
               color: '#fecaca',
               borderRadius: '8px',
               cursor: 'pointer',
-              fontFamily: 'inherit',
+              fontFamily: fonts.body,
               fontWeight: '800',
               fontSize: '1rem',
             }}
@@ -710,11 +711,11 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
         <div style={{ display: 'flex', gap: '0.3rem' }}>
           {ATTACK_TYPES.map(t => (
             <button key={t.value} onClick={() => onChange('attackType', t.value)} style={{
-              padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: 'inherit',
+              padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: fonts.body,
               fontWeight: '800', fontSize: '0.62rem', cursor: 'pointer',
               background: type === t.value ? `rgba(${t.value === 'attack' ? '239,68,68' : t.value === 'action' ? '139,92,246' : '74,222,128'},0.15)` : 'rgba(0,0,0,0.3)',
               border: `1px solid ${type === t.value ? t.color : 'rgba(90,74,58,0.3)'}`,
-              color: type === t.value ? t.color : '#4b5563',
+              color: type === t.value ? t.color : colors.textFaint,
             }}>{t.label}</button>
           ))}
         </div>
@@ -780,7 +781,7 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
               </select>
               {attack.spawnDieType && (
                 <>
-                  <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>×</span>
+                  <span style={{ color: colors.textMuted, fontSize: '0.8rem' }}>×</span>
                   <input style={{ ...inputStyle, width: '70px', textAlign: 'center' }}
                     type='number' min='1' max='10'
                     value={attack.spawnNumRolls || 1}
@@ -796,19 +797,19 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
               <label style={labelStyle}>Spawn Presets</label>
               <button type='button' onClick={() => onChange('spawnPresets', [...(attack.spawnPresets || []), { name: '', hp: 10, maxHp: 10, armor: 0, attackBonus: 0 }])}
-                style={{ padding: '0.2rem 0.55rem', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.4)', borderRadius: '5px', cursor: 'pointer', color: '#86efac', fontSize: '0.65rem', fontWeight: '800', fontFamily: 'inherit' }}>
+                style={{ padding: '0.2rem 0.55rem', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.4)', borderRadius: '5px', cursor: 'pointer', color: '#86efac', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>
                 + Add NPC Type
               </button>
             </div>
             {(attack.spawnPresets || []).length === 0 && (
-              <div style={{ color: '#4b5563', fontSize: '0.72rem', fontStyle: 'italic', padding: '0.4rem' }}>Add NPC types that will be spawned when this attack is used.</div>
+              <div style={{ color: colors.textFaint, fontSize: '0.72rem', fontStyle: 'italic', padding: '0.4rem' }}>Add NPC types that will be spawned when this attack is used.</div>
             )}
             {(attack.spawnPresets || []).map((preset, pi) => (
               <div key={pi} style={{ background: 'rgba(74,222,128,0.05)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.4rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
                   <span style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '800' }}>NPC Type {pi + 1}</span>
                   <button type='button' onClick={() => onChange('spawnPresets', (attack.spawnPresets || []).filter((_, i) => i !== pi))}
-                    style={{ padding: '0.1rem 0.4rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#fca5a5', fontSize: '0.6rem', fontFamily: 'inherit' }}>✕</button>
+                    style={{ padding: '0.1rem 0.4rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#fca5a5', fontSize: '0.6rem', fontFamily: fonts.body }}>✕</button>
                 </div>
                 <div style={{ marginBottom: '0.4rem' }}>
                   <label style={labelStyle}>NPC Name</label>
@@ -849,10 +850,10 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
             {[{ value: null, label: 'None' }, { value: 'poison', label: '🤢 Poison' }, { value: 'stun', label: '💫 Stun' }].map(opt => (
               <div key={String(opt.value)} onClick={() => onChange('attackEffect', opt.value ? { type: opt.value, value: opt.value === 'poison' ? 2 : 0, duration: 2 } : null)}
-                style={{ padding: '0.25rem 0.6rem', borderRadius: '20px', cursor: 'pointer', fontWeight: '800', fontSize: '0.68rem', fontFamily: 'inherit',
+                style={{ padding: '0.25rem 0.6rem', borderRadius: '20px', cursor: 'pointer', fontWeight: '800', fontSize: '0.68rem', fontFamily: fonts.body,
                   background: (attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? 'rgba(167,139,250,0.15)' : 'rgba(0,0,0,0.3)',
                   border: `1px solid ${(attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
-                  color: (attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? '#a78bfa' : '#4b5563',
+                  color: (attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? '#a78bfa' : colors.textFaint,
                 }}>{opt.label}</div>
             ))}
           </div>
@@ -929,13 +930,13 @@ const PhaseSection = ({
               background: (phase.triggerType || 'hp') === opt.value ? 'rgba(139,92,246,0.15)' : 'rgba(0,0,0,0.3)',
               border: `2px solid ${(phase.triggerType || 'hp') === opt.value ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
               borderRadius: '6px', cursor: 'pointer',
-              color: (phase.triggerType || 'hp') === opt.value ? '#a78bfa' : '#4b5563',
+              color: (phase.triggerType || 'hp') === opt.value ? '#a78bfa' : colors.textFaint,
               fontWeight: '800', fontSize: '0.78rem',
             }}>{opt.label}</div>
           ))}
         </div>
         {(phase.triggerType || 'hp') === 'manual' && (
-          <div style={{ color: '#6b7280', fontSize: '0.7rem', marginTop: '0.3rem' }}>
+          <div style={{ color: colors.textMuted, fontSize: '0.7rem', marginTop: '0.3rem' }}>
             DM activates this phase manually from the NPC card.
           </div>
         )}
@@ -954,7 +955,7 @@ const PhaseSection = ({
             onChange={e => onFieldChange('triggerHP', e.target.value)}
             placeholder="e.g. 15 or 0 for resurrection"
           />
-          <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>
+          <span style={{ color: colors.textMuted, fontSize: '0.7rem' }}>
             {isResurrection ? '⚡ 0 HP = Resurrection phase' : 'Phase triggers when NPC reaches this HP'}
           </span>
         </div>
@@ -969,7 +970,7 @@ const PhaseSection = ({
               onChange={e => onFieldChange('resurrectHP', e.target.value)}
               placeholder="e.g. 20"
             />
-            <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>NPC comes back with this HP</span>
+            <span style={{ color: colors.textMuted, fontSize: '0.7rem' }}>NPC comes back with this HP</span>
           </div>
         )}
       </div>
@@ -1062,7 +1063,7 @@ const addBtnStyle = {
   color: '#93c5fd',
   borderRadius: '6px',
   cursor: 'pointer',
-  fontFamily: 'inherit',
+  fontFamily: fonts.body,
   fontWeight: '700',
   fontSize: '0.85rem',
   marginTop: '0.25rem',
@@ -1075,7 +1076,7 @@ const removeBtnStyle = {
   color: '#fca5a5',
   borderRadius: '4px',
   cursor: 'pointer',
-  fontFamily: 'inherit',
+  fontFamily: fonts.body,
   fontSize: '0.75rem',
   fontWeight: '700',
 };

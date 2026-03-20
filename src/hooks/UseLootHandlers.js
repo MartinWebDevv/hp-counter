@@ -196,45 +196,65 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
   const handleConfirmHandOff = (targetPlayerId, targetUnitType, mode, targetDroppedItem = null) => {
     if (!handOffModal) return;
     const { sourcePlayer, sourceUnitType, item } = handOffModal;
-    const targetPlayer = players.find(p => p.id === targetPlayerId);
-    if (!targetPlayer) return;
 
-    const sourceUnitLabel = unitNameByType(sourcePlayer, sourceUnitType);
-    const targetUnitLabel = unitNameByType(targetPlayer, targetUnitType);
+    // Always use fresh player data from the players array
+    const freshSource = players.find(p => p.id === sourcePlayer.id);
+    const freshTarget = players.find(p => p.id === targetPlayerId);
+    if (!freshSource || !freshTarget) return;
+
+    const isSamePlayer = freshSource.id === freshTarget.id;
+    const sourceUnitLabel = unitNameByType(freshSource, sourceUnitType);
+    const targetUnitLabel = unitNameByType(freshTarget, targetUnitType);
 
     if (mode === 'give') {
-      // Remove from source
-      const newSourceInv = (sourcePlayer.inventory || []).filter(it => it.id !== item.id);
-      updatePlayer(sourcePlayer.id, { inventory: newSourceInv });
+      if (isSamePlayer) {
+        // Moving between own units — do both operations atomically on one inventory
+        let inv = (freshSource.inventory || []).filter(it => it.id !== item.id);
+        if (targetDroppedItem) inv = inv.filter(it => it.id !== targetDroppedItem.id);
+        inv = [...inv, { ...item, heldBy: targetUnitType }];
+        updatePlayer(freshSource.id, { inventory: inv });
+        addLog(`🔀 ${freshSource.playerName} moved "${item.name}" from ${sourceUnitLabel} to ${targetUnitLabel}`);
+      } else {
+        // Different players — remove from source first, then add to target
+        const newSourceInv = (freshSource.inventory || []).filter(it => it.id !== item.id);
+        updatePlayer(freshSource.id, { inventory: newSourceInv });
 
-      // Add to target (drop swap if needed)
-      let newTargetInv = (targetPlayer.inventory || []);
-      if (targetDroppedItem) {
-        newTargetInv = newTargetInv.filter(it => it.id !== targetDroppedItem.id);
+        let newTargetInv = (freshTarget.inventory || []);
+        if (targetDroppedItem) newTargetInv = newTargetInv.filter(it => it.id !== targetDroppedItem.id);
+        newTargetInv = [...newTargetInv, { ...item, heldBy: targetUnitType }];
+        updatePlayer(targetPlayerId, { inventory: newTargetInv });
+
+        addLog(`🎁 ${freshSource.playerName}'s ${sourceUnitLabel} gave "${item.name}" to ${freshTarget.playerName}'s ${targetUnitLabel}`);
       }
-      newTargetInv = [...newTargetInv, { ...item, heldBy: targetUnitType }];
-      updatePlayer(targetPlayerId, { inventory: newTargetInv });
-
-      addLog(`🎁 ${sourcePlayer.playerName}'s ${sourceUnitLabel} gave "${item.name}" to ${targetPlayer.playerName}'s ${targetUnitLabel}`);
     } else if (mode === 'trade') {
-      // targetDroppedItem = item the target is trading back
       if (!targetDroppedItem) return;
-      const tradedItem = (targetPlayer.inventory || []).find(it => it.id === targetDroppedItem.id);
+      const tradedItem = (freshTarget.inventory || []).find(it => it.id === targetDroppedItem.id);
       if (!tradedItem) return;
 
-      // Source gives item, receives traded item
-      const newSourceInv = (sourcePlayer.inventory || [])
-        .filter(it => it.id !== item.id)
-        .concat({ ...tradedItem, heldBy: sourceUnitType });
-      updatePlayer(sourcePlayer.id, { inventory: newSourceInv });
+      if (isSamePlayer) {
+        // Swapping items between own units atomically
+        let inv = (freshSource.inventory || [])
+          .filter(it => it.id !== item.id && it.id !== tradedItem.id);
+        inv = [...inv,
+          { ...item, heldBy: targetUnitType },
+          { ...tradedItem, heldBy: sourceUnitType },
+        ];
+        updatePlayer(freshSource.id, { inventory: inv });
+        addLog(`⇄ ${freshSource.playerName} swapped "${item.name}" (${sourceUnitLabel}) with "${tradedItem.name}" (${targetUnitLabel})`);
+      } else {
+        // Cross-player trade — update both inventories independently
+        const newSourceInv = (freshSource.inventory || [])
+          .filter(it => it.id !== item.id)
+          .concat({ ...tradedItem, heldBy: sourceUnitType });
+        updatePlayer(freshSource.id, { inventory: newSourceInv });
 
-      // Target gives traded item, receives item
-      const newTargetInv = (targetPlayer.inventory || [])
-        .filter(it => it.id !== tradedItem.id)
-        .concat({ ...item, heldBy: targetUnitType });
-      updatePlayer(targetPlayerId, { inventory: newTargetInv });
+        const newTargetInv = (freshTarget.inventory || [])
+          .filter(it => it.id !== tradedItem.id)
+          .concat({ ...item, heldBy: targetUnitType });
+        updatePlayer(targetPlayerId, { inventory: newTargetInv });
 
-      addLog(`⇄ ${sourcePlayer.playerName}'s ${sourceUnitLabel} traded "${item.name}" with ${targetPlayer.playerName}'s ${targetUnitLabel} for "${tradedItem.name}"`);
+        addLog(`⇄ ${freshSource.playerName}'s ${sourceUnitLabel} traded "${item.name}" with ${freshTarget.playerName}'s ${targetUnitLabel} for "${tradedItem.name}"`);
+      }
     }
 
     setHandOffModal(null);

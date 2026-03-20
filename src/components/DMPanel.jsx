@@ -45,8 +45,19 @@ const DMPanel = ({
   const editingNPC = editingNPCId ? getNPCById(editingNPCId) : null;
   const [squadMode,        setSquadMode]        = React.useState(false);
   const [squadSelected,    setSquadSelected]    = React.useState({}); // { npcId: attackIndex }
+  const [search,           setSearch]           = React.useState('');
+  const [filterStatus,     setFilterStatus]     = React.useState('all'); // 'all' | 'active' | 'inactive'
 
   const orderedNPCs = [...activeNPCs, ...inactiveNPCs];
+
+  const filteredNPCs = orderedNPCs.filter(npc => {
+    const matchesSearch = !search.trim() || npc.name.toLowerCase().includes(search.trim().toLowerCase());
+    const matchesStatus = filterStatus === 'all'
+      ? true
+      : filterStatus === 'active'   ? npc.active && !npc.isDead
+      : /* inactive */                !npc.active && !npc.isDead;
+    return matchesSearch && matchesStatus;
+  });
   const toggleSquadNPC = (npcId) => {
     setSquadSelected(prev => {
       if (npcId in prev) {
@@ -123,6 +134,46 @@ const DMPanel = ({
         )}
       </div>
 
+      {/* Search + Filter bar */}
+      {npcs.length > 0 && (
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'center' }}>
+          {/* Search */}
+          <div style={{ flex: 1, position: 'relative' }}>
+            <span style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: colors.textFaint, pointerEvents: 'none' }}>🔍</span>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder='Search NPCs...'
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                background: surfaces.inset, border: borders.default,
+                borderRadius: '8px', padding: '0.5rem 0.6rem 0.5rem 1.8rem',
+                color: colors.textPrimary, fontFamily: fonts.body, fontSize: '0.82rem',
+                outline: 'none',
+              }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: colors.textFaint, cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}>✕</button>
+            )}
+          </div>
+          {/* Status filter chips */}
+          {['all', 'active', 'inactive'].map(f => {
+            const labels = { all: '⚡ All', active: '✅ Active', inactive: '😴 Inactive' };
+            const active = filterStatus === f;
+            return (
+              <button key={f} onClick={() => setFilterStatus(f)} style={{
+                padding: '0.45rem 0.75rem', borderRadius: '8px', cursor: 'pointer',
+                fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem',
+                background: active ? (f === 'active' ? colors.greenSubtle : f === 'inactive' ? 'rgba(99,102,241,0.15)' : colors.amberSubtle) : 'rgba(0,0,0,0.25)',
+                border: `1px solid ${active ? (f === 'active' ? colors.greenBorder : f === 'inactive' ? 'rgba(99,102,241,0.4)' : colors.amberBorder) : 'rgba(255,255,255,0.06)'}`,
+                color: active ? (f === 'active' ? colors.green : f === 'inactive' ? '#a5b4fc' : colors.amber) : colors.textMuted,
+                whiteSpace: 'nowrap', transition: 'all 0.15s',
+              }}>{labels[f]}</button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Squad launch bar */}
       {squadMode && (
         <div style={{ marginBottom: '0.75rem', padding: '0.75rem 1rem', background: 'rgba(124,58,237,0.1)', border: '2px solid rgba(124,58,237,0.4)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -166,14 +217,14 @@ const DMPanel = ({
         <div style={{ position: 'relative' }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: orderedNPCs.length === 1 ? '1fr' : '48% 48%',
+          gridTemplateColumns: filteredNPCs.length === 1 ? '1fr' : '48% 48%',
           gap: '1%',
           padding: '0 0.5%',
-          maxWidth: orderedNPCs.length === 1 ? '50%' : '100%',
-          margin: orderedNPCs.length === 1 ? '0 auto' : '0',
+          maxWidth: filteredNPCs.length === 1 ? '50%' : '100%',
+          margin: filteredNPCs.length === 1 ? '0 auto' : '0',
           alignItems: 'start',
         }}>
-          {orderedNPCs.map(npc => (
+          {filteredNPCs.map(npc => (
             <div key={npc.id} style={{ position: 'relative', isolation: 'isolate' }}>
               {/* Squad mode overlay */}
               {squadMode && !npc.isDead && npc.active && (
@@ -234,6 +285,15 @@ const DMPanel = ({
       )}
 
 
+
+      {/* No results state */}
+      {npcs.length > 0 && filteredNPCs.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '3rem 2rem', color: colors.textFaint }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🔍</div>
+          <div style={{ fontWeight: '700', color: colors.textMuted, marginBottom: '0.25rem' }}>No NPCs match</div>
+          <div style={{ fontSize: '0.8rem' }}>Try a different search or filter.</div>
+        </div>
+      )}
 
       {/* NPC Creator Modal */}
       {showNPCCreator && (

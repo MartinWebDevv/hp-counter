@@ -414,6 +414,7 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
 const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
   const [showCreator, setShowCreator] = useState(false);
   const [filterTier, setFilterTier] = useState('All');
+  const [search, setSearch] = useState('');
   const [archivedItems, setArchivedItems] = useState([]);
   const [showArchive, setShowArchive] = useState(false);
 
@@ -436,9 +437,9 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
     setLootPool(prev => [...prev, item]);
   };
 
-  const filtered = filterTier === 'All'
-    ? lootPool
-    : lootPool.filter(i => i.tier === filterTier);
+  const filtered = lootPool
+    .filter(i => filterTier === 'All' || i.tier === filterTier)
+    .filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()));
 
   return (
     <div style={{ width: '100%' }}>
@@ -483,6 +484,28 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
         </div>
       )}
 
+      {/* Search bar */}
+      {lootPool.length > 0 && (
+        <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
+          <span style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: colors.textFaint, pointerEvents: 'none' }}>🔍</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder='Search items...'
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: surfaces.inset, border: borders.default,
+              borderRadius: '8px', padding: '0.5rem 0.6rem 0.5rem 1.8rem',
+              color: colors.textPrimary, fontFamily: fonts.body, fontSize: '0.82rem',
+              outline: 'none',
+            }}
+          />
+          {search && (
+            <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: colors.textFaint, cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}>✕</button>
+          )}
+        </div>
+      )}
+
       {/* Empty state */}
       {lootPool.length === 0 && !showCreator && (
         <div style={{ textAlign: 'center', padding: '4rem 2rem', color: colors.textFaint }}>
@@ -510,7 +533,7 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
 
       {filtered.length === 0 && lootPool.length > 0 && (
         <div style={{ textAlign: 'center', color: colors.textFaint, padding: '2rem', fontSize: '0.85rem' }}>
-          No {filterTier} items in pool.
+          No {filterTier === 'All' ? '' : filterTier + ' '}items{search ? ` matching "${search}"` : ''} in pool.
         </div>
       )}
 

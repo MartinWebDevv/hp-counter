@@ -415,8 +415,15 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
   const [showCreator, setShowCreator] = useState(false);
   const [filterTier, setFilterTier] = useState('All');
   const [search, setSearch] = useState('');
-  const [archivedItems, setArchivedItems] = useState([]);
-  const [showArchive, setShowArchive] = useState(false);
+  const [archivedItems, setArchivedItems] = useState(() => {
+    try { const s = localStorage.getItem('hpCounterArchivedLoot'); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
+
+  // Persist archived items across sessions
+  React.useEffect(() => {
+    try { localStorage.setItem('hpCounterArchivedLoot', JSON.stringify(archivedItems)); } catch {}
+  }, [archivedItems]);
 
   const handleSave = (item) => {
     setLootPool(prev => [...prev, item]);
@@ -437,9 +444,13 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
     setLootPool(prev => [...prev, item]);
   };
 
-  const filtered = lootPool
-    .filter(i => filterTier === 'All' || i.tier === filterTier)
-    .filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()));
+  const showingArchived = filterTier === 'Archived';
+
+  const filtered = showingArchived
+    ? archivedItems.filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : lootPool
+        .filter(i => filterTier === 'All' || i.tier === filterTier)
+        .filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()));
 
   return (
     <div style={{ width: '100%' }}>
@@ -466,11 +477,17 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
       )}
 
       {/* Tier filter */}
-      {lootPool.length > 0 && (
-        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem', justifyContent: 'center' }}>
-          {['All', ...TIERS, 'Quest'].map(t => {
-            const c = t === 'All' ? { border: 'rgba(201,169,97,0.4)', text: colors.gold, bg: 'rgba(201,169,97,0.08)' } : TIER_COLORS[t];
+      {(lootPool.length > 0 || archivedItems.length > 0) && (
+        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          {['All', ...TIERS, 'Quest', 'Archived'].map(t => {
+            const isArchived = t === 'Archived';
+            const c = isArchived
+              ? { border: 'rgba(107,114,128,0.5)', text: colors.textMuted, bg: 'rgba(107,114,128,0.12)' }
+              : t === 'All'
+                ? { border: 'rgba(201,169,97,0.4)', text: colors.gold, bg: 'rgba(201,169,97,0.08)' }
+                : TIER_COLORS[t];
             const sel = filterTier === t;
+            const count = isArchived ? archivedItems.length : null;
             return (
               <div key={t} onClick={() => setFilterTier(t)} style={{
                 padding: '0.3rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
@@ -478,14 +495,20 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
                 border: `1px solid ${sel ? c.border : 'rgba(90,74,58,0.3)'}`,
                 color: sel ? c.text : colors.textFaint,
                 fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.08em',
-              }}>{t}</div>
+                display: 'flex', alignItems: 'center', gap: '0.3rem',
+              }}>
+                {isArchived ? '🗄️ ' : ''}{t}
+                {isArchived && count > 0 && (
+                  <span style={{ background: 'rgba(107,114,128,0.2)', borderRadius: '20px', padding: '0 0.35rem', fontSize: '0.65rem' }}>{count}</span>
+                )}
+              </div>
             );
           })}
         </div>
       )}
 
       {/* Search bar */}
-      {lootPool.length > 0 && (
+      {(lootPool.length > 0 || archivedItems.length > 0) && (
         <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
           <span style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: colors.textFaint, pointerEvents: 'none' }}>🔍</span>
           <input
@@ -531,81 +554,49 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
         />
       ))}
 
-      {filtered.length === 0 && lootPool.length > 0 && (
+      {filtered.length === 0 && (lootPool.length > 0 || showingArchived) && (
         <div style={{ textAlign: 'center', color: colors.textFaint, padding: '2rem', fontSize: '0.85rem' }}>
-          No {filterTier === 'All' ? '' : filterTier + ' '}items{search ? ` matching "${search}"` : ''} in pool.
+          {showingArchived
+            ? `No archived items${search ? ` matching "${search}"` : ''}.`
+            : `No ${filterTier === 'All' ? '' : filterTier + ' '}items${search ? ` matching "${search}"` : ''} in pool.`
+          }
         </div>
       )}
 
-      {/* Archive section */}
-      {archivedItems.length > 0 && (
-        <div style={{ marginTop: '1.5rem' }}>
-          <div
-            onClick={() => setShowArchive(s => !s)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem',
-              padding: '0.65rem 1rem', cursor: 'pointer',
-              background: surfaces.inset,
-              border: '1px solid rgba(90,74,58,0.3)',
-              borderRadius: showArchive ? '8px 8px 0 0' : '8px',
-            }}
-          >
-            <span style={{ fontSize: '0.9rem' }}>🗄️</span>
-            <span style={{ color: colors.textMuted, fontWeight: '800', fontSize: '0.82rem', flex: 1, letterSpacing: '0.06em' }}>
-              ARCHIVED ITEMS
-            </span>
-            <span style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '700', background: surfaces.inset, border: '1px solid rgba(90,74,58,0.3)', borderRadius: '20px', padding: '0.1rem 0.5rem' }}>
-              {archivedItems.length}
-            </span>
-            <span style={{ color: colors.textFaint, fontSize: '0.8rem' }}>{showArchive ? '▲' : '▼'}</span>
-          </div>
-
-          {showArchive && (
-            <div style={{
-              background: 'rgba(0,0,0,0.2)',
-              border: '1px solid rgba(90,74,58,0.3)',
-              borderTop: 'none',
-              borderRadius: '0 0 8px 8px',
-              padding: '0.5rem',
-              display: 'flex', flexDirection: 'column', gap: '0.4rem',
-            }}>
-              {archivedItems.map(item => {
-                const c = item.isQuestItem ? TIER_COLORS.Quest : (TIER_COLORS[item.tier] || TIER_COLORS.Common);
-                return (
-                  <div key={item.id} style={{
-                    display: 'flex', alignItems: 'center', gap: '0.75rem',
-                    padding: '0.55rem 0.85rem',
-                    background: 'rgba(0,0,0,0.35)',
-                    border: `1px solid ${c.border}`,
-                    borderLeft: `3px solid ${c.border}`,
-                    borderRadius: '6px', opacity: 0.7,
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ color: c.text, fontWeight: '800', fontSize: '0.85rem' }}>{item.name}</span>
-                      <span style={{
-                        marginLeft: '0.5rem',
-                        padding: '0.1rem 0.4rem', background: c.bg,
-                        border: `1px solid ${c.border}`, borderRadius: '4px',
-                        color: c.text, fontSize: '0.6rem', fontWeight: '800',
-                        textTransform: 'uppercase',
-                      }}>{item.isQuestItem ? '🗝️ Quest' : item.tier}</span>
-                    </div>
-                    <button onClick={() => handleReinstate(item)} style={{
-                      padding: '0.3rem 0.75rem',
-                      background: 'rgba(34,197,94,0.1)',
-                      border: '1px solid rgba(34,197,94,0.4)',
-                      borderRadius: '6px', cursor: 'pointer',
-                      color: '#86efac', fontFamily: 'inherit',
-                      fontWeight: '800', fontSize: '0.7rem',
-                      letterSpacing: '0.05em', whiteSpace: 'nowrap', flexShrink: 0,
-                    }}>↩ Re-Instate</button>
-                  </div>
-                );
-              })}
+      {/* Archived items — shown inline when Archived filter is active */}
+      {showingArchived && filtered.map(item => {
+        const c = item.isQuestItem ? TIER_COLORS.Quest : (TIER_COLORS[item.tier] || TIER_COLORS.Common);
+        return (
+          <div key={item.id} style={{
+            display: 'flex', alignItems: 'center', gap: '0.75rem',
+            padding: '0.55rem 0.85rem', marginBottom: '0.4rem',
+            background: 'rgba(0,0,0,0.3)',
+            border: `1px solid ${c.border}`,
+            borderLeft: `3px solid ${c.border}`,
+            borderRadius: '6px', opacity: 0.75,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ color: c.text, fontWeight: '800', fontSize: '0.85rem' }}>{item.name}</span>
+              <span style={{
+                marginLeft: '0.5rem', padding: '0.1rem 0.4rem',
+                background: c.bg, border: `1px solid ${c.border}`,
+                borderRadius: '4px', color: c.text,
+                fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase',
+              }}>{item.isQuestItem ? '🗝️ Quest' : item.tier}</span>
+              {item.description && (
+                <div style={{ color: colors.textFaint, fontSize: '0.68rem', marginTop: '0.15rem' }}>{item.description}</div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+            <button onClick={() => handleReinstate(item)} style={{
+              padding: '0.3rem 0.75rem',
+              background: colors.greenSubtle, border: `1px solid ${colors.greenBorder}`,
+              borderRadius: '6px', cursor: 'pointer', color: colors.greenLight,
+              fontFamily: fonts.body, fontWeight: '800', fontSize: '0.7rem',
+              letterSpacing: '0.05em', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>↩ Re-Instate</button>
+          </div>
+        );
+      })}
     </div>
   );
 };

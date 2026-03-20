@@ -7,14 +7,14 @@ import { colors, surfaces, borders, fonts, btn, tierColors } from '../theme';
 
 const TIER_COLORS = {
   Common:    { border: 'rgba(156,163,175,0.5)', text: colors.textSecondary, bg: 'rgba(156,163,175,0.08)' },
-  Rare:      { border: 'rgba(139,92,246,0.5)',  text: colors.purpleLight, bg: 'rgba(139,92,246,0.08)'  },
+  Rare:      { border: 'rgba(139,92,246,0.5)',  text: '#a78bfa', bg: 'rgba(139,92,246,0.08)'  },
   Legendary: { border: 'rgba(245,158,11,0.5)',  text: '#fbbf24', bg: 'rgba(245,158,11,0.08)'  },
 };
 
 const TIER_WEIGHTS_DEFAULT = { Common: 60, Rare: 30, Legendary: 10 };
 
 const inputStyle = {
-  background: surfaces.insetDeep, border: borders.warm, borderRadius: '6px',
+  background: '#120a06', border: '1px solid #5a4a3a', borderRadius: '6px',
   padding: '0.5rem 0.75rem', color: colors.gold, fontFamily: fonts.body,
   fontSize: '0.9rem', width: '100%', outline: 'none', boxSizing: 'border-box',
 };
@@ -26,22 +26,21 @@ const labelStyle = {
 };
 
 const sectionStyle = {
-  background: 'rgba(0,0,0,0.25)', border: `1px solid ${colors.goldBorder}`,
+  background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(201,169,97,0.2)',
   borderRadius: '10px', padding: '1rem', marginBottom: '1rem',
 };
 
 const sectionTitle = {
   color: colors.gold, fontSize: '0.85rem', fontWeight: '800',
   letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.75rem',
-  fontFamily: fonts.display,
 };
 
 const Toggle = ({ value, onChange, label }) => (
   <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', userSelect: 'none' }}>
     <div onClick={onChange} style={{
       width: '40px', height: '22px', borderRadius: '11px',
-      background: value ? colors.purple : colors.textDisabled,
-      border: `2px solid ${value ? colors.purpleLight : colors.textFaint}`,
+      background: value ? '#7c3aed' : colors.textDisabled,
+      border: `2px solid ${value ? '#a78bfa' : colors.textFaint}`,
       position: 'relative', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
     }}>
       <div style={{ position: 'absolute', top: '2px', left: value ? '18px' : '2px', width: '14px', height: '14px', borderRadius: '50%', background: value ? '#e9d5ff' : colors.textSecondary, transition: 'left 0.2s' }} />
@@ -85,7 +84,7 @@ const RoomCreator = ({ initialRoom, onSave, onClose, lootPool = [] }) => {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: surfaces.elevated, border: `2px solid ${colors.gold}`, borderRadius: '14px', padding: '1.5rem', width: '95%', maxWidth: '620px', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: surfaces.elevated, border: `3px solid ${colors.gold}`, borderRadius: '14px', padding: '1.5rem', width: '95%', maxWidth: '620px', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
 
         <h2 style={{ color: colors.gold, fontSize: '1.4rem', fontFamily: fonts.display, textAlign: 'center', marginBottom: '1.5rem', letterSpacing: '0.1em' }}>
           {initialRoom.name ? `✏️ Edit: ${initialRoom.name}` : '🚪 Create Room'}

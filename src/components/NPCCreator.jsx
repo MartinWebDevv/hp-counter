@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
+import { colors, surfaces, borders, fonts, btn, tierColors } from '../theme';
 
 
 
@@ -232,7 +232,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
 
   const inputStyle = {
     background: '#120a06',
-    border: borders.warm,
+    border: '1px solid #5a4a3a',
     borderRadius: '6px',
     padding: '0.5rem 0.75rem',
     color: colors.gold,
@@ -285,7 +285,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
     >
       <div
         style={{
-          background: `linear-gradient(145deg, ${dark}, ${darker})`,
+          background: surfaces.elevated,
           border: `3px solid ${colors.gold}`,
           borderRadius: '14px',
           padding: '1.5rem',
@@ -301,7 +301,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
         <h2 style={{
           color: colors.gold,
           fontSize: '1.4rem',
-          fontFamily: fonts.display,
+          fontFamily: '"Cinzel", Georgia, serif',
           textAlign: 'center',
           marginBottom: '1.5rem',
           letterSpacing: '0.1em',

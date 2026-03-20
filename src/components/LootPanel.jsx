@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput, selectStyle as themeSelect } from '../theme';
 import { getSlotCount, getHeldCount, unitIsFull } from './lootUtils';
 
-const gold = '#c9a961';
+
 
 const TIERS = ['Common', 'Rare', 'Legendary'];
 
@@ -23,7 +24,7 @@ const EFFECT_TYPES = [
 ];
 
 const TIER_COLORS = {
-  Common:    { border: 'rgba(156,163,175,0.5)', text: '#9ca3af', bg: 'rgba(156,163,175,0.08)' },
+  Common:    { border: 'rgba(156,163,175,0.5)', text: colors.textSecondary, bg: 'rgba(156,163,175,0.08)' },
   Rare:      { border: 'rgba(139,92,246,0.5)',  text: '#a78bfa', bg: 'rgba(139,92,246,0.08)'  },
   Legendary: { border: 'rgba(245,158,11,0.5)', text: '#fbbf24', bg: 'rgba(245,158,11,0.08)'  },
   Quest:     { border: 'rgba(234,179,8,0.6)',   text: '#fde68a', bg: 'rgba(234,179,8,0.1)'    },
@@ -56,10 +57,10 @@ const ItemCreator = ({ onSave, onCancel }) => {
   return (
     <div style={{
       background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-      border: `2px solid ${gold}`, borderRadius: '10px',
+      border: `2px solid ${colors.gold}`, borderRadius: '10px',
       padding: '1.25rem', marginBottom: '1rem',
     }}>
-      <div style={{ color: gold, fontWeight: '800', fontSize: '0.95rem', marginBottom: '1rem', letterSpacing: '0.08em' }}>
+      <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.95rem', marginBottom: '1rem', letterSpacing: '0.08em' }}>
         ✨ New Loot Item
       </div>
 
@@ -90,10 +91,10 @@ const ItemCreator = ({ onSave, onCancel }) => {
               return (
                 <div key={t} onClick={() => set('tier', t)} style={{
                   flex: 1, textAlign: 'center', padding: '0.4rem',
-                  background: sel ? c.bg : 'rgba(0,0,0,0.3)',
+                  background: sel ? c.bg : surfaces.inset,
                   border: `2px solid ${sel ? c.border : 'rgba(90,74,58,0.3)'}`,
                   borderRadius: '6px', cursor: 'pointer',
-                  color: sel ? c.text : '#4b5563',
+                  color: sel ? c.text : colors.textFaint,
                   fontWeight: '800', fontSize: '0.78rem', letterSpacing: '0.08em',
                 }}>{t}</div>
               );
@@ -151,22 +152,22 @@ const ItemCreator = ({ onSave, onCancel }) => {
       }} style={{
         display: 'flex', alignItems: 'center', gap: '0.75rem',
         padding: '0.6rem 0.85rem', marginBottom: '0.75rem',
-        background: item.isQuestItem ? 'rgba(234,179,8,0.1)' : 'rgba(0,0,0,0.3)',
+        background: item.isQuestItem ? 'rgba(234,179,8,0.1)' : surfaces.inset,
         border: `2px solid ${item.isQuestItem ? 'rgba(234,179,8,0.5)' : 'rgba(90,74,58,0.3)'}`,
         borderRadius: '8px', cursor: 'pointer',
       }}>
         <div style={{
           width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
-          border: `2px solid ${item.isQuestItem ? '#eab308' : '#4b5563'}`,
+          border: `2px solid ${item.isQuestItem ? '#eab308' : colors.textFaint}`,
           background: item.isQuestItem ? '#eab308' : 'transparent',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '0.7rem', color: '#000', fontWeight: '900',
         }}>{item.isQuestItem && '✓'}</div>
         <div>
-          <div style={{ color: item.isQuestItem ? '#fde68a' : '#6b7280', fontWeight: '800', fontSize: '0.82rem' }}>
+          <div style={{ color: item.isQuestItem ? '#fde68a' : colors.textMuted, fontWeight: '800', fontSize: '0.82rem' }}>
             🗝️ Quest Item
           </div>
-          <div style={{ color: '#4b5563', fontSize: '0.65rem' }}>
+          <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>
             Does not count toward carrying slots · Cannot be destroyed · Can be stolen if unit is killed
           </div>
         </div>
@@ -180,7 +181,7 @@ const ItemCreator = ({ onSave, onCancel }) => {
           style={{
             flex: 1, padding: '0.65rem',
             background: item.name.trim() ? 'linear-gradient(135deg, #059669, #047857)' : '#1a0f0a',
-            border: '2px solid', borderColor: item.name.trim() ? '#10b981' : '#374151',
+            border: '2px solid', borderColor: item.name.trim() ? '#10b981' : colors.textDisabled,
             color: item.name.trim() ? '#d1fae5' : '#4a3322',
             borderRadius: '8px', cursor: item.name.trim() ? 'pointer' : 'not-allowed',
             fontFamily: 'inherit', fontWeight: '800', fontSize: '0.875rem',
@@ -213,11 +214,11 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-        border: `3px solid ${gold}`, borderRadius: '12px',
+        border: `3px solid ${colors.gold}`, borderRadius: '12px',
         padding: '1.5rem', width: '400px', maxWidth: '95%',
         boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
       }}>
-        <h3 style={{ color: gold, fontSize: '1.1rem', marginBottom: '0.25rem', fontFamily: '"Cinzel", Georgia, serif', textAlign: 'center' }}>
+        <h3 style={{ color: colors.gold, fontSize: '1.1rem', marginBottom: '0.25rem', fontFamily: '"Cinzel", Georgia, serif', textAlign: 'center' }}>
           🎁 Give Item
         </h3>
         <div style={{ color: '#8b7355', fontSize: '0.78rem', textAlign: 'center', marginBottom: '1.25rem' }}>
@@ -259,11 +260,11 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
                   const selected = selectedUnitType === ut;
                   return (
                     <div key={ut} onClick={() => setSelectedUnitType(ut)} style={{
-                      ...unitRow(selected, full ? '#f97316' : gold),
+                      ...unitRow(selected, full ? '#f97316' : colors.gold),
                       cursor: 'pointer',
-                      border: `2px solid ${selected ? (full ? '#f97316' : gold) : full ? 'rgba(249,115,22,0.3)' : 'rgba(90,74,58,0.3)'}`,
+                      border: `2px solid ${selected ? (full ? '#f97316' : colors.gold) : full ? 'rgba(249,115,22,0.3)' : 'rgba(90,74,58,0.3)'}`,
                     }}>
-                      <span style={{ flex: 1, color: selected ? (full ? '#f97316' : gold) : '#9ca3af', fontWeight: '800', fontSize: '0.82rem' }}>{label}</span>
+                      <span style={{ flex: 1, color: selected ? (full ? '#f97316' : colors.gold) : colors.textSecondary, fontWeight: '800', fontSize: '0.82rem' }}>{label}</span>
                       {full && !selected && <span style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800' }}>FULL — SWAP?</span>}
                       {full && selected && <span style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800' }}>↕ SWAP</span>}
                     </div>
@@ -275,7 +276,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
               {isSwap && currentItem && (
                 <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '0.5rem' }}>
                   <div style={{ color: '#f97316', fontSize: '0.68rem', fontWeight: '900', marginBottom: '0.2rem' }}>⚠️ SWAP — unit is full</div>
-                  <div style={{ color: '#9ca3af', fontSize: '0.68rem' }}>
+                  <div style={{ color: colors.textSecondary, fontSize: '0.68rem' }}>
                     Drop <span style={{ color: '#fbbf24', fontWeight: '800' }}>{currentItem.name}</span> and take <span style={{ color: '#fbbf24', fontWeight: '800' }}>{item.name}</span>?
                   </div>
                 </div>
@@ -296,7 +297,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
           }} style={{
             flex: 1, padding: '0.75rem',
             background: canConfirm ? 'linear-gradient(135deg, #059669, #047857)' : '#1a0f0a',
-            border: '2px solid', borderColor: canConfirm ? '#10b981' : '#374151',
+            border: '2px solid', borderColor: canConfirm ? '#10b981' : colors.textDisabled,
             color: canConfirm ? '#d1fae5' : '#4a3322', borderRadius: '8px',
             cursor: canConfirm ? 'pointer' : 'not-allowed',
             fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem',
@@ -340,7 +341,7 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
               }}>{item.isQuestItem ? '🗝️ Quest' : item.tier}</span>
             </div>
             {item.description && (
-              <div style={{ color: '#6b7280', fontSize: '0.75rem', lineHeight: '1.4' }}>{item.description}</div>
+              <div style={{ color: colors.textMuted, fontSize: '0.75rem', lineHeight: '1.4' }}>{item.description}</div>
             )}
           </div>
           <button onClick={() => onDelete(item.id)} style={{
@@ -386,9 +387,9 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
             }}>🎁 Give</button>
             <button onClick={() => onArchive(item)} style={{
               padding: '0.35rem 0.85rem',
-              background: 'rgba(0,0,0,0.3)',
+              background: surfaces.inset,
               border: '1px solid rgba(90,74,58,0.4)',
-              color: '#6b7280', borderRadius: '6px', cursor: 'pointer',
+              color: colors.textMuted, borderRadius: '6px', cursor: 'pointer',
               fontFamily: 'inherit', fontWeight: '800', fontSize: '0.75rem',
               letterSpacing: '0.05em',
             }}>🗄️ Archive</button>
@@ -467,14 +468,14 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
       {lootPool.length > 0 && (
         <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem', justifyContent: 'center' }}>
           {['All', ...TIERS, 'Quest'].map(t => {
-            const c = t === 'All' ? { border: 'rgba(201,169,97,0.4)', text: gold, bg: 'rgba(201,169,97,0.08)' } : TIER_COLORS[t];
+            const c = t === 'All' ? { border: 'rgba(201,169,97,0.4)', text: colors.gold, bg: 'rgba(201,169,97,0.08)' } : TIER_COLORS[t];
             const sel = filterTier === t;
             return (
               <div key={t} onClick={() => setFilterTier(t)} style={{
                 padding: '0.3rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
-                background: sel ? c.bg : 'rgba(0,0,0,0.3)',
+                background: sel ? c.bg : surfaces.inset,
                 border: `1px solid ${sel ? c.border : 'rgba(90,74,58,0.3)'}`,
-                color: sel ? c.text : '#4b5563',
+                color: sel ? c.text : colors.textFaint,
                 fontWeight: '800', fontSize: '0.72rem', letterSpacing: '0.08em',
               }}>{t}</div>
             );
@@ -484,9 +485,9 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
 
       {/* Empty state */}
       {lootPool.length === 0 && !showCreator && (
-        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: '#4b5563' }}>
+        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: colors.textFaint }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎁</div>
-          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: '#6b7280' }}>
+          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: colors.textMuted }}>
             No loot items yet
           </div>
           <div style={{ fontSize: '0.85rem' }}>
@@ -508,7 +509,7 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
       ))}
 
       {filtered.length === 0 && lootPool.length > 0 && (
-        <div style={{ textAlign: 'center', color: '#4b5563', padding: '2rem', fontSize: '0.85rem' }}>
+        <div style={{ textAlign: 'center', color: colors.textFaint, padding: '2rem', fontSize: '0.85rem' }}>
           No {filterTier} items in pool.
         </div>
       )}
@@ -521,19 +522,19 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
             style={{
               display: 'flex', alignItems: 'center', gap: '0.75rem',
               padding: '0.65rem 1rem', cursor: 'pointer',
-              background: 'rgba(0,0,0,0.3)',
+              background: surfaces.inset,
               border: '1px solid rgba(90,74,58,0.3)',
               borderRadius: showArchive ? '8px 8px 0 0' : '8px',
             }}
           >
             <span style={{ fontSize: '0.9rem' }}>🗄️</span>
-            <span style={{ color: '#6b7280', fontWeight: '800', fontSize: '0.82rem', flex: 1, letterSpacing: '0.06em' }}>
+            <span style={{ color: colors.textMuted, fontWeight: '800', fontSize: '0.82rem', flex: 1, letterSpacing: '0.06em' }}>
               ARCHIVED ITEMS
             </span>
-            <span style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '700', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(90,74,58,0.3)', borderRadius: '20px', padding: '0.1rem 0.5rem' }}>
+            <span style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '700', background: surfaces.inset, border: '1px solid rgba(90,74,58,0.3)', borderRadius: '20px', padding: '0.1rem 0.5rem' }}>
               {archivedItems.length}
             </span>
-            <span style={{ color: '#4b5563', fontSize: '0.8rem' }}>{showArchive ? '▲' : '▼'}</span>
+            <span style={{ color: colors.textFaint, fontSize: '0.8rem' }}>{showArchive ? '▲' : '▼'}</span>
           </div>
 
           {showArchive && (
@@ -595,7 +596,7 @@ const labelStyle = {
 };
 
 const inputStyle = {
-  width: '100%', background: '#0a0503', color: gold,
+  width: '100%', background: '#0a0503', color: colors.gold,
   padding: '0.6rem 0.75rem', borderRadius: '6px',
   border: '1px solid #5a4a3a', fontFamily: 'inherit',
   fontSize: '0.875rem', boxSizing: 'border-box',
@@ -603,9 +604,9 @@ const inputStyle = {
 
 const unitRow = (selected, color) => ({
   padding: '0.5rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
-  background: selected ? `rgba(${color === gold ? '201,169,97' : '167,139,250'},0.12)` : 'rgba(0,0,0,0.3)',
+  background: selected ? `rgba(${color === colors.gold ? '201,169,97' : '167,139,250'},0.12)` : surfaces.inset,
   border: `2px solid ${selected ? color : 'rgba(90,74,58,0.3)'}`,
-  color: selected ? color : '#6b7280',
+  color: selected ? color : colors.textMuted,
   fontWeight: '700', fontSize: '0.82rem', transition: 'all 0.15s',
 });
 

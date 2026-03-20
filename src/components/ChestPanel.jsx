@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
 
-const gold = '#c9a961';
+
 
 const TIER_COLORS = {
-  Common:    { border: 'rgba(156,163,175,0.5)', text: '#9ca3af', bg: 'rgba(156,163,175,0.08)' },
+  Common:    { border: 'rgba(156,163,175,0.5)', text: colors.textSecondary, bg: 'rgba(156,163,175,0.08)' },
   Rare:      { border: 'rgba(139,92,246,0.5)',  text: '#a78bfa', bg: 'rgba(139,92,246,0.08)'  },
   Legendary: { border: 'rgba(245,158,11,0.5)', text: '#fbbf24', bg: 'rgba(245,158,11,0.08)'  },
 };
@@ -57,11 +58,11 @@ const ChestCreator = ({ onSave, onCancel, lootPool }) => {
 
   return (
     <div style={{
-      background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-      border: `2px solid ${gold}`, borderRadius: '10px',
+      background: 'surfaces.elevated',
+      border: `2px solid ${colors.gold}`, borderRadius: '10px',
       padding: '1.25rem', marginBottom: '1rem',
     }}>
-      <div style={{ color: gold, fontWeight: '800', fontSize: '0.95rem', marginBottom: '1rem', letterSpacing: '0.08em' }}>
+      <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.95rem', marginBottom: '1rem', letterSpacing: '0.08em' }}>
         📦 New Chest
       </div>
 
@@ -88,8 +89,8 @@ const ChestCreator = ({ onSave, onCancel, lootPool }) => {
           onChange={e => set('requiredKeyName', e.target.value)}
           placeholder="e.g. Fang Key I  — leave blank for no key required" />
         {chest.requiredKeyName.trim() && (
-          <div style={{ color: '#6b7280', fontSize: '0.68rem', marginTop: '0.25rem' }}>
-            Player must hold an item named exactly <span style={{ color: gold }}>"{chest.requiredKeyName.trim()}"</span> to open this chest.
+          <div style={{ color: colors.textMuted, fontSize: '0.68rem', marginTop: '0.25rem' }}>
+            Player must hold an item named exactly <span style={{ color: colors.gold }}>"{chest.requiredKeyName.trim()}"</span> to open this chest.
           </div>
         )}
       </div>
@@ -104,10 +105,10 @@ const ChestCreator = ({ onSave, onCancel, lootPool }) => {
           ].map(opt => (
             <div key={opt.value} onClick={() => set('mode', opt.value)} style={{
               flex: 1, textAlign: 'center', padding: '0.5rem',
-              background: chest.mode === opt.value ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
-              border: `2px solid ${chest.mode === opt.value ? gold : 'rgba(90,74,58,0.3)'}`,
+              background: chest.mode === opt.value ? 'rgba(201,169,97,0.12)' : surfaces.inset,
+              border: `2px solid ${chest.mode === opt.value ? colors.gold : 'rgba(255,255,255,0.06)'}`,
               borderRadius: '6px', cursor: 'pointer',
-              color: chest.mode === opt.value ? gold : '#4b5563',
+              color: chest.mode === opt.value ? colors.gold : colors.textFaint,
               fontWeight: '800', fontSize: '0.78rem',
             }}>{opt.label}</div>
           ))}
@@ -136,10 +137,10 @@ const ChestCreator = ({ onSave, onCancel, lootPool }) => {
                     <input type="number" min="0" max="100" value={chest.tierWeights[tier]}
                       onChange={e => setWeight(tier, e.target.value)}
                       style={{ ...inputStyle, width: '64px', padding: '0.35rem 0.5rem', textAlign: 'center' }} />
-                    <div style={{ flex: 1, height: '6px', background: 'rgba(0,0,0,0.4)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ flex: 1, height: '6px', background: surfaces.insetDeep, borderRadius: '3px', overflow: 'hidden' }}>
                       <div style={{ width: `${pct}%`, height: '100%', background: c.text, borderRadius: '3px', transition: 'width 0.2s' }} />
                     </div>
-                    <span style={{ color: '#4b5563', fontSize: '0.68rem', fontWeight: '700', width: '30px', textAlign: 'right' }}>{pct}%</span>
+                    <span style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '700', width: '30px', textAlign: 'right' }}>{pct}%</span>
                   </div>
                 );
               })}
@@ -168,19 +169,19 @@ const ChestCreator = ({ onSave, onCancel, lootPool }) => {
                   <div key={item.id} onClick={() => togglePreload(item.id)} style={{
                     display: 'flex', alignItems: 'center', gap: '0.6rem',
                     padding: '0.5rem 0.75rem',
-                    background: selected ? c.bg : 'rgba(0,0,0,0.3)',
-                    border: `2px solid ${selected ? c.border : 'rgba(90,74,58,0.3)'}`,
+                    background: selected ? c.bg : surfaces.inset,
+                    border: `2px solid ${selected ? c.border : 'rgba(255,255,255,0.06)'}`,
                     borderRadius: '6px', cursor: 'pointer',
                   }}>
                     <div style={{
                       width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
-                      border: `2px solid ${selected ? c.text : '#4b5563'}`,
+                      border: `2px solid ${selected ? c.text : colors.textFaint}`,
                       background: selected ? c.text : 'transparent',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: '0.55rem', color: '#000', fontWeight: '900',
                     }}>{selected && '✓'}</div>
                     <span style={{ color: c.text, fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>{item.name}</span>
-                    <span style={{ color: '#4b5563', fontSize: '0.65rem', fontWeight: '700' }}>{item.tier}</span>
+                    <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '700' }}>{item.tier}</span>
                   </div>
                 );
               })}
@@ -194,16 +195,16 @@ const ChestCreator = ({ onSave, onCancel, lootPool }) => {
         <button disabled={!canSave} onClick={() => onSave(chest)} style={{
           flex: 1, padding: '0.65rem',
           background: canSave ? 'linear-gradient(135deg, #059669, #047857)' : '#1a0f0a',
-          border: '2px solid', borderColor: canSave ? '#10b981' : '#374151',
+          border: '2px solid', borderColor: canSave ? '#10b981' : colors.textDisabled,
           color: canSave ? '#d1fae5' : '#4a3322',
           borderRadius: '8px', cursor: canSave ? 'pointer' : 'not-allowed',
-          fontFamily: 'inherit', fontWeight: '800', fontSize: '0.875rem',
+          fontFamily: fonts.body, fontWeight: '800', fontSize: '0.875rem',
         }}>✓ Create Chest</button>
         <button onClick={onCancel} style={{
           flex: 1, padding: '0.65rem',
           background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
           color: '#fca5a5', borderRadius: '8px', cursor: 'pointer',
-          fontFamily: 'inherit', fontWeight: '800', fontSize: '0.875rem',
+          fontFamily: fonts.body, fontWeight: '800', fontSize: '0.875rem',
         }}>✕ Cancel</button>
       </div>
     </div>
@@ -277,21 +278,21 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
       alignItems: 'center', justifyContent: 'center', zIndex: 2000,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-        border: `3px solid ${gold}`, borderRadius: '12px',
+        background: 'surfaces.elevated',
+        border: `3px solid ${colors.gold}`, borderRadius: '12px',
         padding: '1.5rem', width: '420px', maxWidth: '95%',
         maxHeight: '90vh', overflowY: 'auto',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.95)',
       }}>
         <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '0.3rem' }}>
             {chest.isOpened ? '📭' : '📦'}
           </div>
-          <div style={{ color: gold, fontWeight: '900', fontSize: '1.1rem', fontFamily: '"Cinzel", Georgia, serif' }}>
+          <div style={{ color: colors.gold, fontWeight: '900', fontSize: '1.1rem', fontFamily: fonts.display }}>
             {chest.name}
           </div>
           {chest.description && (
-            <div style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '0.25rem', fontStyle: 'italic' }}>
+            <div style={{ color: colors.textMuted, fontSize: '0.75rem', marginTop: '0.25rem', fontStyle: 'italic' }}>
               {chest.description}
             </div>
           )}
@@ -300,7 +301,7 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
               padding: '0.2rem 0.6rem', background: 'rgba(201,169,97,0.1)',
               border: '1px solid rgba(201,169,97,0.3)', borderRadius: '5px' }}>
               <span style={{ fontSize: '0.75rem' }}>🔑</span>
-              <span style={{ color: '#8b7355', fontSize: '0.68rem', fontWeight: '800' }}>
+              <span style={{ color: colors.textMuted, fontSize: '0.68rem', fontWeight: '800' }}>
                 Requires: {chest.requiredKeyName}
               </span>
             </div>
@@ -338,10 +339,10 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
           <button onClick={rollLoot} disabled={!canRoll} style={{
             width: '100%', padding: '0.85rem',
             background: canRoll ? 'linear-gradient(135deg, #92400e, #78350f)' : '#1a0f0a',
-            border: `2px solid ${canRoll ? '#eab308' : '#374151'}`,
+            border: `2px solid ${canRoll ? '#eab308' : colors.textDisabled}`,
             color: canRoll ? '#fde68a' : '#4a3322',
             borderRadius: '8px', cursor: canRoll ? 'pointer' : 'not-allowed',
-            fontFamily: 'inherit', fontWeight: '800', fontSize: '1rem',
+            fontFamily: fonts.body, fontWeight: '800', fontSize: '1rem',
             letterSpacing: '0.05em', marginBottom: '1rem',
           }}>🎲 Open Chest</button>
         )}
@@ -349,12 +350,12 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
         {/* Rolled results */}
         {rolled && (
           <div style={{ marginBottom: '1rem' }}>
-            <div style={{ color: gold, fontWeight: '800', fontSize: '0.8rem', letterSpacing: '0.1em',
+            <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.8rem', letterSpacing: '0.1em',
               textTransform: 'uppercase', marginBottom: '0.6rem', textAlign: 'center' }}>
               ✨ Loot Dropped
             </div>
             {rolled.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#4b5563', fontSize: '0.85rem', padding: '1rem' }}>
+              <div style={{ textAlign: 'center', color: colors.textFaint, fontSize: '0.85rem', padding: '1rem' }}>
                 The chest was empty.
               </div>
             ) : (
@@ -372,7 +373,7 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
                       <div style={{ flex: 1 }}>
                         <div style={{ color: c.text, fontWeight: '900', fontSize: '0.88rem' }}>{item.name}</div>
                         {item.description && (
-                          <div style={{ color: '#6b7280', fontSize: '0.68rem' }}>{item.description}</div>
+                          <div style={{ color: colors.textMuted, fontSize: '0.68rem' }}>{item.description}</div>
                         )}
                       </div>
                       <span style={{
@@ -396,14 +397,14 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
               background: 'linear-gradient(135deg, #059669, #047857)',
               border: '2px solid #10b981', color: '#d1fae5',
               borderRadius: '8px', cursor: 'pointer',
-              fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem',
+              fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem',
             }}>✓ Give Loot to {player?.playerName}</button>
           )}
           <button onClick={onClose} style={{
             flex: 1, padding: '0.75rem',
             background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
             color: '#fca5a5', borderRadius: '8px', cursor: 'pointer',
-            fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem',
+            fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem',
           }}>✕ {rolled ? 'Cancel' : 'Close'}</button>
         </div>
       </div>
@@ -416,9 +417,9 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
 const ChestCard = ({ chest, onOpen, onDelete }) => {
   return (
     <div style={{
-      background: 'rgba(0,0,0,0.4)',
+      background: surfaces.insetDeep,
       border: chest.isOpened ? '2px solid rgba(75,85,99,0.4)' : `2px solid rgba(201,169,97,0.35)`,
-      borderLeft: chest.isOpened ? '4px solid #374151' : `4px solid ${gold}`,
+      borderLeft: chest.isOpened ? '4px solid #374151' : `4px solid ${colors.gold}`,
       borderRadius: '8px', padding: '0.85rem', marginBottom: '0.6rem',
       opacity: chest.isOpened ? 0.6 : 1,
       transition: 'all 0.2s',
@@ -427,19 +428,19 @@ const ChestCard = ({ chest, onOpen, onDelete }) => {
         <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>{chest.isOpened ? '📭' : '📦'}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
-            <span style={{ color: chest.isOpened ? '#4b5563' : gold, fontWeight: '900', fontSize: '0.9rem' }}>
+            <span style={{ color: chest.isOpened ? colors.textFaint : colors.gold, fontWeight: '900', fontSize: '0.9rem' }}>
               {chest.name}
             </span>
             {chest.isOpened && (
               <span style={{
                 padding: '0.1rem 0.4rem', background: 'rgba(75,85,99,0.2)',
                 border: '1px solid #374151', borderRadius: '4px',
-                color: '#6b7280', fontSize: '0.6rem', fontWeight: '800',
+                color: colors.textMuted, fontSize: '0.6rem', fontWeight: '800',
               }}>OPENED</span>
             )}
           </div>
           {chest.description && (
-            <div style={{ color: '#6b7280', fontSize: '0.72rem', fontStyle: 'italic', marginBottom: '0.3rem' }}>
+            <div style={{ color: colors.textMuted, fontSize: '0.72rem', fontStyle: 'italic', marginBottom: '0.3rem' }}>
               {chest.description}
             </div>
           )}
@@ -448,7 +449,7 @@ const ChestCard = ({ chest, onOpen, onDelete }) => {
               <span style={{
                 padding: '0.1rem 0.45rem', background: 'rgba(201,169,97,0.08)',
                 border: '1px solid rgba(201,169,97,0.3)', borderRadius: '4px',
-                color: '#8b7355', fontSize: '0.62rem', fontWeight: '700',
+                color: colors.textMuted, fontSize: '0.62rem', fontWeight: '700',
               }}>🔑 {chest.requiredKeyName}</span>
             )}
             {!chest.requiredKeyName && (
@@ -469,7 +470,7 @@ const ChestCard = ({ chest, onOpen, onDelete }) => {
             </span>
           </div>
           {chest.isOpened && chest.openedBy && (
-            <div style={{ color: '#4b5563', fontSize: '0.65rem', marginTop: '0.3rem' }}>
+            <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.3rem' }}>
               Opened by {chest.openedBy} · {chest.droppedItems?.map(i => i.name).join(', ') || 'nothing'}
             </div>
           )}
@@ -481,7 +482,7 @@ const ChestCard = ({ chest, onOpen, onDelete }) => {
               background: 'linear-gradient(135deg, rgba(146,64,14,0.3), rgba(120,53,15,0.2))',
               border: '2px solid rgba(234,179,8,0.5)',
               color: '#fde68a', borderRadius: '6px', cursor: 'pointer',
-              fontFamily: 'inherit', fontWeight: '800', fontSize: '0.72rem',
+              fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem',
             }}>🔓 Open</button>
           )}
           <button onClick={() => onDelete(chest.id)} style={{
@@ -544,7 +545,7 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
           background: 'linear-gradient(135deg, #78350f, #92400e)',
           border: '2px solid #eab308', color: '#fde68a',
           borderRadius: '10px', cursor: 'pointer',
-          fontFamily: 'inherit', fontWeight: '800', fontSize: '1rem',
+          fontFamily: fonts.body, fontWeight: '800', fontSize: '1rem',
           letterSpacing: '0.08em', textTransform: 'uppercase',
           boxShadow: '0 4px 12px rgba(234,179,8,0.2)',
         }}>📦 CREATE CHEST</button>
@@ -561,9 +562,9 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
 
       {/* Empty state */}
       {chests.length === 0 && !showCreator && (
-        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: '#4b5563' }}>
+        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: colors.textFaint }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📦</div>
-          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: '#6b7280' }}>
+          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: colors.textMuted }}>
             No chests yet
           </div>
           <div style={{ fontSize: '0.85rem' }}>
@@ -575,7 +576,7 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
       {/* Unopened chests */}
       {unopened.length > 0 && (
         <>
-          <div style={{ color: '#8b7355', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.15em',
+          <div style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.15em',
             textTransform: 'uppercase', marginBottom: '0.5rem' }}>
             🔒 Locked / Available ({unopened.length})
           </div>
@@ -589,7 +590,7 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
       {/* Opened chests */}
       {opened.length > 0 && (
         <>
-          <div style={{ color: '#4b5563', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.15em',
+          <div style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.15em',
             textTransform: 'uppercase', margin: '0.75rem 0 0.5rem' }}>
             📭 Opened ({opened.length})
           </div>
@@ -617,15 +618,15 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
 // ── Shared styles ─────────────────────────────────────────────────────────────
 
 const labelStyle = {
-  color: '#8b7355', fontSize: '0.72rem', fontWeight: '800',
+  color: colors.textMuted, fontSize: '0.72rem', fontWeight: '800',
   letterSpacing: '0.1em', textTransform: 'uppercase',
   display: 'block', marginBottom: '0.35rem',
 };
 
 const inputStyle = {
-  width: '100%', background: '#0a0503', color: gold,
+  width: '100%', background: '#0a0503', color: colors.gold,
   padding: '0.6rem 0.75rem', borderRadius: '6px',
-  border: '1px solid #5a4a3a', fontFamily: 'inherit',
+  border: borders.warm, fontFamily: fonts.body,
   fontSize: '0.875rem', boxSizing: 'border-box',
 };
 

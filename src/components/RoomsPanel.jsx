@@ -1,8 +1,9 @@
 import React from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
 import RoomCard    from './RoomCard';
 import RoomCreator from './RoomCreator';
 
-const gold = '#c9a961';
+
 
 /**
  * RoomsPanel
@@ -41,7 +42,7 @@ const RoomsPanel = ({
           border: '2px solid #3b82f6',
           color: '#dbeafe',
           borderRadius: '10px', cursor: 'pointer',
-          fontFamily: 'inherit', fontWeight: '800', fontSize: '1rem',
+          fontFamily: fonts.body, fontWeight: '800', fontSize: '1rem',
           letterSpacing: '0.1em', textTransform: 'uppercase',
           boxShadow: '0 8px 24px rgba(59,130,246,0.25)',
         }}>
@@ -51,9 +52,9 @@ const RoomsPanel = ({
 
       {/* Empty state */}
       {visibleRooms.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: '#4b5563' }}>
+        <div style={{ textAlign: 'center', padding: '4rem 2rem', color: colors.textFaint }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🚪</div>
-          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: '#6b7280' }}>No rooms yet</div>
+          <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.5rem', color: colors.textMuted }}>No rooms yet</div>
           <div style={{ fontSize: '0.85rem' }}>Click ADD ROOM to create trap rooms and encounter locations.</div>
         </div>
       )}

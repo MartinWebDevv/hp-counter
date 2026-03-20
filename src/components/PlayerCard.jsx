@@ -1,11 +1,15 @@
 import React from 'react';
 import { FACTIONS } from '../data/factions';
 import { getUnitName } from '../utils/statsUtils';
+import {
+  colors, surfaces, borders, fonts, text, btn, hpBarColor,
+  cardShell, insetSection, pill, inputStyle, selectStyle, tierColors,
+} from '../theme';
 
-const PlayerCard = ({ 
-  player, 
-  onUpdate, 
-  onRemove, 
+const PlayerCard = ({
+  player,
+  onUpdate,
+  onRemove,
   onToggleSquad,
   onOpenCalculator,
   onUseRevive,
@@ -22,11 +26,11 @@ const PlayerCard = ({
   const [showSquad, setShowSquad] = React.useState(false);
   const [showSetup, setShowSetup] = React.useState(false);
   const [showReviveModal, setShowReviveModal] = React.useState(false);
-  const [healTargetItem, setHealTargetItem] = React.useState(null); // { item, itemIndex } — waiting for unit selection
-  const [maxHpTargetItem, setMaxHpTargetItem] = React.useState(null); // same shape, for maxHP items
-  
+  const [healTargetItem, setHealTargetItem] = React.useState(null);
+  const [maxHpTargetItem, setMaxHpTargetItem] = React.useState(null);
+
   const reviveQueue = player.reviveQueue || [];
-  const [deathLootModal, setDeathLootModal] = React.useState(null); // { unitLabel, items }
+  const [deathLootModal, setDeathLootModal] = React.useState(null);
   const aliveUnits = player.subUnits.filter(u => u.hp > 0).length;
   const totalUnits = player.subUnits.length;
 
@@ -48,8 +52,8 @@ const PlayerCard = ({
       commanderStats: {
         ...player.commanderStats,
         hp: newHP,
-        isDead: justDied ? true : (newHP > 0 ? false : player.commanderStats.isDead)
-      }
+        isDead: justDied ? true : (newHP > 0 ? false : player.commanderStats.isDead),
+      },
     });
     if (justDied) {
       const cmdItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
@@ -99,77 +103,55 @@ const PlayerCard = ({
 
   const removeFromQueue = (unitIndex) => {
     const newQueue = reviveQueue.filter(i => i !== unitIndex);
-    const newSubUnits = player.subUnits.map((u, i) =>
-      i === unitIndex ? { ...u, hp: 1 } : u
-    );
+    const newSubUnits = player.subUnits.map((u, i) => i === unitIndex ? { ...u, hp: 1 } : u);
     onUpdate(player.id, { reviveQueue: newQueue, subUnits: newSubUnits });
   };
 
-  const cmdHP = player.commanderStats.hp;
+  const cmdHP    = player.commanderStats.hp;
   const cmdMaxHP = player.commanderStats.maxHp;
   const cmdHPPct = cmdMaxHP > 0 ? (cmdHP / cmdMaxHP) * 100 : 0;
-  const cmdHPColor = cmdHPPct > 50
-    ? 'linear-gradient(to right, #16a34a, #22c55e)'
-    : cmdHPPct > 25
-      ? 'linear-gradient(to right, #ca8a04, #eab308)'
-      : 'linear-gradient(to right, #dc2626, #ef4444)';
-  const cmdDead = cmdHP === 0;
-  const revives = player.commanderStats.revives || 0;
+  const cmdDead  = cmdHP === 0;
+  const revives  = player.commanderStats.revives || 0;
   const cooldown = player.commanderStats.cooldownRounds || 0;
+  const pColor   = player.playerColor || colors.blue;
 
   return (
-    <div style={{
-      background: 'linear-gradient(135deg, rgba(17,24,39,0.95), rgba(31,41,55,0.85))',
-      borderRadius: '12px',
-      padding: '0.85rem',
-      fontFamily: '"Rajdhani", "Cinzel", sans-serif',
-      boxShadow: isCurrentTurn
-        ? `0 0 20px ${player.playerColor || '#3b82f6'}80, 0 8px 32px rgba(0,0,0,0.6)`
-        : '0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
-      border: isCurrentTurn
-        ? `3px solid ${player.playerColor || '#3b82f6'}`
-        : hasActedThisRound
-          ? '2px solid #16a34a'
-          : '2px solid rgba(212,175,55,0.3)',
-    }}>
+    <div style={cardShell(isCurrentTurn, pColor, hasActedThisRound)}>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(245,158,11,0.2)' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '0.6rem',
+        marginBottom: '0.75rem', paddingBottom: '0.65rem',
+        borderBottom: `1px solid rgba(255,255,255,0.06)`,
+      }}>
         <input
           type="color"
-          value={player.playerColor || '#3b82f6'}
+          value={pColor}
           onChange={(e) => onUpdate(player.id, { playerColor: e.target.value })}
-          style={{ width: '28px', height: '28px', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
+          style={{ width: '26px', height: '26px', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
         />
         <input
           type="text"
           value={player.playerName}
           onChange={handlePlayerNameChange}
-          style={{
-            flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(245,158,11,0.3)',
-            borderRadius: '8px', padding: '0.5rem 0.75rem', color: '#fbbf24',
-            fontSize: '1rem', fontWeight: '700', fontFamily: 'inherit', letterSpacing: '0.05em',
-          }}
+          style={{ ...inputStyle, flex: 1, color: pColor, borderColor: `${pColor}50` }}
           placeholder="Player Name"
         />
-        {isCurrentTurn && <Badge color="#3b82f6" text="YOUR TURN" />}
-        {!isCurrentTurn && hasActedThisRound && <Badge color="#16a34a" text="✓ ACTED" dim />}
-        {/* Setup toggle */}
+        {isCurrentTurn && <StatusBadge color={pColor} text="YOUR TURN" />}
+        {!isCurrentTurn && hasActedThisRound && <StatusBadge color={colors.green} text="✓ ACTED" dim />}
         <button
           onClick={() => setShowSetup(s => !s)}
           title="Faction & Commander setup"
           style={{
-            background: showSetup ? 'rgba(139,92,246,0.2)' : 'rgba(0,0,0,0.3)',
-            border: `1px solid ${showSetup ? '#7c3aed' : 'rgba(201,169,97,0.2)'}`,
-            color: showSetup ? '#c4b5fd' : '#6b7280',
-            width: '30px', height: '30px', borderRadius: '6px',
-            cursor: 'pointer', fontSize: '0.85rem', flexShrink: 0,
+            ...btn.icon(showSetup ? colors.purpleLight : colors.textFaint),
+            border: `1px solid ${showSetup ? colors.purpleBorder : 'rgba(255,255,255,0.06)'}`,
+            background: showSetup ? colors.purpleSubtle : 'rgba(0,0,0,0.3)',
           }}
         >⚙️</button>
-        <button onClick={() => onRemove(player.id)} style={rmBtn} title="Remove">✕</button>
+        <button onClick={() => onRemove(player.id)} style={btn.icon('#fca5a5')} title="Remove">✕</button>
       </div>
 
-      {/* ── Setup: Faction + Commander (collapsed by default) ── */}
+      {/* ── Setup: Faction + Commander ── */}
       {showSetup && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
           <select value={player.faction} onChange={handleFactionChange} style={selectStyle}>
@@ -183,29 +165,31 @@ const PlayerCard = ({
 
       {/* ── Commander block ── */}
       <div style={{
-        background: 'rgba(0,0,0,0.4)',
-        border: cmdDead ? '2px solid #7f1d1d' : '1px solid rgba(139,92,246,0.2)',
-        borderRadius: '10px',
-        padding: '0.75rem',
+        ...insetSection(cmdDead ? 'dead' : 'default'),
         marginBottom: '0.6rem',
-        opacity: cmdDead ? 0.7 : 1,
-        transition: 'all 0.3s',
+        opacity: cmdDead ? 0.72 : 1,
       }}>
-        {/* Commander name + cooldown */}
+        {/* Commander name + cooldown row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
           <input
             type="text"
             value={player.commanderStats.customName || player.commander}
-            onChange={(e) => onUpdate(player.id, { commanderStats: { ...player.commanderStats, customName: e.target.value }})}
-            style={{ background: 'transparent', border: 'none', color: '#d4af37', outline: 'none', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.95rem', letterSpacing: '0.08em', textTransform: 'uppercase', minWidth: '80px' }}
+            onChange={(e) => onUpdate(player.id, { commanderStats: { ...player.commanderStats, customName: e.target.value } })}
+            style={{
+              background: 'transparent', border: 'none', outline: 'none',
+              fontFamily: fonts.display, fontWeight: '800', fontSize: '0.9rem',
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+              color: colors.gold, minWidth: '80px',
+            }}
             placeholder={player.commander}
           />
           <div style={{
-            padding: '0.2rem 0.6rem',
-            background: cooldown > 0 ? 'linear-gradient(to bottom, #991b1b, #7f1d1d)' : 'rgba(255,255,255,0.07)',
-            border: '1px solid', borderColor: cooldown > 0 ? '#dc2626' : 'rgba(255,255,255,0.1)',
-            borderRadius: '6px', color: cooldown > 0 ? '#fca5a5' : '#6b7280',
-            fontSize: '0.72rem', fontWeight: '700', letterSpacing: '0.05em',
+            padding: '0.18rem 0.55rem',
+            background: cooldown > 0 ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${cooldown > 0 ? colors.redBorder : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: '20px',
+            color: cooldown > 0 ? '#fca5a5' : colors.textFaint,
+            fontSize: '0.68rem', fontWeight: '800', letterSpacing: '0.05em',
           }}>
             {cooldown > 0 ? `🔴 CD:${cooldown}` : '⭕ Ready'}
           </div>
@@ -213,52 +197,51 @@ const PlayerCard = ({
 
         {/* HP bar + controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-          <button onClick={() => handleCommanderHPChange(-1)} disabled={cmdDead} style={hpBtn(cmdDead)}>−</button>
+          <button onClick={() => handleCommanderHPChange(-1)} disabled={cmdDead} style={btn.hp(cmdDead)}>−</button>
           <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-              <span style={{ color: '#fde68a', fontSize: '0.85rem', fontWeight: '700' }}>{cmdHP} / {cmdMaxHP} HP</span>
-              {/* Revive pips inline */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+              <span style={{ color: colors.amber, fontSize: '0.85rem', fontWeight: '700' }}>{cmdHP} / {cmdMaxHP} HP</span>
+              {/* Revive pips */}
               <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
                 {[...Array(2)].map((_, i) => (
                   <div key={i} style={{
-                    width: '12px', height: '12px', borderRadius: '50%',
-                    border: '2px solid', borderColor: i < revives ? '#60a5fa' : '#374151',
-                    background: i < revives ? 'radial-gradient(circle, #3b82f6, #1e40af)' : '#111',
-                    boxShadow: i < revives ? '0 0 6px #3b82f680' : 'none',
+                    width: '11px', height: '11px', borderRadius: '50%',
+                    border: `2px solid ${i < revives ? colors.blue : colors.textDisabled}`,
+                    background: i < revives ? `radial-gradient(circle, ${colors.blue}, #1e3a8a)` : '#0a0a0a',
+                    boxShadow: i < revives ? `0 0 5px ${colors.blue}70` : 'none',
                   }} />
                 ))}
                 <button
                   onClick={() => setShowReviveModal(true)}
                   disabled={cmdHP > 0 || revives === 0}
                   style={{
-                    background: revives > 0 && cmdDead ? 'linear-gradient(to bottom, #1e40af, #1e3a8a)' : 'rgba(0,0,0,0.3)',
-                    color: revives > 0 && cmdDead ? '#bfdbfe' : '#374151',
-                    border: '1px solid', borderColor: revives > 0 && cmdDead ? '#2563eb' : '#374151',
-                    borderRadius: '5px', padding: '0.1rem 0.4rem',
+                    ...btn.icon(revives > 0 && cmdDead ? colors.blueLight : colors.textDisabled),
+                    width: '22px', height: '22px', fontSize: '0.65rem',
+                    background: revives > 0 && cmdDead ? colors.blueSubtle : 'transparent',
+                    border: `1px solid ${revives > 0 && cmdDead ? colors.blueBorder : colors.textDisabled}`,
                     cursor: revives > 0 && cmdDead ? 'pointer' : 'not-allowed',
-                    fontFamily: 'inherit', fontWeight: '700', fontSize: '0.7rem',
                   }}
                 >⟲</button>
               </div>
             </div>
-            <div style={{ height: '6px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: `${cmdHPPct}%`, height: '100%', background: cmdHPColor, transition: 'width 0.3s ease', borderRadius: '3px' }} />
+            <div style={{ height: '5px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{ width: `${cmdHPPct}%`, height: '100%', background: hpBarColor(cmdHPPct), transition: 'width 0.3s ease', borderRadius: '3px' }} />
             </div>
           </div>
-          <button onClick={() => handleCommanderHPChange(1)} disabled={cmdHP === cmdMaxHP} style={hpBtn(cmdHP === cmdMaxHP)}>+</button>
+          <button onClick={() => handleCommanderHPChange(1)} disabled={cmdHP === cmdMaxHP} style={btn.hp(cmdHP === cmdMaxHP)}>+</button>
         </div>
 
-        {/* Commander status effects */}
+        {/* Status effects */}
         {(player.commanderStats.statusEffects || []).length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.2rem 0' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.35rem' }}>
             {(player.commanderStats.statusEffects || []).map((effect, ei) => {
-              const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp × ${effect.duration}r` : effect.type === 'stun' ? `💫 Stun ${effect.duration}r` : `⚡ ${effect.type}`;
-              const colors = effect.type === 'poison' ? { color: '#86efac', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.4)' } : { color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)' };
+              const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp×${effect.duration}r` : effect.type === 'stun' ? `💫 Stun ${effect.duration}r` : `⚡ ${effect.type}`;
+              const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder } : { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder };
               return (
-                <span key={ei} title='Click to remove' onClick={() => {
+                <span key={ei} onClick={() => {
                   const newStats = { ...player.commanderStats, statusEffects: (player.commanderStats.statusEffects || []).filter((_, i) => i !== ei) };
                   onUpdate(player.id, { commanderStats: newStats });
-                }} style={{ fontSize: '0.65rem', fontWeight: '800', borderRadius: '4px', padding: '0.1rem 0.4rem', cursor: 'pointer', color: colors.color, background: colors.bg, border: `1px solid ${colors.border}` }}>
+                }} style={{ ...pill(c.color, c.bg, c.border), cursor: 'pointer', fontSize: '0.62rem' }}>
                   {label} ✕
                 </span>
               );
@@ -266,24 +249,18 @@ const PlayerCard = ({
           </div>
         )}
 
-        {/* Commander item holding tokens */}
+        {/* Commander held items */}
         {(() => {
           const heldItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
           if (heldItems.length === 0) return null;
           return (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.3rem 0' }}>
-              {heldItems.map((heldItem, hi) => {
-                const tierColor = heldItem.isQuestItem ? '#fde68a' : ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[heldItem.tier] || '#9ca3af');
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.35rem' }}>
+              {heldItems.map((item, hi) => {
+                const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
                 return (
-                  <div key={hi} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                    padding: '0.15rem 0.45rem',
-                    background: `${tierColor}18`,
-                    border: `1px solid ${tierColor}50`,
-                    borderRadius: '4px',
-                  }}>
-                    <span style={{ fontSize: '0.7rem' }}>{heldItem.isQuestItem ? '🗝️' : '📦'}</span>
-                    <span style={{ color: tierColor, fontSize: '0.62rem', fontWeight: '800' }}>{heldItem.name}</span>
+                  <div key={hi} style={{ ...pill(tc.text, tc.bg, tc.border) }}>
+                    <span style={{ marginRight: '0.2rem', fontSize: '0.7rem' }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
+                    {item.name}
                   </div>
                 );
               })}
@@ -294,83 +271,66 @@ const PlayerCard = ({
         {/* Action buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
           {[
-            { label: '🎯 Shoot', action: 'shoot' },
-            { label: '⚔️ Melee', action: 'melee' },
+            { label: '🎯 Shoot',   action: 'shoot'   },
+            { label: '⚔️ Melee',   action: 'melee'   },
             { label: '⚡ Special', action: 'special', disabled: cooldown > 0 },
-          ].map(({ label, action, disabled: extraDisabled }) => {
-            const dis = cmdDead || extraDisabled;
+          ].map(({ label, action, disabled: extra }) => {
+            const dis = cmdDead || extra;
             return (
-              <button
-                key={action}
-                onClick={() => onOpenCalculator(player.id, action, 'commander')}
-                disabled={dis}
-                style={actionBtn(dis)}
-              >{label}</button>
+              <button key={action} onClick={() => onOpenCalculator(player.id, action, 'commander')} disabled={dis} style={btn.primary(dis)}>
+                {label}
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* ── Squad section header (always visible) ── */}
+      {/* ── Squad header ── */}
       <div
         onClick={() => setShowSquad(s => !s)}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0.55rem 0.75rem',
-          background: 'rgba(0,0,0,0.35)',
-          border: '1px solid rgba(139,92,246,0.2)',
+          padding: '0.5rem 0.75rem',
+          background: 'rgba(0,0,0,0.3)',
+          border: `1px solid ${colors.purpleBorder}`,
           borderRadius: showSquad ? '8px 8px 0 0' : '8px',
           cursor: 'pointer', userSelect: 'none',
           marginBottom: showSquad ? 0 : '0.6rem',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          <span style={{ color: '#8b7355', fontSize: '0.75rem' }}>{showSquad ? '▼' : '▶'}</span>
-          <span style={{ color: '#c4b5fd', fontWeight: '800', fontSize: '0.85rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            Squad
-          </span>
-          <span style={{ color: aliveUnits === 0 ? '#dc2626' : '#6b7280', fontSize: '0.78rem', fontWeight: '600' }}>
+          <span style={{ color: colors.textFaint, fontSize: '0.7rem', transition: 'transform 0.15s', display: 'inline-block', transform: showSquad ? 'rotate(90deg)' : 'none' }}>▶</span>
+          <span style={{ color: colors.purpleLight, fontWeight: '800', fontSize: '0.82rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Squad</span>
+          <span style={{ color: aliveUnits === 0 ? colors.red : colors.textMuted, fontSize: '0.75rem', fontWeight: '600' }}>
             {aliveUnits}/{totalUnits} alive
           </span>
           {reviveQueue.length > 0 && (
-            <span style={{
-              background: 'rgba(234,179,8,0.15)', border: '1px solid rgba(234,179,8,0.4)',
-              borderRadius: '4px', padding: '0.1rem 0.4rem',
-              color: '#fbbf24', fontSize: '0.68rem', fontWeight: '800',
-            }}>
+            <span style={pill(colors.amber, colors.amberSubtle, colors.amberBorder)}>
               ⚕️ {reviveQueue.length} queue
             </span>
           )}
         </div>
-        {/* Revive squad button inline in header */}
         {reviveQueue.length > 0 && (
           <button
             onClick={(e) => { e.stopPropagation(); onOpenSquadRevive(player.id); }}
             style={{
-              padding: '0.25rem 0.65rem',
+              padding: '0.22rem 0.6rem',
               background: 'linear-gradient(135deg, #92400e, #78350f)',
-              border: '2px solid #eab308',
-              color: '#fde68a',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              fontWeight: '800',
-              fontSize: '0.72rem',
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
+              border: `1px solid ${colors.amber}`,
+              color: '#fde68a', borderRadius: '6px', cursor: 'pointer',
+              fontFamily: fonts.body, fontWeight: '800', fontSize: '0.7rem',
+              letterSpacing: '0.06em', textTransform: 'uppercase',
             }}
           >⚕️ Revive</button>
         )}
       </div>
 
-      {/* ── Squad units (expanded) ── */}
+      {/* ── Squad units ── */}
       {showSquad && (
         <div style={{
-          border: '1px solid rgba(139,92,246,0.2)',
-          borderTop: 'none',
-          borderRadius: '0 0 8px 8px',
-          overflow: 'hidden',
-          marginBottom: '0.6rem',
+          border: `1px solid ${colors.purpleBorder}`,
+          borderTop: 'none', borderRadius: '0 0 8px 8px',
+          overflow: 'hidden', marginBottom: '0.6rem',
         }}>
           {player.subUnits.map((unit, index) => {
             const isDead = unit.hp === 0;
@@ -379,23 +339,18 @@ const PlayerCard = ({
             const livesRemaining = unit.livesRemaining ?? unit.revives ?? 0;
             const isPermaDead = isDead && livesRemaining === 0;
             const unitHPPct = unit.maxHp > 0 ? (unit.hp / unit.maxHp) * 100 : 0;
-            const unitHPColor = unitHPPct > 50
-              ? 'linear-gradient(to right, #16a34a, #22c55e)'
-              : unitHPPct > 25
-                ? 'linear-gradient(to right, #ca8a04, #eab308)'
-                : 'linear-gradient(to right, #dc2626, #ef4444)';
 
             return (
               <div key={index} style={{
-                padding: '0.65rem 0.75rem',
-                background: isPermaDead ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)',
-                borderBottom: index < player.subUnits.length - 1 ? '1px solid rgba(139,92,246,0.12)' : 'none',
-                opacity: isPermaDead ? 0.35 : isDead ? 0.6 : 1,
+                padding: '0.6rem 0.75rem',
+                background: isPermaDead ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.25)',
+                borderBottom: index < player.subUnits.length - 1 ? `1px solid ${colors.purpleBorder}` : 'none',
+                opacity: isPermaDead ? 0.3 : isDead ? 0.55 : 1,
                 filter: isPermaDead ? 'grayscale(1)' : 'none',
                 transition: 'all 0.3s',
               }}>
-                {/* Unit top row: name + status + lives */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                {/* Unit top row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.4rem' }}>
                   <input
                     type="text"
                     value={unit.name}
@@ -403,140 +358,100 @@ const PlayerCard = ({
                     placeholder={index === 0 ? '⭐ Special' : `🛡️ Soldier ${index}`}
                     style={{
                       flex: 1, background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(139,92,246,0.25)', borderRadius: '5px',
-                      padding: '0.3rem 0.5rem', color: '#c4b5fd',
-                      fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: '600',
+                      border: `1px solid ${colors.purpleBorder}`, borderRadius: '5px',
+                      padding: '0.28rem 0.5rem', color: colors.purpleLight,
+                      fontFamily: fonts.body, fontSize: '0.8rem', fontWeight: '600',
+                      outline: 'none',
                     }}
                   />
                   {/* Lives pips */}
                   <div style={{ display: 'flex', gap: '0.2rem' }}>
                     {[...Array(2)].map((_, i) => (
                       <div key={i} style={{
-                        width: '10px', height: '10px', borderRadius: '50%',
-                        border: '2px solid', borderColor: i < livesRemaining ? '#eab308' : '#374151',
-                        background: i < livesRemaining ? 'radial-gradient(circle, #eab308, #92400e)' : '#111',
-                        boxShadow: i < livesRemaining ? '0 0 5px #eab30870' : 'none',
+                        width: '9px', height: '9px', borderRadius: '50%',
+                        border: `2px solid ${i < livesRemaining ? '#eab308' : colors.textDisabled}`,
+                        background: i < livesRemaining ? 'radial-gradient(circle, #eab308, #92400e)' : '#0a0a0a',
+                        boxShadow: i < livesRemaining ? '0 0 4px #eab30870' : 'none',
                       }} />
                     ))}
                   </div>
+                  {/* Immune badge */}
                   {!isDead && unit.revivedOnPlayerId && (
-                    <span
-                      title='Click to remove immunity'
-                      onClick={e => {
-                        e.stopPropagation();
-                        const newSubs = player.subUnits.map((u, si) =>
-                          si === index ? { ...u, revivedOnPlayerId: null } : u
-                        );
-                        onUpdate(player.id, { subUnits: newSubs });
-                      }}
-                      style={{
-                        fontSize: '0.65rem', fontWeight: '800',
-                        color: '#67e8f9', background: 'rgba(6,182,212,0.12)',
-                        border: '1px solid rgba(6,182,212,0.4)',
-                        borderRadius: '4px', padding: '0.1rem 0.4rem',
-                        cursor: 'pointer',
-                      }}>🛡️ IMMUNE ✕</span>
+                    <span onClick={e => {
+                      e.stopPropagation();
+                      const newSubs = player.subUnits.map((u, si) => si === index ? { ...u, revivedOnPlayerId: null } : u);
+                      onUpdate(player.id, { subUnits: newSubs });
+                    }} style={{ ...pill('#67e8f9', 'rgba(6,182,212,0.1)', 'rgba(6,182,212,0.35)'), cursor: 'pointer', fontSize: '0.6rem' }}>
+                      🛡️ IMMUNE ✕
+                    </span>
                   )}
-                  {/* Status effect tags */}
+                  {/* Status effects */}
                   {!isDead && (unit.statusEffects || []).map((effect, ei) => {
-                    const tagStyle = { fontSize: '0.65rem', fontWeight: '800', borderRadius: '4px', padding: '0.1rem 0.4rem', cursor: 'pointer' };
-                    const label = effect.type === 'poison'
-                      ? `🤢 Poison ${effect.value}hp × ${effect.duration}r`
-                      : effect.type === 'stun'
-                      ? `💫 Stun ${effect.duration}r`
-                      : `⚡ ${effect.type}`;
-                    const colors = effect.type === 'poison'
-                      ? { color: '#86efac', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.4)' }
-                      : { color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)' };
+                    const label = effect.type === 'poison' ? `🤢 ${effect.value}×${effect.duration}r` : effect.type === 'stun' ? `💫 ${effect.duration}r` : `⚡`;
+                    const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder } : { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder };
                     return (
-                      <span key={ei}
-                        title='Click to remove effect'
-                        onClick={e => {
-                          e.stopPropagation();
-                          const newSubs = player.subUnits.map((u, si) =>
-                            si === index ? { ...u, statusEffects: (u.statusEffects || []).filter((_, i) => i !== ei) } : u
-                          );
-                          onUpdate(player.id, { subUnits: newSubs });
-                        }}
-                        style={{ ...tagStyle, color: colors.color, background: colors.bg, border: `1px solid ${colors.border}` }}>
+                      <span key={ei} onClick={e => {
+                        e.stopPropagation();
+                        const newSubs = player.subUnits.map((u, si) => si === index ? { ...u, statusEffects: (u.statusEffects || []).filter((_, i) => i !== ei) } : u);
+                        onUpdate(player.id, { subUnits: newSubs });
+                      }} style={{ ...pill(c.color, c.bg, c.border), cursor: 'pointer', fontSize: '0.6rem' }}>
                         {label} ✕
                       </span>
                     );
                   })}
-
+                  {/* Dead badge */}
                   {isDead && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <span style={{
-                        fontSize: '0.68rem', fontWeight: '800',
-                        color: isInQueue ? '#fde68a' : '#7f1d1d',
-                        background: isInQueue ? 'rgba(234,179,8,0.1)' : 'rgba(127,29,29,0.2)',
-                        border: `1px solid ${isInQueue ? 'rgba(234,179,8,0.4)' : '#450a0a'}`,
-                        borderRadius: '4px', padding: '0.1rem 0.4rem',
-                      }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                      <span style={pill(
+                        isInQueue ? colors.amber : '#7f1d1d',
+                        isInQueue ? colors.amberSubtle : 'rgba(127,29,29,0.15)',
+                        isInQueue ? colors.amberBorder : '#450a0a',
+                      )}>
                         {isInQueue ? `💀 #${queuePos}` : '💀 GONE'}
                       </span>
                       {isInQueue && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); removeFromQueue(index); }}
-                          title="Remove from queue (restore to 1hp)"
-                          style={{
-                            background: 'rgba(127,29,29,0.4)',
-                            border: '1px solid #7f1d1d',
-                            borderRadius: '3px',
-                            color: '#fca5a5',
-                            fontSize: '0.6rem',
-                            fontWeight: '900',
-                            padding: '0.1rem 0.3rem',
-                            cursor: 'pointer',
-                            lineHeight: 1,
-                          }}
-                        >✕</button>
+                        <button onClick={(e) => { e.stopPropagation(); removeFromQueue(index); }}
+                          style={{ ...btn.danger(), padding: '0.1rem 0.3rem', fontSize: '0.58rem' }}>✕</button>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* HP + actions on one row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <button onClick={() => handleSubUnitHPChange(index, -1)} disabled={isDead} style={smallHPBtn(isDead)}>−</button>
+                {/* HP + action row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <button onClick={() => handleSubUnitHPChange(index, -1)} disabled={isDead} style={btn.hpSmall(isDead)}>−</button>
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.2rem' }}>
-                      <span style={{ color: '#a78bfa', fontSize: '0.78rem', fontWeight: '700' }}>{unit.hp}/{unit.maxHp}</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.18rem' }}>
+                      <span style={{ color: colors.purpleLight, fontSize: '0.75rem', fontWeight: '700' }}>{unit.hp}/{unit.maxHp}</span>
                     </div>
                     <div style={{ height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${unitHPPct}%`, height: '100%', background: unitHPColor, transition: 'width 0.3s ease' }} />
+                      <div style={{ width: `${unitHPPct}%`, height: '100%', background: hpBarColor(unitHPPct), transition: 'width 0.3s ease' }} />
                     </div>
                   </div>
-                  <button onClick={() => handleSubUnitHPChange(index, 1)} disabled={unit.hp === unit.maxHp} style={smallHPBtn(unit.hp === unit.maxHp)}>+</button>
-                  <button
-                    onClick={() => onOpenCalculator(player.id, 'shoot', index === 0 ? 'special' : `soldier${index}`)}
-                    disabled={isDead} style={unitActBtn(isDead)}
-                  >🎯</button>
-                  <button
-                    onClick={() => onOpenCalculator(player.id, 'melee', index === 0 ? 'special' : `soldier${index}`)}
-                    disabled={isDead} style={unitActBtn(isDead)}
-                  >⚔️</button>
+                  <button onClick={() => handleSubUnitHPChange(index, 1)} disabled={unit.hp === unit.maxHp} style={btn.hpSmall(unit.hp === unit.maxHp)}>+</button>
+                  <button onClick={() => onOpenCalculator(player.id, 'shoot', index === 0 ? 'special' : `soldier${index}`)} disabled={isDead}
+                    style={{ ...btn.hpSmall(isDead), background: isDead ? 'transparent' : colors.blueSubtle, border: `1px solid ${isDead ? colors.textDisabled : colors.blueBorder}`, color: isDead ? colors.textDisabled : colors.blueLight }}>
+                    🎯
+                  </button>
+                  <button onClick={() => onOpenCalculator(player.id, 'melee', index === 0 ? 'special' : `soldier${index}`)} disabled={isDead}
+                    style={{ ...btn.hpSmall(isDead), background: isDead ? 'transparent' : colors.blueSubtle, border: `1px solid ${isDead ? colors.textDisabled : colors.blueBorder}`, color: isDead ? colors.textDisabled : colors.blueLight }}>
+                    ⚔️
+                  </button>
                 </div>
 
-                {/* Item holding tokens */}
+                {/* Unit held items */}
                 {(() => {
                   const unitType = index === 0 ? 'special' : `soldier${index}`;
                   const heldItems = (player.inventory || []).filter(it => it.heldBy === unitType);
                   if (heldItems.length === 0) return null;
                   return (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem' }}>
-                      {heldItems.map((heldItem, hi) => {
-                        const tierColor = heldItem.isQuestItem ? '#fde68a' : ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[heldItem.tier] || '#9ca3af');
+                      {heldItems.map((item, hi) => {
+                        const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
                         return (
-                          <div key={hi} style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                            padding: '0.15rem 0.45rem',
-                            background: `${tierColor}18`,
-                            border: `1px solid ${tierColor}50`,
-                            borderRadius: '4px',
-                          }}>
-                            <span style={{ fontSize: '0.7rem' }}>{heldItem.isQuestItem ? '🗝️' : '📦'}</span>
-                            <span style={{ color: tierColor, fontSize: '0.62rem', fontWeight: '800' }}>{heldItem.name}</span>
+                          <div key={hi} style={pill(tc.text, tc.bg, tc.border)}>
+                            <span style={{ marginRight: '0.2rem', fontSize: '0.68rem' }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
+                            {item.name}
                           </div>
                         );
                       })}
@@ -552,55 +467,49 @@ const PlayerCard = ({
       {/* ── Inventory ── */}
       {(player.firstStrike || (player.inventory?.length > 0)) && (
         <div style={{
-          background: 'rgba(0,0,0,0.4)',
-          border: '1px solid rgba(201,169,97,0.2)',
+          background: 'rgba(0,0,0,0.3)',
+          border: borders.warm,
           borderRadius: '10px',
           overflow: 'hidden',
           marginTop: '0.5rem',
         }}>
           <div style={{
-            padding: '0.4rem 0.85rem',
-            borderBottom: '1px solid rgba(201,169,97,0.15)',
-            color: '#8b7355', fontSize: '0.65rem', fontWeight: '800',
-            letterSpacing: '0.15em', textTransform: 'uppercase',
+            padding: '0.35rem 0.85rem',
+            borderBottom: `1px solid rgba(201,169,97,0.1)`,
+            ...text.sectionLabel,
           }}>🎒 Inventory</div>
 
-          {/* First Strike token */}
+          {/* First Strike */}
           {player.firstStrike && (
             <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.85rem',
-              padding: '0.6rem 0.85rem',
-              background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(161,98,7,0.06))',
-              borderLeft: '3px solid #f59e0b',
-              borderBottom: (player.inventory?.length > 0) ? '1px solid rgba(201,169,97,0.12)' : 'none',
+              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              padding: '0.55rem 0.85rem',
+              background: colors.amberSubtle,
+              borderLeft: `3px solid ${colors.amber}`,
+              borderBottom: player.inventory?.length > 0 ? `1px solid rgba(201,169,97,0.1)` : 'none',
             }}>
-              <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>⚡</span>
+              <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>⚡</span>
               <div style={{ flex: 1 }}>
-                <div style={{ color: '#fbbf24', fontWeight: '900', fontSize: '0.85rem', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.1rem' }}>First Strike</div>
-                <div style={{ color: '#92640a', fontSize: '0.72rem', fontWeight: '600' }}>+2 bonus to next attack vs NPC</div>
+                <div style={{ color: colors.amber, fontWeight: '900', fontSize: '0.82rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>First Strike</div>
+                <div style={{ color: '#92640a', fontSize: '0.68rem', fontWeight: '600' }}>+2 bonus to next attack vs NPC</div>
               </div>
-              <div style={{
-                padding: '0.15rem 0.5rem', background: 'rgba(245,158,11,0.15)',
-                border: '1px solid rgba(245,158,11,0.4)', borderRadius: '5px',
-                color: '#f59e0b', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.05em', flexShrink: 0,
-              }}>TOKEN</div>
+              <span style={pill(colors.amber, colors.amberSubtle, colors.amberBorder)}>TOKEN</span>
             </div>
           )}
 
           {/* Loot items */}
           {(player.inventory || []).map((item, i, arr) => {
-            const tierColor = item.isQuestItem ? '#fde68a' : ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af');
+            const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
             const usesLeft = item.effect?.uses === 0 ? Infinity : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
             const canUse = !item.effect || item.effect.type === 'manual' || usesLeft > 0;
-            const isAuto = ['heal','maxHP','attackBonus','defenseBonus'].includes(item.effect?.type);
+            const isAuto = ['heal', 'maxHP', 'attackBonus', 'defenseBonus'].includes(item.effect?.type);
             const isManual = item.effect?.type === 'manual';
             const isDestroyItem = item.effect?.type === 'destroyItem';
             const isKey = item.effect?.type === 'key';
             const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem);
 
             const handleUseKey = () => {
-              const newInventory = (player.inventory || []).filter((_, idx) => idx !== i);
-              onUpdate(player.id, { inventory: newInventory });
+              onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
             };
 
             const handleUse = () => {
@@ -612,40 +521,32 @@ const PlayerCard = ({
                 .map((it, idx) => idx !== i ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
                 .filter((it, idx) => idx !== i ? true : !consumed);
 
-              if (ef?.type === 'heal') {
-                // Open unit picker modal instead of applying directly
-                setHealTargetItem({ item, itemIndex: i });
-                return; // don't apply yet
-              } else if (ef?.type === 'maxHP') {
-                // Open unit picker modal
-                setMaxHpTargetItem({ item, itemIndex: i });
-                return;
-              } else if (ef?.type === 'attackBonus' || ef?.type === 'defenseBonus') {
+              if (ef?.type === 'heal') { setHealTargetItem({ item, itemIndex: i }); return; }
+              if (ef?.type === 'maxHP') { setMaxHpTargetItem({ item, itemIndex: i }); return; }
+              if (ef?.type === 'attackBonus' || ef?.type === 'defenseBonus') {
                 const bonusKey = ef.type === 'attackBonus' ? 'pendingAttackBonus' : 'pendingDefenseBonus';
                 onUpdate(player.id, { [bonusKey]: (player[bonusKey] || 0) + ef.value, inventory: newInventory });
               } else if (ef?.type === 'destroyItem') {
-                // Open destroy item modal — DM picks target
                 if (onOpenDestroyModal) onOpenDestroyModal(player);
                 return;
               } else {
-                // Manual or forceReroll — just decrement
                 onUpdate(player.id, { inventory: newInventory });
               }
             };
 
             return (
               <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: '0.75rem',
-                padding: '0.6rem 0.85rem',
-                borderLeft: `3px solid ${tierColor}`,
-                borderBottom: i < arr.length - 1 ? '1px solid rgba(201,169,97,0.1)' : 'none',
-                opacity: canUse ? 1 : 0.45,
+                display: 'flex', alignItems: 'center', gap: '0.6rem',
+                padding: '0.55rem 0.85rem',
+                borderLeft: `3px solid ${tc.text}`,
+                borderBottom: i < arr.length - 1 ? `1px solid rgba(201,169,97,0.08)` : 'none',
+                opacity: canUse ? 1 : 0.4,
               }}>
-                <span style={{ fontSize: '1rem', flexShrink: 0 }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
+                <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: tierColor, fontWeight: '800', fontSize: '0.82rem', marginBottom: '0.1rem' }}>{item.name}</div>
-                  {item.description && <div style={{ color: '#6b7280', fontSize: '0.7rem' }}>{item.description}</div>}
-                  <div style={{ color: '#4b5563', fontSize: '0.62rem', marginTop: '0.1rem' }}>
+                  <div style={{ color: tc.text, fontWeight: '800', fontSize: '0.82rem', marginBottom: '0.08rem' }}>{item.name}</div>
+                  {item.description && <div style={{ color: colors.textMuted, fontSize: '0.68rem' }}>{item.description}</div>}
+                  <div style={{ color: colors.textFaint, fontSize: '0.6rem', marginTop: '0.08rem' }}>
                     held by {item.heldBy === 'commander'
                       ? (player.commanderStats?.customName || player.commander || 'Commander')
                       : (() => {
@@ -657,97 +558,61 @@ const PlayerCard = ({
                     {item.effect?.uses !== 0 && usesLeft !== Infinity && ` · ${usesLeft} use${usesLeft !== 1 ? 's' : ''} left`}
                   </div>
                 </div>
-                {item.isQuestItem && (
-                  <span style={{ padding: '0.1rem 0.35rem', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: '4px', color: '#fde68a', fontSize: '0.58rem', fontWeight: '800', flexShrink: 0 }}>QUEST</span>
-                )}
-                <span style={{
-                  padding: '0.1rem 0.4rem', background: `${tierColor}18`,
-                  border: `1px solid ${tierColor}40`, borderRadius: '4px',
-                  color: tierColor, fontSize: '0.6rem', fontWeight: '800',
-                  textTransform: 'uppercase', flexShrink: 0,
-                }}>{item.tier}</span>
-                {showUseButton && (
-                  <button onClick={handleUse} disabled={!canUse} style={{
-                    padding: '0.25rem 0.6rem',
-                    background: canUse ? `${tierColor}22` : 'transparent',
-                    border: `1px solid ${canUse ? tierColor + '60' : '#374151'}`,
-                    borderRadius: '5px', cursor: canUse ? 'pointer' : 'not-allowed',
-                    color: canUse ? tierColor : '#374151',
-                    fontSize: '0.65rem', fontWeight: '900', flexShrink: 0,
-                    fontFamily: 'inherit',
-                  }}>USE</button>
-                )}
-                {isKey && (
-                  <button onClick={handleUseKey} style={{
-                    padding: '0.25rem 0.6rem',
-                    background: 'rgba(201,169,97,0.12)',
-                    border: '1px solid rgba(201,169,97,0.5)',
-                    borderRadius: '5px', cursor: 'pointer',
-                    color: '#c9a961',
-                    fontSize: '0.65rem', fontWeight: '900', flexShrink: 0,
-                    fontFamily: 'inherit',
-                  }}>🔑 USE</button>
-                )}
-                {/* Pass item to another unit */}
-                {!item.isQuestItem && onOpenHandOff && (
-                  <button onClick={() => onOpenHandOff(player, item.heldBy, item)} style={{
-                    padding: '0.25rem 0.6rem',
-                    background: 'rgba(99,102,241,0.1)',
-                    border: '1px solid rgba(99,102,241,0.4)',
-                    borderRadius: '5px', cursor: 'pointer',
-                    color: '#a5b4fc',
-                    fontSize: '0.65rem', fontWeight: '900', flexShrink: 0,
-                    fontFamily: 'inherit',
-                  }}>🤝 PASS</button>
-                )}
-                {/* Manual drop — remove item from inventory */}
-                {!item.isQuestItem && (
-                  <button onClick={() => {
-                    if (!window.confirm(`Drop "${item.name}"? It will be removed from inventory.`)) return;
-                    onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
-                  }} style={{
-                    padding: '0.25rem 0.6rem',
-                    background: 'rgba(127,29,29,0.15)',
-                    border: '1px solid rgba(127,29,29,0.4)',
-                    borderRadius: '5px', cursor: 'pointer',
-                    color: '#fca5a5',
-                    fontSize: '0.65rem', fontWeight: '900', flexShrink: 0,
-                    fontFamily: 'inherit',
-                  }}>🗑 DROP</button>
-                )}
+                {item.isQuestItem && <span style={pill('#fde68a', 'rgba(234,179,8,0.1)', 'rgba(234,179,8,0.35)')}>QUEST</span>}
+                <span style={pill(tc.text, tc.subtle || tc.bg, tc.border)}>{item.isQuestItem ? 'Quest' : item.tier}</span>
+                <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0 }}>
+                  {showUseButton && (
+                    <button onClick={handleUse} disabled={!canUse} style={btn.secondary(!canUse)}>USE</button>
+                  )}
+                  {isKey && (
+                    <button onClick={handleUseKey} style={btn.secondary()}>🔑 USE</button>
+                  )}
+                  {!item.isQuestItem && onOpenHandOff && (
+                    <button onClick={() => onOpenHandOff(player, item.heldBy, item)} style={btn.secondary()}>🤝 PASS</button>
+                  )}
+                  {!item.isQuestItem && (
+                    <button onClick={() => {
+                      if (!window.confirm(`Drop "${item.name}"?`)) return;
+                      onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
+                    }} style={btn.danger()}>🗑</button>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* ── Death Loot Drop Modal ── */}
+      {/* ── Death Loot Modal ── */}
       {deathLootModal && (
-        <div onClick={() => setDeathLootModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: '3px solid rgba(239,68,68,0.6)', borderRadius: '12px', padding: '1.5rem', width: '360px', maxWidth: '95%', boxShadow: '0 20px 60px rgba(0,0,0,0.95)' }}>
+        <div onClick={() => setDeathLootModal(null)} style={{ position: 'fixed', inset: 0, background: surfaces.overlay, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000 }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: surfaces.elevated, border: `2px solid ${colors.redBorder}`,
+            borderRadius: '12px', padding: '1.5rem', width: '340px', maxWidth: '95%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.95)',
+          }}>
             <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>💀</div>
-              <div style={{ color: '#fca5a5', fontWeight: '900', fontSize: '1rem', fontFamily: '"Cinzel",Georgia,serif' }}>{deathLootModal.unitLabel} has fallen!</div>
-              <div style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '0.25rem' }}>They dropped the following items:</div>
+              <div style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>💀</div>
+              <div style={{ fontFamily: fonts.display, color: '#fca5a5', fontWeight: '900', fontSize: '0.95rem' }}>{deathLootModal.unitLabel} has fallen!</div>
+              <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.2rem' }}>They dropped the following items:</div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '1rem' }}>
               {deathLootModal.items.map(item => {
-                const tc = { Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af';
+                const tc = tierColors[item.tier] || tierColors.Common;
                 return (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.75rem', background: `${tc}12`, border: `1px solid ${tc}35`, borderRadius: '7px' }}>
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.45rem 0.7rem', background: tc.bg, border: `1px solid ${tc.border}`, borderRadius: '7px' }}>
                     <span>{item.isQuestItem ? '🗝️' : '📦'}</span>
-                    <span style={{ color: tc, fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{item.name}</span>
-                    <span style={{ color: '#4b5563', fontSize: '0.62rem' }}>{item.tier}</span>
+                    <span style={{ color: tc.text, fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{item.name}</span>
+                    <span style={{ color: colors.textFaint, fontSize: '0.6rem' }}>{item.tier}</span>
                   </div>
                 );
               })}
             </div>
             <button onClick={() => {
-              // Remove all dropped items from inventory
               const droppedIds = new Set(deathLootModal.items.map(it => it.id));
               onUpdate(player.id, { inventory: (player.inventory || []).filter(it => !droppedIds.has(it.id)) });
               setDeathLootModal(null);
-            }} style={{ width: '100%', padding: '0.75rem', background: 'linear-gradient(135deg,#b91c1c,#991b1b)', border: '2px solid #dc2626', color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem' }}>
+            }} style={{ width: '100%', padding: '0.7rem', background: 'linear-gradient(135deg, #b91c1c, #991b1b)', border: `2px solid ${colors.red}`, color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>
               🗺️ Items Dropped — Remove from Inventory
             </button>
           </div>
@@ -758,7 +623,7 @@ const PlayerCard = ({
       {maxHpTargetItem && (() => {
         const { item, itemIndex } = maxHpTargetItem;
         const ef = item.effect;
-        const tierColor = { Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af';
+        const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
         const usesLeft = ef.uses === 0 ? Infinity : (ef.usesRemaining ?? ef.uses ?? 1);
         const newUsesRemaining = ef.uses === 0 ? Infinity : usesLeft - 1;
         const consumed = newUsesRemaining <= 0;
@@ -767,120 +632,25 @@ const PlayerCard = ({
           const newInventory = (player.inventory || [])
             .map((it, idx) => idx !== itemIndex ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
             .filter((it, idx) => idx !== itemIndex ? true : !consumed);
-
           if (unitKey === 'commander') {
             const cs = player.commanderStats;
             onUpdate(player.id, { commanderStats: { ...cs, maxHp: cs.maxHp + ef.value, hp: cs.hp + ef.value }, inventory: newInventory });
           } else {
             const idx = unitKey === 'special' ? 0 : parseInt(unitKey.replace('soldier', ''));
-            const newSubs = player.subUnits.map((u, si) =>
-              si === idx ? { ...u, maxHp: u.maxHp + ef.value, hp: u.hp + ef.value } : u
-            );
-            onUpdate(player.id, { subUnits: newSubs, inventory: newInventory });
+            onUpdate(player.id, { subUnits: player.subUnits.map((u, si) => si === idx ? { ...u, maxHp: u.maxHp + ef.value, hp: u.hp + ef.value } : u), inventory: newInventory });
           }
           setMaxHpTargetItem(null);
         };
 
         const units = [
-          {
-            key: 'commander',
-            label: player.commanderStats?.customName || player.commander || 'Commander',
-            icon: '⚔️',
-            hp: player.commanderStats.hp,
-            maxHp: player.commanderStats.maxHp,
-            isDead: player.commanderStats.hp === 0,
-          },
-          ...player.subUnits.map((u, idx) => ({
-            key: idx === 0 ? 'special' : `soldier${idx}`,
-            label: u.name?.trim() ? u.name : (idx === 0 ? 'Special' : `Soldier ${idx}`),
-            icon: idx === 0 ? '⭐' : '🛡️',
-            hp: u.hp,
-            maxHp: u.maxHp,
-            isDead: u.hp === 0,
-          })),
+          { key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: player.commanderStats.hp, maxHp: player.commanderStats.maxHp, isDead: player.commanderStats.hp === 0 },
+          ...player.subUnits.map((u, idx) => ({ key: idx === 0 ? 'special' : `soldier${idx}`, label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`), icon: idx === 0 ? '⭐' : '🛡️', hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0 })),
         ];
 
         return (
-          <div
-            onClick={() => setMaxHpTargetItem(null)}
-            style={{
-              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(0,0,0,0.85)', display: 'flex',
-              alignItems: 'center', justifyContent: 'center', zIndex: 2000,
-            }}
-          >
-            <div onClick={e => e.stopPropagation()} style={{
-              background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-              border: `3px solid ${tierColor}`,
-              borderRadius: '12px', padding: '1.5rem',
-              width: '360px', maxWidth: '95%',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
-            }}>
-              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-                <div style={{ fontSize: '1.75rem', marginBottom: '0.3rem' }}>❤️</div>
-                <div style={{ color: tierColor, fontWeight: '900', fontSize: '1rem', fontFamily: '"Cinzel", Georgia, serif' }}>
-                  {item.name}
-                </div>
-                <div style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '0.2rem' }}>
-                  Increases max HP by <span style={{ color: '#fca5a5', fontWeight: '800' }}>+{ef.value}</span> — choose a unit
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                {units.map(u => {
-                  const hpPct = u.maxHp > 0 ? (u.hp / u.maxHp) * 100 : 0;
-                  const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
-                  const disabled = u.isDead;
-                  return (
-                    <div
-                      key={u.key}
-                      onClick={() => !disabled && applyMaxHPToUnit(u.key)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        padding: '0.65rem 0.85rem',
-                        background: disabled ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.35)',
-                        border: `2px solid ${disabled ? '#374151' : 'rgba(90,74,58,0.5)'}`,
-                        borderRadius: '8px',
-                        cursor: disabled ? 'not-allowed' : 'pointer',
-                        opacity: disabled ? 0.35 : 1,
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      <span style={{ fontSize: '1rem', flexShrink: 0 }}>{u.icon}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: disabled ? '#4b5563' : '#e8dcc4', fontWeight: '700', fontSize: '0.85rem' }}>
-                          {u.label}
-                          {disabled && (
-                            <span style={{ color: '#7f1d1d', fontSize: '0.65rem', fontWeight: '800', marginLeft: '0.4rem' }}>DEAD</span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-                          <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
-                            <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
-                          </div>
-                          <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>
-                            {u.hp}/{u.maxHp}
-                          </span>
-                        </div>
-                      </div>
-                      {!disabled && (
-                        <span style={{ color: '#fca5a5', fontSize: '0.72rem', fontWeight: '800', flexShrink: 0 }}>
-                          →{u.maxHp + ef.value}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <button onClick={() => setMaxHpTargetItem(null)} style={{
-                width: '100%', padding: '0.65rem',
-                background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
-                color: '#fca5a5', borderRadius: '8px', cursor: 'pointer',
-                fontFamily: 'inherit', fontWeight: '800', fontSize: '0.875rem',
-              }}>✕ Cancel</button>
-            </div>
-          </div>
+          <UnitPickerModal title={item.name} subtitle={`Increases max HP by +${ef.value} — choose a unit`} icon="❤️" accentColor={tc.text}
+            units={units} onPick={applyMaxHPToUnit} onClose={() => setMaxHpTargetItem(null)}
+            rightLabel={(u) => !u.isDead ? `→${u.maxHp + ef.value}` : null} rightColor="#fca5a5" />
         );
       })()}
 
@@ -888,7 +658,7 @@ const PlayerCard = ({
       {healTargetItem && (() => {
         const { item, itemIndex } = healTargetItem;
         const ef = item.effect;
-        const tierColor = { Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af';
+        const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
         const usesLeft = ef.uses === 0 ? Infinity : (ef.usesRemaining ?? ef.uses ?? 1);
         const newUsesRemaining = ef.uses === 0 ? Infinity : usesLeft - 1;
         const consumed = newUsesRemaining <= 0;
@@ -897,156 +667,52 @@ const PlayerCard = ({
           const newInventory = (player.inventory || [])
             .map((it, idx) => idx !== itemIndex ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
             .filter((it, idx) => idx !== itemIndex ? true : !consumed);
-
           if (unitKey === 'commander') {
             const cs = player.commanderStats;
-            const healed = Math.min(cs.maxHp - cs.hp, ef.value);
-            onUpdate(player.id, { commanderStats: { ...cs, hp: cs.hp + healed }, inventory: newInventory });
+            onUpdate(player.id, { commanderStats: { ...cs, hp: Math.min(cs.maxHp, cs.hp + ef.value) }, inventory: newInventory });
           } else {
             const idx = unitKey === 'special' ? 0 : parseInt(unitKey.replace('soldier', ''));
-            const newSubs = player.subUnits.map((u, si) =>
-              si === idx ? { ...u, hp: Math.min(u.maxHp, u.hp + ef.value) } : u
-            );
-            onUpdate(player.id, { subUnits: newSubs, inventory: newInventory });
+            onUpdate(player.id, { subUnits: player.subUnits.map((u, si) => si === idx ? { ...u, hp: Math.min(u.maxHp, u.hp + ef.value) } : u), inventory: newInventory });
           }
           setHealTargetItem(null);
         };
 
-        // Build unit list: commander + all subunits
         const units = [
-          {
-            key: 'commander',
-            label: player.commanderStats?.customName || player.commander || 'Commander',
-            icon: '⚔️',
-            hp: player.commanderStats.hp,
-            maxHp: player.commanderStats.maxHp,
-            isDead: player.commanderStats.hp === 0,
-          },
-          ...player.subUnits.map((u, idx) => ({
-            key: idx === 0 ? 'special' : `soldier${idx}`,
-            label: u.name?.trim() ? u.name : (idx === 0 ? 'Special' : `Soldier ${idx}`),
-            icon: idx === 0 ? '⭐' : '🛡️',
-            hp: u.hp,
-            maxHp: u.maxHp,
-            isDead: u.hp === 0,
-          })),
+          { key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: player.commanderStats.hp, maxHp: player.commanderStats.maxHp, isDead: player.commanderStats.hp === 0 },
+          ...player.subUnits.map((u, idx) => ({ key: idx === 0 ? 'special' : `soldier${idx}`, label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`), icon: idx === 0 ? '⭐' : '🛡️', hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0 })),
         ];
 
         return (
-          <div
-            onClick={() => setHealTargetItem(null)}
-            style={{
-              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(0,0,0,0.85)', display: 'flex',
-              alignItems: 'center', justifyContent: 'center', zIndex: 2000,
-            }}
-          >
-            <div onClick={e => e.stopPropagation()} style={{
-              background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-              border: `3px solid ${tierColor}`,
-              borderRadius: '12px', padding: '1.5rem',
-              width: '360px', maxWidth: '95%',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
-            }}>
-              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-                <div style={{ fontSize: '1.75rem', marginBottom: '0.3rem' }}>💚</div>
-                <div style={{ color: tierColor, fontWeight: '900', fontSize: '1rem', fontFamily: '"Cinzel", Georgia, serif' }}>
-                  {item.name}
-                </div>
-                <div style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '0.2rem' }}>
-                  Heals <span style={{ color: '#86efac', fontWeight: '800' }}>+{ef.value} HP</span> — choose a unit
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                {units.map(u => {
-                  const hpPct = u.maxHp > 0 ? (u.hp / u.maxHp) * 100 : 0;
-                  const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
-                  const isFull = u.hp === u.maxHp;
-                  const disabled = u.isDead;
-                  return (
-                    <div
-                      key={u.key}
-                      onClick={() => !disabled && applyHealToUnit(u.key)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        padding: '0.65rem 0.85rem',
-                        background: disabled ? 'rgba(0,0,0,0.2)' : isFull ? 'rgba(34,197,94,0.05)' : 'rgba(0,0,0,0.35)',
-                        border: `2px solid ${disabled ? '#374151' : isFull ? 'rgba(34,197,94,0.25)' : 'rgba(90,74,58,0.5)'}`,
-                        borderRadius: '8px',
-                        cursor: disabled ? 'not-allowed' : 'pointer',
-                        opacity: disabled ? 0.35 : 1,
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      <span style={{ fontSize: '1rem', flexShrink: 0 }}>{u.icon}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: disabled ? '#4b5563' : '#e8dcc4', fontWeight: '700', fontSize: '0.85rem' }}>
-                          {u.label}
-                          {isFull && !disabled && (
-                            <span style={{ color: '#22c55e', fontSize: '0.65rem', fontWeight: '800', marginLeft: '0.4rem' }}>FULL</span>
-                          )}
-                          {disabled && (
-                            <span style={{ color: '#7f1d1d', fontSize: '0.65rem', fontWeight: '800', marginLeft: '0.4rem' }}>DEAD</span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-                          <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
-                            <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
-                          </div>
-                          <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>
-                            {u.hp}/{u.maxHp}
-                          </span>
-                        </div>
-                      </div>
-                      {!disabled && (
-                        <span style={{
-                          color: '#86efac', fontSize: '0.72rem', fontWeight: '800',
-                          flexShrink: 0, opacity: isFull ? 0.4 : 1,
-                        }}>+{Math.min(u.maxHp - u.hp, ef.value)}</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <button onClick={() => setHealTargetItem(null)} style={{
-                width: '100%', padding: '0.65rem',
-                background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
-                color: '#fca5a5', borderRadius: '8px', cursor: 'pointer',
-                fontFamily: 'inherit', fontWeight: '800', fontSize: '0.875rem',
-              }}>✕ Cancel</button>
-            </div>
-          </div>
+          <UnitPickerModal title={item.name} subtitle={`Heals +${ef.value} HP — choose a unit`} icon="💚" accentColor={tc.text}
+            units={units} onPick={applyHealToUnit} onClose={() => setHealTargetItem(null)}
+            rightLabel={(u) => !u.isDead ? `+${Math.min(u.maxHp - u.hp, ef.value)}` : null} rightColor={colors.greenLight} />
         );
       })()}
 
       {/* ── Commander Revive Modal ── */}
       {showReviveModal && (
-        <div
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setShowReviveModal(false)}
-        >
+        <div style={{ position: 'fixed', inset: 0, background: surfaces.overlay, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => setShowReviveModal(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{
-            background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-            border: '3px solid #d4af37', borderRadius: '12px', padding: '2rem',
-            maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
+            background: surfaces.elevated, border: `2px solid ${colors.gold}`,
+            borderRadius: '12px', padding: '2rem', maxWidth: '460px', width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
           }}>
-            <h3 style={{ color: '#d4af37', fontSize: '1.5rem', marginBottom: '1rem', textAlign: 'center', fontFamily: '"Cinzel", Georgia, serif' }}>
+            <h3 style={{ color: colors.gold, fontSize: '1.4rem', marginBottom: '0.75rem', textAlign: 'center', fontFamily: fonts.display }}>
               🎲 Revive Roll
             </h3>
-            <p style={{ color: '#e8dcc4', textAlign: 'center', marginBottom: '2rem', fontSize: '1rem' }}>
+            <p style={{ color: colors.textPrimary, textAlign: 'center', marginBottom: '1.75rem', fontSize: '0.95rem' }}>
               Was the revive roll successful?
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', padding: '0 1.5rem', justifyItems: 'center' }}>
-              <button
-                onClick={() => { onUseRevive(player.id, true); setShowReviveModal(false); }}
-                style={{ padding: '1rem 1.5rem', background: 'linear-gradient(135deg, #059669, #047857)', border: '2px solid #10b981', color: '#d1fae5', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '700', fontSize: '1rem', textTransform: 'uppercase', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
-              >✓ Successful</button>
-              <button
-                onClick={() => { onUseRevive(player.id, false); setShowReviveModal(false); }}
-                style={{ padding: '1rem 1.5rem', background: 'linear-gradient(135deg, #b91c1c, #991b1b)', border: '2px solid #dc2626', color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '700', fontSize: '1rem', textTransform: 'uppercase', boxShadow: '0 4px 12px rgba(220,38,38,0.3)' }}
-              >✗ Unsuccessful</button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <button onClick={() => { onUseRevive(player.id, true); setShowReviveModal(false); }}
+                style={{ padding: '0.9rem', background: 'linear-gradient(135deg, #059669, #047857)', border: '2px solid #10b981', color: '#d1fae5', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.95rem', letterSpacing: '0.05em' }}>
+                ✓ Successful
+              </button>
+              <button onClick={() => { onUseRevive(player.id, false); setShowReviveModal(false); }}
+                style={{ padding: '0.9rem', background: 'linear-gradient(135deg, #b91c1c, #991b1b)', border: '2px solid #dc2626', color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.95rem', letterSpacing: '0.05em' }}>
+                ✗ Unsuccessful
+              </button>
             </div>
           </div>
         </div>
@@ -1055,74 +721,68 @@ const PlayerCard = ({
   );
 };
 
-// ── Shared micro-styles ───────────────────────────────────────────────────────
+// ── Shared sub-components ─────────────────────────────────────────────────────
 
-const Badge = ({ color, text, dim }) => (
+const StatusBadge = ({ color, text: label, dim }) => (
   <div style={{
-    padding: '0.2rem 0.6rem',
-    background: dim ? `rgba(${color === '#16a34a' ? '22,163,74' : '59,130,246'},0.2)` : `linear-gradient(to bottom, ${color}, ${color}cc)`,
+    padding: '0.18rem 0.55rem',
+    background: dim ? `${color}22` : `linear-gradient(to bottom, ${color}, ${color}cc)`,
     border: `${dim ? '1px' : '2px'} solid ${color}`,
-    borderRadius: '6px',
-    color: dim ? '#86efac' : '#dbeafe',
-    fontSize: '0.7rem',
-    fontWeight: '800',
-    letterSpacing: '0.05em',
-    whiteSpace: 'nowrap',
-    flexShrink: 0,
-  }}>{text}</div>
+    borderRadius: '20px',
+    color: dim ? color : '#fff',
+    fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.05em',
+    whiteSpace: 'nowrap', flexShrink: 0,
+  }}>{label}</div>
 );
 
-const rmBtn = {
-  background: 'linear-gradient(135deg, #b91c1c, #991b1b)',
-  border: '1px solid #dc2626', color: '#fecaca',
-  padding: '0.35rem 0.6rem', borderRadius: '6px',
-  cursor: 'pointer', fontWeight: '700', fontSize: '0.9rem', flexShrink: 0,
-};
-
-const selectStyle = {
-  background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(139,92,246,0.3)',
-  borderRadius: '8px', padding: '0.5rem 0.65rem', color: '#e8dcc4',
-  fontFamily: 'inherit', fontSize: '0.85rem', fontWeight: '600',
-};
-
-const hpBtn = (disabled) => ({
-  background: disabled ? 'rgba(0,0,0,0.2)' : 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.1))',
-  border: '2px solid', borderColor: disabled ? '#374151' : 'rgba(245,158,11,0.5)',
-  color: disabled ? '#374151' : '#fbbf24',
-  padding: '0.5rem 1rem', borderRadius: '8px',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  fontFamily: 'inherit', fontWeight: '800', fontSize: '1.1rem', flexShrink: 0,
-});
-
-const actionBtn = (disabled) => ({
-  background: disabled ? 'linear-gradient(135deg, #374151, #1f2937)' : 'linear-gradient(135deg, #1e40af, #1e3a8a)',
-  border: '2px solid', borderColor: disabled ? '#4b5563' : '#3b82f6',
-  color: disabled ? '#6b7280' : '#dbeafe',
-  padding: '0.65rem 0.5rem', borderRadius: '8px',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  fontFamily: 'inherit', fontWeight: '700', fontSize: '0.82rem',
-  letterSpacing: '0.04em', textTransform: 'uppercase',
-  opacity: disabled ? 0.5 : 1,
-});
-
-const smallHPBtn = (disabled) => ({
-  background: disabled ? 'rgba(0,0,0,0.2)' : 'rgba(139,92,246,0.2)',
-  border: '2px solid', borderColor: disabled ? '#374151' : 'rgba(139,92,246,0.5)',
-  color: disabled ? '#374151' : '#c4b5fd',
-  width: '34px', height: '34px', borderRadius: '6px',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  fontWeight: '800', fontSize: '1.1rem', flexShrink: 0,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-});
-
-const unitActBtn = (disabled) => ({
-  background: disabled ? 'rgba(0,0,0,0.2)' : 'linear-gradient(135deg, #1e40af, #1e3a8a)',
-  border: '1px solid', borderColor: disabled ? '#374151' : '#3b82f6',
-  color: disabled ? '#4b5563' : '#dbeafe',
-  width: '34px', height: '34px', borderRadius: '6px',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  fontSize: '0.9rem', flexShrink: 0,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-});
+// Reusable unit picker modal used for Heal + MaxHP
+const UnitPickerModal = ({ title, subtitle, icon, accentColor, units, onPick, onClose, rightLabel, rightColor }) => (
+  <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: surfaces.overlay, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+    <div onClick={e => e.stopPropagation()} style={{
+      background: surfaces.elevated, border: `2px solid ${accentColor}`,
+      borderRadius: '12px', padding: '1.5rem', width: '340px', maxWidth: '95%',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
+    }}>
+      <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+        <div style={{ fontSize: '1.6rem', marginBottom: '0.25rem' }}>{icon}</div>
+        <div style={{ fontFamily: fonts.display, color: accentColor, fontWeight: '900', fontSize: '0.95rem' }}>{title}</div>
+        <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.2rem' }} dangerouslySetInnerHTML={{ __html: subtitle }} />
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+        {units.map(u => {
+          const hpPct = u.maxHp > 0 ? (u.hp / u.maxHp) * 100 : 0;
+          const disabled = u.isDead;
+          return (
+            <div key={u.key} onClick={() => !disabled && onPick(u.key)} style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.85rem',
+              background: disabled ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.35)',
+              border: `1px solid ${disabled ? colors.textDisabled : 'rgba(90,74,58,0.4)'}`,
+              borderRadius: '8px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.35 : 1,
+              transition: 'all 0.15s',
+            }}>
+              <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{u.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: disabled ? colors.textFaint : colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>
+                  {u.label}
+                  {disabled && <span style={{ color: colors.redDeep, fontSize: '0.62rem', fontWeight: '800', marginLeft: '0.4rem' }}>DEAD</span>}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
+                  <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ width: `${hpPct}%`, height: '100%', background: hpBarColor(hpPct), borderRadius: '2px' }} />
+                  </div>
+                  <span style={{ color: colors.textMuted, fontSize: '0.7rem', fontWeight: '600', flexShrink: 0 }}>{u.hp}/{u.maxHp}</span>
+                </div>
+              </div>
+              {rightLabel && rightLabel(u) && (
+                <span style={{ color: rightColor, fontSize: '0.72rem', fontWeight: '800', flexShrink: 0 }}>{rightLabel(u)}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={onClose} style={{ ...btn.danger(), width: '100%', padding: '0.65rem', fontSize: '0.875rem', justifyContent: 'center' }}>✕ Cancel</button>
+    </div>
+  </div>
+);
 
 export default PlayerCard;

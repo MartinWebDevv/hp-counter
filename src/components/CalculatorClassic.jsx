@@ -1,4 +1,5 @@
 import React from "react";
+import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
 import { getUnitStats, getUnitName } from "../utils/statsUtils";
 
 const Calculator = ({
@@ -15,7 +16,6 @@ const Calculator = ({
   const attacker = players.find((p) => p.id === calculatorData.attackerId);
   if (!attacker) return null;
 
-  const gold = "#c9a961";
 
   // Helper to get damage per hit for a unit
   const getDamagePerHit = (unitStats) => {
@@ -103,8 +103,8 @@ const Calculator = ({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "linear-gradient(145deg, #1a0f0a, #0f0805)",
-          border: "3px solid " + gold,
+          background: "surfaces.elevated",
+          border: `2px solid ${colors.gold}`,
           borderRadius: "12px",
           padding: "2rem",
           maxWidth: "500px",
@@ -115,11 +115,11 @@ const Calculator = ({
         {/* Title */}
         <h3
           style={{
-            color: gold,
+            color: colors.gold,
             fontSize: "1.5rem",
             marginBottom: "1rem",
             textAlign: "center",
-            fontFamily: '"Cinzel", Georgia, serif',
+            fontFamily: fonts.display,
             textShadow: "2px 2px 4px rgba(0,0,0,1)",
           }}
         >
@@ -132,7 +132,7 @@ const Calculator = ({
 
         {/* Attacker Info */}
         <div
-          style={{ marginBottom: "1rem", color: gold, fontSize: "0.875rem" }}
+          style={{ marginBottom: "1rem", color: colors.gold, fontSize: "0.875rem" }}
         >
           <strong>Attacker:</strong> {calculatorData.attackerName} -{" "}
           {calculatorData.attackingUnitType === "commander"
@@ -149,7 +149,7 @@ const Calculator = ({
               background: "#0a0503",
               padding: "0.75rem",
               borderRadius: "6px",
-              border: "2px solid " + gold,
+              border: "2px solid " + colors.gold,
               marginBottom: "1rem",
             }}
           >
@@ -158,7 +158,7 @@ const Calculator = ({
                 display: "flex",
                 alignItems: "center",
                 gap: "0.5rem",
-                color: gold,
+                color: colors.gold,
                 fontSize: "0.875rem",
                 cursor: "pointer",
                 marginBottom: calculatorData.attackerIsSquad ? "0.75rem" : "0",
@@ -217,10 +217,10 @@ const Calculator = ({
                         marginLeft: "1.5rem",
                         background: isSelected ? "#2a1810" : "transparent",
                         border: isSelected
-                          ? "1px solid " + gold
+                          ? "1px solid " + colors.gold
                           : "1px solid transparent",
                         borderRadius: "4px",
-                        color: isSelected ? gold : "#8b7355",
+                        color: isSelected ? colors.gold : "#8b7355",
                         fontSize: "0.75rem",
                         cursor: canSelect ? "pointer" : "not-allowed",
                         opacity: canSelect ? 1 : 0.5,
@@ -265,7 +265,7 @@ const Calculator = ({
               display: "flex",
               alignItems: "center",
               gap: "0.5rem",
-              color: gold,
+              color: colors.gold,
               fontSize: "0.875rem",
               cursor: "pointer",
             }}
@@ -293,7 +293,7 @@ const Calculator = ({
           <div style={{ marginBottom: "1rem" }}>
             <label
               style={{
-                color: gold,
+                color: colors.gold,
                 fontSize: "0.875rem",
                 display: "block",
                 marginBottom: "0.5rem",
@@ -319,11 +319,11 @@ const Calculator = ({
               style={{
                 width: "100%",
                 background: "#0a0503",
-                color: gold,
+                color: colors.gold,
                 padding: "0.75rem",
                 borderRadius: "6px",
                 border: "2px solid #5a4a3a",
-                fontFamily: '"Cinzel", Georgia, serif',
+                fontFamily: fonts.display,
                 fontSize: "0.875rem",
                 cursor: "pointer",
               }}
@@ -355,7 +355,7 @@ const Calculator = ({
           <div style={{ marginBottom: "1rem" }}>
             <label
               style={{
-                color: gold,
+                color: colors.gold,
                 fontSize: "0.875rem",
                 display: "block",
                 marginBottom: "0.5rem",
@@ -377,11 +377,11 @@ const Calculator = ({
               style={{
                 width: "100%",
                 background: "#0a0503",
-                color: gold,
+                color: colors.gold,
                 padding: "0.75rem",
                 borderRadius: "6px",
                 border: "2px solid #5a4a3a",
-                fontFamily: '"Cinzel", Georgia, serif',
+                fontFamily: fonts.display,
                 fontSize: "0.875rem",
                 cursor: "pointer",
                 marginBottom: "0.75rem",
@@ -416,7 +416,7 @@ const Calculator = ({
                   >
                     <div
                       style={{
-                        color: gold,
+                        color: colors.gold,
                         fontSize: "0.75rem",
                         marginBottom: "0.5rem",
                       }}
@@ -445,7 +445,7 @@ const Calculator = ({
                             marginBottom: "0.25rem",
                             background: isSelected ? "#2a1810" : "transparent",
                             border: isSelected
-                              ? "1px solid " + gold
+                              ? "1px solid " + colors.gold
                               : "1px solid transparent",
                             borderRadius: "4px",
                             color: "#8b7355",
@@ -497,7 +497,7 @@ const Calculator = ({
           <div style={{ marginBottom: "1rem" }}>
             <label
               style={{
-                color: gold,
+                color: colors.gold,
                 fontSize: "0.875rem",
                 display: "block",
                 marginBottom: "0.5rem",
@@ -540,13 +540,13 @@ const Calculator = ({
                       background: currentHits > 0 ? "#2a1810" : "transparent",
                       border:
                         currentHits > 0
-                          ? "1px solid " + gold
+                          ? "1px solid " + colors.gold
                           : "1px solid transparent",
                       borderRadius: "4px",
                       fontSize: "0.75rem",
                     }}
                   >
-                    <div style={{ flex: 1, color: gold }}>
+                    <div style={{ flex: 1, color: colors.gold }}>
                       {unitType === "special"
                         ? "⭐ Special"
                         : `🛡️ ${unitType.replace("soldier", "Soldier ")}`}
@@ -583,7 +583,7 @@ const Calculator = ({
                         style={{
                           width: "50px",
                           background: "#1a0f0a",
-                          color: gold,
+                          color: colors.gold,
                           padding: "0.25rem",
                           borderRadius: "4px",
                           border: "1px solid #5a4a3a",
@@ -619,7 +619,7 @@ const Calculator = ({
               <div style={{ marginBottom: "1rem" }}>
                 <label
                   style={{
-                    color: gold,
+                    color: colors.gold,
                     fontSize: "0.875rem",
                     display: "block",
                     marginBottom: "0.5rem",
@@ -653,13 +653,13 @@ const Calculator = ({
                     style={{
                       width: "80px",
                       background: "#0a0503",
-                      color: gold,
+                      color: colors.gold,
                       padding: "0.5rem",
                       borderRadius: "6px",
                       border: "2px solid #5a4a3a",
                       textAlign: "center",
                       fontSize: "1rem",
-                      fontFamily: '"Cinzel", Georgia, serif',
+                      fontFamily: fonts.display,
                     }}
                   />
                   <span style={{ color: "#8b7355", fontSize: "0.875rem" }}>
@@ -678,14 +678,14 @@ const Calculator = ({
               background: "#0a0503",
               padding: "1rem",
               borderRadius: "6px",
-              border: "2px solid " + gold,
+              border: "2px solid " + colors.gold,
               marginBottom: "1rem",
               textAlign: "center",
             }}
           >
             <div
               style={{
-                color: gold,
+                color: colors.gold,
                 fontSize: "0.875rem",
                 marginBottom: "0.5rem",
               }}
@@ -697,7 +697,7 @@ const Calculator = ({
                 color: "#fecaca",
                 fontSize: "2rem",
                 fontWeight: "bold",
-                fontFamily: '"Cinzel", Georgia, serif',
+                fontFamily: fonts.display,
               }}
             >
               {totalDamage}hp
@@ -707,7 +707,7 @@ const Calculator = ({
 
         {/* TODO: Mode indicator for future d20/d10 implementation */}
         {/* {gameMode !== 'classic' && (
-          <div style={{ marginBottom: '1rem', color: '#8b7355', fontSize: '0.75rem', textAlign: 'center' }}>
+          <div style={{ marginBottom: '1rem', color: colors.textMuted, fontSize: '0.75rem', textAlign: 'center' }}>
             Mode: {gameMode}
           </div>
         )} */}
@@ -728,7 +728,7 @@ const Calculator = ({
               border: "2px solid",
               borderColor: canProceed ? "#16a34a" : "#4a3322",
               cursor: canProceed ? "pointer" : "not-allowed",
-              fontFamily: '"Cinzel", Georgia, serif',
+              fontFamily: fonts.display,
               fontWeight: "bold",
               fontSize: "1rem",
             }}
@@ -745,7 +745,7 @@ const Calculator = ({
               borderRadius: "6px",
               border: "2px solid #991b1b",
               cursor: "pointer",
-              fontFamily: '"Cinzel", Georgia, serif',
+              fontFamily: fonts.display,
               fontWeight: "bold",
               fontSize: "1rem",
             }}

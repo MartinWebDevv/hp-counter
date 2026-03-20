@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { colors, surfaces, borders, fonts, btn, tierColors } from '../theme';
 import { getUnitStats, getUnitName } from '../utils/statsUtils';
 
 const CalculatorD20 = ({ 
@@ -52,7 +53,7 @@ const CalculatorD20 = ({
   const attacker = players.find(p => p.id === calculatorData.attackerId);
   if (!attacker) return null;
 
-  const gold = '#c9a961';
+  
 
   // Defender player (PvP only — NPC targets have no inventory)
   // targetId is { playerId, unitType } — extract playerId
@@ -448,8 +449,8 @@ const CalculatorD20 = ({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: 'linear-gradient(145deg, #1a0f0a, #0f0805)',
-          border: '3px solid ' + gold,
+          background: surfaces.elevated,
+          border: `2px solid ${colors.gold}`,
           borderRadius: '12px',
           padding: '1.5rem',
           maxWidth: '95%',
@@ -484,7 +485,7 @@ const CalculatorD20 = ({
                   padding: '0.5rem 1.25rem',
                   background: 'linear-gradient(135deg, #059669, #047857)',
                   border: '2px solid #10b981', color: '#d1fae5', borderRadius: '8px',
-                  cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.85rem',
+                  cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.85rem',
                 }}>✓ Use Bonus</button>
               <button
                 onClick={() => setShowBonusPrompt(null)}
@@ -492,7 +493,7 @@ const CalculatorD20 = ({
                   padding: '0.5rem 1.25rem',
                   background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
                   color: '#fca5a5', borderRadius: '8px',
-                  cursor: 'pointer', fontFamily: 'inherit', fontWeight: '800', fontSize: '0.85rem',
+                  cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.85rem',
                 }}>✗ Save for Later</button>
             </div>
           </div>
@@ -539,8 +540,8 @@ const CalculatorD20 = ({
             <div style={{ marginBottom: '0.75rem' }}>
               <button onClick={() => setShowItemPanel(s => !s)} style={{
                 width: '100%', padding: '0.45rem', background: showItemPanel ? 'rgba(99,102,241,0.15)' : 'rgba(0,0,0,0.3)',
-                border: `1px solid ${showItemPanel ? 'rgba(99,102,241,0.5)' : 'rgba(90,74,58,0.3)'}`, borderRadius: showItemPanel ? '6px 6px 0 0' : '6px',
-                color: showItemPanel ? '#a5b4fc' : '#6b7280', fontFamily: 'inherit', fontWeight: '800',
+                border: `1px solid ${showItemPanel ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.06)'}`, borderRadius: showItemPanel ? '6px 6px 0 0' : '6px',
+                color: showItemPanel ? '#a5b4fc' : colors.textMuted, fontFamily: fonts.body, fontWeight: '800',
                 fontSize: '0.72rem', cursor: 'pointer', letterSpacing: '0.05em',
               }}>
                 🎒 Use Item ({allCalcItems.length} available) {showItemPanel ? '▲' : '▼'}
@@ -558,11 +559,11 @@ const CalculatorD20 = ({
                     return groupOrder.map(playerName => (
                       <div key={playerName} style={{ marginBottom: '0.5rem' }}>
                         {/* Player header */}
-                        <div style={{ color: '#8b7355', fontSize: '0.62rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '0.2rem 0.4rem', marginBottom: '0.25rem', borderBottom: '1px solid rgba(90,74,58,0.3)' }}>
+                        <div style={{ color: colors.textMuted, fontSize: '0.62rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '0.2rem 0.4rem', marginBottom: '0.25rem', borderBottom: '1px solid rgba(90,74,58,0.3)' }}>
                           {playerName}
                         </div>
                         {groups[playerName].map((item, idx) => {
-                          const tc = ({ Common: '#9ca3af', Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || '#9ca3af');
+                          const tc = ({ Common: colors.textSecondary, Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || colors.textSecondary);
                           const typeLabel = {
                             rerollAttack: '⟳ Reroll Attack', rerollDefense: '⟳ Reroll Defense',
                             forceAttackReroll: '⚡ Force Attacker Reroll', forceDefenseReroll: '⚡ Force Defender Reroll',
@@ -584,9 +585,9 @@ const CalculatorD20 = ({
                             <div key={idx} onClick={handleUse} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.6rem', marginBottom: '0.2rem', background: `${tc}10`, border: `1px solid ${tc}25`, borderRadius: '6px', cursor: 'pointer' }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ color: tc, fontWeight: '800', fontSize: '0.78rem' }}>{item.name}</div>
-                                <div style={{ color: '#6b7280', fontSize: '0.62rem' }}>{item.unitName} · {typeLabel}</div>
+                                <div style={{ color: colors.textMuted, fontSize: '0.62rem' }}>{item.unitName} · {typeLabel}</div>
                               </div>
-                              <span style={{ color: '#4b5563', fontSize: '0.62rem', flexShrink: 0 }}>{item.usesLeft === Infinity ? '∞' : item.usesLeft}✕</span>
+                              <span style={{ color: colors.textFaint, fontSize: '0.62rem', flexShrink: 0 }}>{item.usesLeft === Infinity ? '∞' : item.usesLeft}✕</span>
                             </div>
                           );
                         })}
@@ -601,18 +602,18 @@ const CalculatorD20 = ({
 
         {/* Title */}
         <h3 style={{
-          color: gold,
+          color: colors.gold,
           fontSize: '1.5rem',
           marginBottom: '1rem',
           textAlign: 'center',
-          fontFamily: '"Cinzel", Georgia, serif',
+          fontFamily: fonts.display,
           textShadow: '2px 2px 4px rgba(0,0,0,1)',
         }}>
           🎲 D20 Combat Roll
         </h3>
 
         {/* Attacker Info */}
-        <div style={{ marginBottom: '1rem', color: gold, fontSize: '0.875rem' }}>
+        <div style={{ marginBottom: '1rem', color: colors.gold, fontSize: '0.875rem' }}>
           <strong>Attacker:</strong> {calculatorData.attackerName} - {calculatorData.attackingUnitType}
           {(isAttackerSpecial() || calculatorData.action === 'special') && (
             <span style={{ color: '#fbbf24' }}> (+1 Special)</span>
@@ -626,7 +627,7 @@ const CalculatorD20 = ({
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              color: gold,
+              color: colors.gold,
               fontSize: '0.875rem',
               cursor: 'pointer',
             }}>
@@ -657,10 +658,10 @@ const CalculatorD20 = ({
             background: '#0a0503',
             padding: '0.75rem',
             borderRadius: '6px',
-            border: '1px solid #5a4a3a',
+            border: borders.warm,
             marginBottom: '1rem',
           }}>
-            <div style={{ color: gold, fontSize: '0.75rem', marginBottom: '0.5rem' }}>
+            <div style={{ color: colors.gold, fontSize: '0.75rem', marginBottom: '0.5rem' }}>
               Select attacking squad members (max 3):
             </div>
             {attacker.subUnits.map((unit, idx) => {
@@ -678,9 +679,9 @@ const CalculatorD20 = ({
                   padding: '0.5rem',
                   marginBottom: '0.25rem',
                   background: isSelected ? '#2a1810' : 'transparent',
-                  border: isSelected ? '1px solid ' + gold : '1px solid transparent',
+                  border: isSelected ? '1px solid ' + colors.gold : '1px solid transparent',
                   borderRadius: '4px',
-                  color: '#8b7355',
+                  color: colors.textMuted,
                   fontSize: '0.75rem',
                   cursor: isInitiator ? 'not-allowed' : (canSelect ? 'pointer' : 'not-allowed'),
                   opacity: isInitiator ? 0.7 : (canSelect ? 1 : 0.5),
@@ -708,7 +709,7 @@ const CalculatorD20 = ({
                     style={{ width: '14px', height: '14px' }}
                   />
                   {unit.name || (idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`)} ({unit.hp}hp)
-                  {isInitiator && <span style={{ color: gold }}> (initiator)</span>}
+                  {isInitiator && <span style={{ color: colors.gold }}> (initiator)</span>}
                 </label>
               );
             })}
@@ -721,7 +722,7 @@ const CalculatorD20 = ({
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem',
-            color: gold,
+            color: colors.gold,
             fontSize: '0.875rem',
             cursor: 'pointer',
           }}>
@@ -745,7 +746,7 @@ const CalculatorD20 = ({
         {/* Target Selection */}
         {!calculatorData.targetIsSquad ? (
           <div style={{ marginBottom: '1rem' }}>
-            <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+            <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
               <strong>Select Target:</strong>
             </label>
 
@@ -780,13 +781,13 @@ const CalculatorD20 = ({
                           display: 'flex', alignItems: 'center', gap: '0.6rem',
                           padding: '0.5rem 0.75rem',
                           background: isSelectedPlayer ? 'rgba(201,169,97,0.1)' : 'rgba(0,0,0,0.3)',
-                          border: `1px solid ${isSelectedPlayer ? 'rgba(201,169,97,0.4)' : 'rgba(90,74,58,0.3)'}`,
+                          border: `1px solid ${isSelectedPlayer ? 'rgba(201,169,97,0.4)' : 'rgba(255,255,255,0.06)'}`,
                           borderRadius: isExpanded ? '6px 6px 0 0' : '6px',
                           cursor: 'pointer', userSelect: 'none',
                         }}
                       >
-                        <span style={{ color: '#6b7280', fontSize: '0.7rem', fontWeight: '900', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
-                        <span style={{ color: isSelectedPlayer ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{p.playerName}</span>
+                        <span style={{ color: colors.textMuted, fontSize: '0.7rem', fontWeight: '900', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
+                        <span style={{ color: isSelectedPlayer ? colors.gold : colors.textSecondary, fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{p.playerName}</span>
                         {isSelectedPlayer && calculatorData.targetId?.unitType && (
                           <span style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '20px', padding: '0.1rem 0.45rem' }}>
                             {calculatorData.targetId.unitType === 'commander' ? '⚔️' : calculatorData.targetId.unitType === 'special' ? '⭐' : '🛡️'} selected
@@ -811,13 +812,13 @@ const CalculatorD20 = ({
                                   display: 'flex', alignItems: 'center', gap: '0.6rem',
                                   padding: '0.4rem 0.65rem',
                                   background: isSel ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
-                                  border: `2px solid ${isSel ? gold : 'rgba(90,74,58,0.3)'}`,
+                                  border: `2px solid ${isSel ? colors.gold : 'rgba(255,255,255,0.06)'}`,
                                   borderRadius: '6px', cursor: 'pointer', userSelect: 'none',
                                 }}
                               >
-                                <div style={{ width: '13px', height: '13px', borderRadius: '50%', flexShrink: 0, border: `2px solid ${isSel ? gold : '#5a4a3a'}`, background: isSel ? gold : 'transparent' }} />
-                                <span style={{ color: isSel ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>{unit.icon} {unit.name}</span>
-                                <span style={{ color: '#6b7280', fontSize: '0.68rem' }}>{unit.hp}hp</span>
+                                <div style={{ width: '13px', height: '13px', borderRadius: '50%', flexShrink: 0, border: `2px solid ${isSel ? colors.gold : '#5a4a3a'}`, background: isSel ? colors.gold : 'transparent' }} />
+                                <span style={{ color: isSel ? colors.gold : colors.textSecondary, fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>{unit.icon} {unit.name}</span>
+                                <span style={{ color: colors.textMuted, fontSize: '0.68rem' }}>{unit.hp}hp</span>
                               </div>
                             );
                           })}
@@ -850,17 +851,17 @@ const CalculatorD20 = ({
                         display: 'flex', alignItems: 'center', gap: '0.75rem',
                         padding: '0.6rem 0.85rem',
                         background: isSelected ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))' : 'rgba(0,0,0,0.3)',
-                        border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
+                        border: `2px solid ${isSelected ? '#ef4444' : 'rgba(255,255,255,0.06)'}`,
                         borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s',
                       }}>
                         <div style={{ width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`, background: isSelected ? '#ef4444' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: '#fff', fontWeight: '900' }}>{isSelected && '✓'}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>{npc.name}</div>
+                          <div style={{ color: isSelected ? '#fca5a5' : colors.gold, fontWeight: '800', fontSize: '0.9rem' }}>{npc.name}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
                             <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
                               <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
                             </div>
-                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>{npc.hp}/{npc.maxHp}hp</span>
+                            <span style={{ color: colors.textMuted, fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>{npc.hp}/{npc.maxHp}hp</span>
                           </div>
                         </div>
                         <div style={{ padding: '0.15rem 0.5rem', background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)', borderRadius: '5px', color: '#5eead4', fontSize: '0.68rem', fontWeight: '800', flexShrink: 0 }}>🛡️{npc.armor}+</div>
@@ -874,7 +875,7 @@ const CalculatorD20 = ({
         ) : (
           // Squad Target Selection
           <div style={{ marginBottom: '1rem' }}>
-            <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+            <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
               <strong>Select Targets:</strong>
             </label>
 
@@ -902,13 +903,13 @@ const CalculatorD20 = ({
                           display: 'flex', alignItems: 'center', gap: '0.6rem',
                           padding: '0.5rem 0.75rem',
                           background: selectedCount > 0 ? 'rgba(201,169,97,0.08)' : 'rgba(0,0,0,0.3)',
-                          border: `1px solid ${selectedCount > 0 ? 'rgba(201,169,97,0.35)' : 'rgba(90,74,58,0.3)'}`,
+                          border: `1px solid ${selectedCount > 0 ? 'rgba(201,169,97,0.35)' : 'rgba(255,255,255,0.06)'}`,
                           borderRadius: isExpanded ? '6px 6px 0 0' : '6px',
                           cursor: 'pointer', userSelect: 'none',
                         }}
                       >
-                        <span style={{ color: '#6b7280', fontSize: '0.7rem', fontWeight: '900', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
-                        <span style={{ color: selectedCount > 0 ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{p.playerName}</span>
+                        <span style={{ color: colors.textMuted, fontSize: '0.7rem', fontWeight: '900', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
+                        <span style={{ color: selectedCount > 0 ? colors.gold : colors.textSecondary, fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{p.playerName}</span>
                         {selectedCount > 0 && (
                           <span style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '20px', padding: '0.1rem 0.45rem' }}>
                             {selectedCount} selected
@@ -938,14 +939,14 @@ const CalculatorD20 = ({
                                   display: 'flex', alignItems: 'center', gap: '0.6rem',
                                   padding: '0.4rem 0.65rem',
                                   background: isSel ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
-                                  border: `2px solid ${isSel ? gold : 'rgba(90,74,58,0.3)'}`,
+                                  border: `2px solid ${isSel ? colors.gold : 'rgba(255,255,255,0.06)'}`,
                                   borderRadius: '6px', cursor: canSelect ? 'pointer' : 'not-allowed',
                                   opacity: canSelect ? 1 : 0.5, userSelect: 'none',
                                 }}
                               >
-                                <div style={{ width: '13px', height: '13px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${isSel ? gold : '#5a4a3a'}`, background: isSel ? gold : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{isSel ? '✓' : ''}</div>
-                                <span style={{ color: isSel ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>{unit.icon} {unit.name}</span>
-                                <span style={{ color: '#6b7280', fontSize: '0.68rem' }}>{unit.hp}hp</span>
+                                <div style={{ width: '13px', height: '13px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${isSel ? colors.gold : '#5a4a3a'}`, background: isSel ? colors.gold : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{isSel ? '✓' : ''}</div>
+                                <span style={{ color: isSel ? colors.gold : colors.textSecondary, fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>{unit.icon} {unit.name}</span>
+                                <span style={{ color: colors.textMuted, fontSize: '0.68rem' }}>{unit.hp}hp</span>
                               </div>
                             );
                           })}
@@ -978,17 +979,17 @@ const CalculatorD20 = ({
                         display: 'flex', alignItems: 'center', gap: '0.75rem',
                         padding: '0.6rem 0.85rem',
                         background: isSelected ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))' : 'rgba(0,0,0,0.3)',
-                        border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
+                        border: `2px solid ${isSelected ? '#ef4444' : 'rgba(255,255,255,0.06)'}`,
                         borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s',
                       }}>
                         <div style={{ width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`, background: isSelected ? '#ef4444' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: '#fff', fontWeight: '900' }}>{isSelected && '✓'}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>{npc.name}</div>
+                          <div style={{ color: isSelected ? '#fca5a5' : colors.gold, fontWeight: '800', fontSize: '0.9rem' }}>{npc.name}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
                             <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
                               <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
                             </div>
-                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>{npc.hp}/{npc.maxHp}hp</span>
+                            <span style={{ color: colors.textMuted, fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>{npc.hp}/{npc.maxHp}hp</span>
                           </div>
                         </div>
                         <div style={{ padding: '0.15rem 0.5rem', background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)', borderRadius: '5px', color: '#5eead4', fontSize: '0.68rem', fontWeight: '800', flexShrink: 0 }}>🛡️{npc.armor}+</div>
@@ -1006,21 +1007,21 @@ const CalculatorD20 = ({
           background: '#0a0503',
           padding: '1rem',
           borderRadius: '6px',
-          border: '1px solid #5a4a3a',
+          border: borders.warm,
           marginBottom: '1rem',
           textAlign: 'center'
         }}>
-          <div style={{ color: gold, fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+          <div style={{ color: colors.gold, fontSize: '0.875rem', marginBottom: '0.5rem' }}>
             Roll {currentAttackIndex + 1} of {numAttacks}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-around', fontSize: '0.875rem' }}>
             <div>
-              <div style={{ color: '#8b7355', fontSize: '0.75rem' }}>Attacker</div>
+              <div style={{ color: colors.textMuted, fontSize: '0.75rem' }}>Attacker</div>
               <div style={{ color: '#3b82f6', fontSize: '1.5rem', fontWeight: 'bold' }}>{attackerDice}</div>
             </div>
-            <div style={{ color: '#8b7355', fontSize: '2rem' }}>VS</div>
+            <div style={{ color: colors.textMuted, fontSize: '2rem' }}>VS</div>
             <div>
-              <div style={{ color: '#8b7355', fontSize: '0.75rem' }}>Defender</div>
+              <div style={{ color: colors.textMuted, fontSize: '0.75rem' }}>Defender</div>
               <div style={{ color: '#ef4444', fontSize: '1.5rem', fontWeight: 'bold' }}>{defenderDice}</div>
             </div>
           </div>
@@ -1036,11 +1037,11 @@ const CalculatorD20 = ({
                   background: 'rgba(99,102,241,0.12)',
                   border: '2px solid rgba(99,102,241,0.5)',
                   borderRadius: '20px', cursor: 'pointer',
-                  color: '#a5b4fc', fontFamily: 'inherit',
+                  color: '#a5b4fc', fontFamily: fonts.body,
                   fontWeight: '900', fontSize: '0.75rem', letterSpacing: '0.05em',
                 }}>
                 ⇅ Swap Dice
-                <span style={{ color: '#4b5563', marginLeft: '0.3rem', fontSize: '0.62rem' }}>
+                <span style={{ color: colors.textFaint, marginLeft: '0.3rem', fontSize: '0.62rem' }}>
                   {item.owner?.playerName} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                 </span>
               </button>
@@ -1052,11 +1053,11 @@ const CalculatorD20 = ({
                   background: 'rgba(239,68,68,0.12)',
                   border: '2px solid rgba(239,68,68,0.5)',
                   borderRadius: '20px', cursor: 'pointer',
-                  color: '#fca5a5', fontFamily: 'inherit',
+                  color: '#fca5a5', fontFamily: fonts.body,
                   fontWeight: '900', fontSize: '0.75rem', letterSpacing: '0.05em',
                 }}>
                 🛡️ Close Call
-                <span style={{ color: '#4b5563', marginLeft: '0.3rem', fontSize: '0.62rem' }}>
+                <span style={{ color: colors.textFaint, marginLeft: '0.3rem', fontSize: '0.62rem' }}>
                   {(item.closecallOwner || defender)?.playerName} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                 </span>
               </button>
@@ -1070,12 +1071,12 @@ const CalculatorD20 = ({
             background: '#0a0503',
             padding: '1rem',
             borderRadius: '6px',
-            border: '2px solid ' + gold,
+            border: '2px solid ' + colors.gold,
             marginBottom: '1rem'
           }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Attacker Roll ({attackerDice}):
                 </label>
                 {/* Attacker reroll buttons — always shown when items exist, before typing */}
@@ -1094,14 +1095,14 @@ const CalculatorD20 = ({
                             background: 'rgba(0,0,0,0.35)',
                             border: `1px solid ${item.color}50`,
                             borderRadius: '20px', cursor: 'pointer',
-                            color: item.color, fontFamily: 'inherit',
+                            color: item.color, fontFamily: fonts.body,
                             fontWeight: '800', fontSize: '0.65rem',
                           }}>
                           {item.label}
-                          <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                          <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
                             {item.owner?.playerName || ''}
                           </span>
-                          <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                          <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                             {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                           </span>
                         </button>
@@ -1119,14 +1120,14 @@ const CalculatorD20 = ({
                           background: activeAttackBonus > 0 ? 'rgba(34,197,94,0.2)' : 'rgba(34,197,94,0.08)',
                           border: `1px solid ${activeAttackBonus > 0 ? 'rgba(34,197,94,0.7)' : 'rgba(34,197,94,0.4)'}`,
                           borderRadius: '20px', cursor: 'pointer',
-                          color: '#86efac', fontFamily: 'inherit',
+                          color: '#86efac', fontFamily: fonts.body,
                           fontWeight: '800', fontSize: '0.65rem',
                         }}>
                         ⚔️ +{item.effect?.value} atk
-                        <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                        <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
                           {attacker?.playerName || ''}
                         </span>
-                        <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                        <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                           {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                         </span>
                       </button>
@@ -1142,13 +1143,13 @@ const CalculatorD20 = ({
                   style={{
                     width: '100%',
                     background: '#1a0f0a',
-                    color: gold,
+                    color: colors.gold,
                     padding: '0.75rem',
                     borderRadius: '6px',
-                    border: '2px solid #5a4a3a',
+                    border: borders.warm,
                     fontSize: '1.5rem',
                     textAlign: 'center',
-                    fontFamily: '"Cinzel", Georgia, serif',
+                    fontFamily: fonts.display,
                     fontWeight: 'bold'
                   }}
                 />
@@ -1164,14 +1165,14 @@ const CalculatorD20 = ({
                         background: activeDefenseBonus > 0 ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)',
                         border: `1px solid ${activeDefenseBonus > 0 ? 'rgba(59,130,246,0.7)' : 'rgba(59,130,246,0.4)'}`,
                         borderRadius: '20px', cursor: 'pointer',
-                        color: '#93c5fd', fontFamily: 'inherit',
+                        color: '#93c5fd', fontFamily: fonts.body,
                         fontWeight: '800', fontSize: '0.65rem',
                       }}>
                       🛡️ +{item.effect?.value} def
-                      <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                      <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
                         {defender?.playerName || ''}
                       </span>
-                      <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                      <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                         {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                       </span>
                     </button>
@@ -1182,7 +1183,7 @@ const CalculatorD20 = ({
 
 
               <div>
-                <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Defender Roll ({defenderDice}):
                 </label>
                 {/* Defender reroll buttons — always shown when items exist, before typing */}
@@ -1201,14 +1202,14 @@ const CalculatorD20 = ({
                             background: 'rgba(0,0,0,0.35)',
                             border: `1px solid ${item.color}50`,
                             borderRadius: '20px', cursor: 'pointer',
-                            color: item.color, fontFamily: 'inherit',
+                            color: item.color, fontFamily: fonts.body,
                             fontWeight: '800', fontSize: '0.65rem',
                           }}>
                           {item.label}
-                          <span style={{ color: '#6b7280', marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                          <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
                             {item.owner?.playerName || ''}
                           </span>
-                          <span style={{ color: '#4b5563', marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                          <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
                             {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                           </span>
                         </button>
@@ -1225,13 +1226,13 @@ const CalculatorD20 = ({
                   style={{
                     width: '100%',
                     background: '#1a0f0a',
-                    color: gold,
+                    color: colors.gold,
                     padding: '0.75rem',
                     borderRadius: '6px',
-                    border: '2px solid #5a4a3a',
+                    border: borders.warm,
                     fontSize: '1.5rem',
                     textAlign: 'center',
-                    fontFamily: '"Cinzel", Georgia, serif',
+                    fontFamily: fonts.display,
                     fontWeight: 'bold'
                   }}
                 />
@@ -1250,7 +1251,7 @@ const CalculatorD20 = ({
                 border: '2px solid',
                 borderColor: canAddRoll ? '#a78bfa' : '#4a3322',
                 cursor: canAddRoll ? 'pointer' : 'not-allowed',
-                fontFamily: '"Cinzel", Georgia, serif',
+                fontFamily: fonts.display,
                 fontWeight: 'bold',
                 fontSize: '1rem',
               }}
@@ -1266,12 +1267,12 @@ const CalculatorD20 = ({
             background: '#0a0503',
             padding: '1rem',
             borderRadius: '6px',
-            border: '1px solid #5a4a3a',
+            border: borders.warm,
             marginBottom: '1rem',
             maxHeight: '200px',
             overflowY: 'auto'
           }}>
-            <div style={{ color: gold, fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            <div style={{ color: colors.gold, fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>
               Roll History:
             </div>
             {attackRolls.map((roll, idx) => (
@@ -1284,14 +1285,14 @@ const CalculatorD20 = ({
                 justifyContent: 'space-between',
                 fontSize: '0.875rem'
               }}>
-                <span style={{ color: '#8b7355' }}>
+                <span style={{ color: colors.textMuted }}>
                   Roll {idx + 1}: {roll.attackerRoll}
                   {roll.isSpecial && <span style={{ color: '#fbbf24' }}>+1</span>}
                   {roll.isFirstStrike && <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>⚡+2</span>}
                   {roll.attackBonusApplied > 0 && <span style={{ color: '#86efac', fontWeight: 'bold' }}>+{roll.attackBonusApplied}</span>}
                   {' '}vs{' '}
                   {roll.armorFloored
-                    ? <><span style={{ color: '#6b7280', textDecoration: 'line-through' }}>{roll.defenderRoll}</span><span style={{ color: '#5eead4' }}> {roll.effectiveDefenderRoll}</span><span style={{ color: '#374151', fontSize: '0.7rem' }}> 🛡️floor</span></>
+                    ? <><span style={{ color: colors.textMuted, textDecoration: 'line-through' }}>{roll.defenderRoll}</span><span style={{ color: '#5eead4' }}> {roll.effectiveDefenderRoll}</span><span style={{ color: colors.textDisabled, fontSize: '0.7rem' }}> 🛡️floor</span></>
                     : roll.defenderRoll
                   }
                   {roll.defenseBonusApplied > 0 && <span style={{ color: '#93c5fd', fontWeight: 'bold' }}>+{roll.defenseBonusApplied}</span>}
@@ -1309,14 +1310,14 @@ const CalculatorD20 = ({
           background: '#0a0503',
           padding: '1rem',
           borderRadius: '6px',
-          border: '2px solid ' + gold,
+          border: '2px solid ' + colors.gold,
           marginBottom: '1rem',
           textAlign: 'center',
         }}>
-          <div style={{ color: gold, fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+          <div style={{ color: colors.gold, fontSize: '0.875rem', marginBottom: '0.25rem' }}>
             Total Damage
           </div>
-          <div style={{ color: '#fecaca', fontSize: '2rem', fontWeight: 'bold', fontFamily: '"Cinzel", Georgia, serif' }}>
+          <div style={{ color: '#fecaca', fontSize: '2rem', fontWeight: 'bold', fontFamily: fonts.display }}>
             {totalDamage}hp
           </div>
         </div>
@@ -1335,7 +1336,7 @@ const CalculatorD20 = ({
               border: '2px solid',
               borderColor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? '#16a34a' : '#4a3322',
               cursor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? 'pointer' : 'not-allowed',
-              fontFamily: '"Cinzel", Georgia, serif',
+              fontFamily: fonts.display,
               fontWeight: 'bold',
               fontSize: '1rem',
             }}
@@ -1352,7 +1353,7 @@ const CalculatorD20 = ({
               borderRadius: '6px',
               border: '2px solid #991b1b',
               cursor: 'pointer',
-              fontFamily: '"Cinzel", Georgia, serif',
+              fontFamily: fonts.display,
               fontWeight: 'bold',
               fontSize: '1rem',
             }}
@@ -1371,7 +1372,7 @@ const CalculatorD20 = ({
             <div style={{ fontSize: '4rem', marginBottom: '0.75rem', lineHeight: 1 }}>🛡️</div>
             <div style={{
               fontSize: '2.2rem', fontWeight: '900', letterSpacing: '0.15em',
-              fontFamily: '"Cinzel", Georgia, serif',
+              fontFamily: fonts.display,
               background: 'linear-gradient(135deg, #fca5a5, #ef4444)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               marginBottom: '0.5rem',
@@ -1379,7 +1380,7 @@ const CalculatorD20 = ({
             <div style={{ color: '#fca5a5', fontSize: '1rem', fontWeight: '700', marginBottom: '0.35rem', letterSpacing: '0.08em' }}>
               {(closecallOwner || defender)?.playerName || 'The Defender'} activated
             </div>
-            <div style={{ color: '#6b7280', fontSize: '0.82rem', marginBottom: '2rem', lineHeight: 1.5 }}>
+            <div style={{ color: colors.textMuted, fontSize: '0.82rem', marginBottom: '2rem', lineHeight: 1.5 }}>
               The attack is completely negated.<br/>No damage. No effect. It never happened.
             </div>
             <div style={{
@@ -1393,7 +1394,7 @@ const CalculatorD20 = ({
               padding: '0.75rem 2.5rem',
               background: 'linear-gradient(135deg, #7f1d1d, #991b1b)',
               border: '2px solid #ef4444', borderRadius: '10px',
-              color: '#fecaca', fontFamily: 'inherit', fontWeight: '900',
+              color: '#fecaca', fontFamily: fonts.body, fontWeight: '900',
               fontSize: '0.95rem', cursor: 'pointer', letterSpacing: '0.1em',
             }}>✕ Close</button>
           </div>

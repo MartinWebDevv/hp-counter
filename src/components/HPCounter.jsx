@@ -1056,20 +1056,35 @@ const NPCCalculator = ({ npcAttackData, players, onClose, onProceed, onUpdatePla
   const inputStyle = { background: '#1a0f0a', color: gold, padding: '0.75rem', borderRadius: '6px', border: '2px solid #5a4a3a', fontSize: '1.5rem', textAlign: 'center', fontFamily: '"Cinzel",Georgia,serif', fontWeight: 'bold', width: '100%' };
 
   const DEFENDER_TYPES = ['defenseBonus','rerollDefense','forceAttackReroll','closecall','diceSwap'];
-  const itemPlayers = selectedTargetPlayerId ? players.filter(p => p.id === parseInt(selectedTargetPlayerId)) : players;
-  const allCalcItems = itemPlayers.flatMap(p =>
-    (p.inventory || [])
-      .filter(it => { const t = it.effect?.type; return DEFENDER_TYPES.includes(t); })
-      .map(it => {
-        const usesLeft = it.effect.uses === 0 ? Infinity : (it.effect.usesRemaining ?? it.effect.uses ?? 1);
-        const unitName = it.heldBy === 'commander'
-          ? (p.commanderStats?.customName || p.commander || 'Commander')
-          : it.heldBy === 'special' ? (p.subUnits?.[0]?.name?.trim() || 'Special')
-          : (p.subUnits?.[parseInt(it.heldBy?.replace('soldier',''))]?.name?.trim() || it.heldBy);
-        return { ...it, usesLeft, playerName: p.playerName, unitName, owner: p };
-      })
-      .filter(it => it.usesLeft > 0)
-  );
+  const targetedPlayerIds = [...new Set(targets.map(t => t.playerId).filter(Boolean))];
+  const itemPlayers = targetedPlayerIds.length > 0
+    ? players.filter(p => targetedPlayerIds.includes(p.id))
+    : selectedTargetPlayerId
+      ? players.filter(p => p.id === parseInt(selectedTargetPlayerId))
+      : [];
+  const allCalcItems = (() => {
+    const raw = itemPlayers.flatMap(p =>
+      (p.inventory || [])
+        .filter(it => { const t = it.effect?.type; return DEFENDER_TYPES.includes(t); })
+        .map(it => {
+          const usesLeft = it.effect.uses === 0 ? Infinity : (it.effect.usesRemaining ?? it.effect.uses ?? 1);
+          const unitName = it.heldBy === 'commander'
+            ? (p.commanderStats?.customName || p.commander || 'Commander')
+            : it.heldBy === 'special' ? (p.subUnits?.[0]?.name?.trim() || 'Special')
+            : (p.subUnits?.[parseInt(it.heldBy?.replace('soldier',''))]?.name?.trim() || it.heldBy);
+          return { ...it, usesLeft, playerName: p.playerName, unitName, owner: p };
+        })
+        .filter(it => it.usesLeft > 0)
+    );
+    // Deduplicate — same player + same item name + same effect type only shows once
+    const seen = new Set();
+    return raw.filter(it => {
+      const key = `${it.owner?.id}-${it.name}-${it.effect?.type}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
 
   // Shared consume helper — decrements uses, removes if consumed, returns live player or null
   const consumeFromInventory = (item) => {

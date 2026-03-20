@@ -19,15 +19,16 @@ const CalculatorD20 = ({
   const [attackerRoll, setAttackerRoll] = useState('');
   const [defenderRoll, setDefenderRoll] = useState('');
   const [totalDamage, setTotalDamage] = useState(0);
-  const [showBonusPrompt, setShowBonusPrompt] = useState(null); // { type: 'attack'|'defense', value, itemName }
+  const [showBonusPrompt, setShowBonusPrompt] = useState(null);
   const [activeAttackBonus, setActiveAttackBonus] = useState(0);
   const [activeDefenseBonus, setActiveDefenseBonus] = useState(0);
   const [bonusPromptShown, setBonusPromptShown] = useState(false);
   const [consumedItems, setConsumedItems] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
-  const [showItemPanel, setShowItemPanel] = useState(false); // [{owner, item, originalItem}] — for refund on cancel
-  const [showClosecall, setShowClosecall] = useState(false); // epic negate modal
+  const [showItemPanel, setShowItemPanel] = useState(false);
+  const [showClosecall, setShowClosecall] = useState(false);
   const [closecallOwner, setClosecallOwner] = useState(null);
+  const [expandedPlayers, setExpandedPlayers] = useState({});
 
   // Refund all consumed items then close
   const onClose = () => {
@@ -743,51 +744,94 @@ const CalculatorD20 = ({
 
         {/* Target Selection */}
         {!calculatorData.targetIsSquad ? (
-          // Single Target - Two Step Selection
           <div style={{ marginBottom: '1rem' }}>
-            {/* Step 1: Select Target Player */}
             <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
-              <strong>Select Target Player:</strong>
+              <strong>Select Target:</strong>
             </label>
-            <select
-              value={calculatorData.targetId?.playerId || ''}
-              onChange={(e) => {
-                setCalculatorData({
-                  ...calculatorData,
-                  targetId: e.target.value ? { playerId: parseInt(e.target.value), unitType: null } : null,
-                });
-              }}
-              style={{
-                width: '100%',
-                background: '#0a0503',
-                color: gold,
-                padding: '0.75rem',
-                borderRadius: '6px',
-                border: '2px solid #5a4a3a',
-                fontFamily: '"Cinzel", Georgia, serif',
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-                marginBottom: '0.5rem',
-              }}
-            >
-              <option value="">Select Player...</option>
+
+            {/* Player rows — collapsible */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.5rem' }}>
               {players
                 .filter(p => p.id !== calculatorData.attackerId)
                 .filter(p => p.commanderStats.hp > 0 || p.subUnits.some(u => u.hp > 0))
-                .map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.playerName || 'Player'}
-                  </option>
-                ))}
-            </select>
+                .map(p => {
+                  const isExpanded = !!expandedPlayers[p.id];
+                  const isSelectedPlayer = calculatorData.targetId?.playerId === p.id;
+                  const liveUnits = [
+                    p.commanderStats.hp > 0 ? { unitType: 'commander', name: p.commanderStats?.customName || p.commander, hp: p.commanderStats.hp, icon: '⚔️' } : null,
+                    ...(p.subUnits || []).map((u, idx) => {
+                      if (u.hp === 0 || u.revivedOnPlayerId) return null;
+                      return { unitType: idx === 0 ? 'special' : `soldier${idx}`, name: u.name || (idx === 0 ? 'Special' : `Soldier ${idx}`), hp: u.hp, icon: idx === 0 ? '⭐' : '🛡️' };
+                    }),
+                  ].filter(Boolean);
+
+                  return (
+                    <div key={p.id}>
+                      {/* Player header row */}
+                      <div
+                        onClick={() => {
+                          setExpandedPlayers(prev => ({ ...prev, [p.id]: !prev[p.id] }));
+                          // Clear selection if clicking a different player
+                          if (calculatorData.targetId?.playerId && calculatorData.targetId.playerId !== p.id) {
+                            setCalculatorData({ ...calculatorData, targetId: null, targetNPCIds: [], targetNPCId: null });
+                          }
+                        }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.6rem',
+                          padding: '0.5rem 0.75rem',
+                          background: isSelectedPlayer ? 'rgba(201,169,97,0.1)' : 'rgba(0,0,0,0.3)',
+                          border: `1px solid ${isSelectedPlayer ? 'rgba(201,169,97,0.4)' : 'rgba(90,74,58,0.3)'}`,
+                          borderRadius: isExpanded ? '6px 6px 0 0' : '6px',
+                          cursor: 'pointer', userSelect: 'none',
+                        }}
+                      >
+                        <span style={{ color: '#6b7280', fontSize: '0.7rem', fontWeight: '900', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
+                        <span style={{ color: isSelectedPlayer ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{p.playerName}</span>
+                        {isSelectedPlayer && calculatorData.targetId?.unitType && (
+                          <span style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '20px', padding: '0.1rem 0.45rem' }}>
+                            {calculatorData.targetId.unitType === 'commander' ? '⚔️' : calculatorData.targetId.unitType === 'special' ? '⭐' : '🛡️'} selected
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Unit list */}
+                      {isExpanded && (
+                        <div style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(90,74,58,0.25)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.35rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          {liveUnits.map(unit => {
+                            const isSel = isSelectedPlayer && calculatorData.targetId?.unitType === unit.unitType;
+                            return (
+                              <div
+                                key={unit.unitType}
+                                onClick={() => setCalculatorData({
+                                  ...calculatorData,
+                                  targetId: { playerId: p.id, unitType: unit.unitType },
+                                  targetNPCIds: [], targetNPCId: null,
+                                })}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '0.6rem',
+                                  padding: '0.4rem 0.65rem',
+                                  background: isSel ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
+                                  border: `2px solid ${isSel ? gold : 'rgba(90,74,58,0.3)'}`,
+                                  borderRadius: '6px', cursor: 'pointer', userSelect: 'none',
+                                }}
+                              >
+                                <div style={{ width: '13px', height: '13px', borderRadius: '50%', flexShrink: 0, border: `2px solid ${isSel ? gold : '#5a4a3a'}`, background: isSel ? gold : 'transparent' }} />
+                                <span style={{ color: isSel ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>{unit.icon} {unit.name}</span>
+                                <span style={{ color: '#6b7280', fontSize: '0.68rem' }}>{unit.hp}hp</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
 
             {/* ── OR Target NPC ── */}
             {npcs.filter(n => n.active && !n.isDead).length > 0 && (
               <div style={{ marginTop: '0.75rem' }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  marginBottom: '0.6rem',
-                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem' }}>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
                   <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC{(calculatorData.targetNPCIds?.length || 0) > 0 && <span style={{ color: '#ef4444', marginLeft: '0.4rem' }}>({calculatorData.targetNPCIds.length} selected)</span>}</span>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
@@ -799,213 +843,123 @@ const CalculatorD20 = ({
                     const hpPct = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
                     const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
                     return (
-                      <div
-                        key={npc.id}
-                        onClick={() => {
-                          const ids = calculatorData.targetNPCIds || [];
-                          const newIds = isSelected ? ids.filter(id => id !== npc.id) : [...ids, npc.id];
-                          setCalculatorData({
-                            ...calculatorData,
-                            targetNPCIds: newIds,
-                            targetNPCId: newIds[0] || null, // keep first for backward compat
-                            targetId: null,
-                            targetSquadMembers: [],
-                          });
-                        }}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: '0.75rem',
-                          padding: '0.6rem 0.85rem',
-                          background: isSelected
-                            ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))'
-                            : 'rgba(0,0,0,0.3)',
-                          border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        {/* Selection indicator */}
-                        <div style={{
-                          width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0,
-                          border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`,
-                          background: isSelected ? '#ef4444' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.6rem', color: '#fff', fontWeight: '900',
-                        }}>{isSelected && '✓'}</div>
-
-                        {/* NPC info */}
+                      <div key={npc.id} onClick={() => {
+                        const newIds = isSelected ? ids.filter(id => id !== npc.id) : [...ids, npc.id];
+                        setCalculatorData({ ...calculatorData, targetNPCIds: newIds, targetNPCId: newIds[0] || null, targetId: null, targetSquadMembers: [] });
+                      }} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        padding: '0.6rem 0.85rem',
+                        background: isSelected ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))' : 'rgba(0,0,0,0.3)',
+                        border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
+                        borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s',
+                      }}>
+                        <div style={{ width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`, background: isSelected ? '#ef4444' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: '#fff', fontWeight: '900' }}>{isSelected && '✓'}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>
-                            {npc.name}
-                          </div>
+                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>{npc.name}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
                             <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
                               <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
                             </div>
-                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>
-                              {npc.hp}/{npc.maxHp}hp
-                            </span>
+                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>{npc.hp}/{npc.maxHp}hp</span>
                           </div>
                         </div>
-
-                        {/* Armor floor badge */}
-                        <div style={{
-                          padding: '0.15rem 0.5rem',
-                          background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)',
-                          borderRadius: '5px', color: '#5eead4',
-                          fontSize: '0.68rem', fontWeight: '800', flexShrink: 0,
-                        }}>🛡️{npc.armor}+</div>
+                        <div style={{ padding: '0.15rem 0.5rem', background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)', borderRadius: '5px', color: '#5eead4', fontSize: '0.68rem', fontWeight: '800', flexShrink: 0 }}>🛡️{npc.armor}+</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
             )}
-
-            {/* Step 2: Select Target Unit - Only show if player selected and no NPC selected */}
-            {!calculatorData.targetNPCId && calculatorData.targetId?.playerId && (() => {
-              const targetPlayer = players.find(p => p.id === calculatorData.targetId.playerId);
-              if (!targetPlayer) return null;
-
-              return (
-                <div>
-                  <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
-                    <strong>Select Target Unit:</strong>
-                  </label>
-                  <div style={{
-                    background: '#0a0503',
-                    padding: '1rem',
-                    borderRadius: '6px',
-                    border: '2px solid #5a4a3a',
-                  }}>
-                    {/* Commander option - only if alive */}
-                    {targetPlayer.commanderStats.hp > 0 && (
-                      <label style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.5rem',
-                        marginBottom: '0.5rem',
-                        background: calculatorData.targetId.unitType === 'commander' 
-                          ? 'rgba(201, 169, 97, 0.2)' 
-                          : 'transparent',
-                        borderRadius: '4px',
-                        color: gold,
-                        fontSize: '0.875rem',
-                        cursor: 'pointer',
-                      }}>
-                        <input
-                          type="radio"
-                          name="targetUnit"
-                          checked={calculatorData.targetId.unitType === 'commander'}
-                          onChange={() => {
-                            setCalculatorData({
-                              ...calculatorData,
-                              targetId: { 
-                                playerId: calculatorData.targetId.playerId, 
-                                unitType: 'commander' 
-                              },
-                            });
-                          }}
-                          style={{ width: '16px', height: '16px' }}
-                        />
-                        ⚔️ {targetPlayer.commanderCustomName || targetPlayer.commander} ({targetPlayer.commanderStats.hp}hp)
-                      </label>
-                    )}
-
-                    {/* Squad members - only alive and non-immune ones */}
-                    {targetPlayer.subUnits.map((unit, idx) => {
-                      if (unit.hp === 0) return null;
-                      if (unit.revivedOnPlayerId) return null; // immune this round
-                      const unitType = idx === 0 ? 'special' : `soldier${idx}`;
-                      return (
-                        <label
-                          key={idx}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '0.5rem',
-                            marginBottom: '0.5rem',
-                            background: calculatorData.targetId.unitType === unitType
-                              ? 'rgba(201, 169, 97, 0.2)'
-                              : 'transparent',
-                            borderRadius: '4px',
-                            color: gold,
-                            fontSize: '0.875rem',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <input
-                            type="radio"
-                            name="targetUnit"
-                            checked={calculatorData.targetId.unitType === unitType}
-                            onChange={() => {
-                              setCalculatorData({
-                                ...calculatorData,
-                                targetId: { 
-                                  playerId: calculatorData.targetId.playerId, 
-                                  unitType 
-                                },
-                              });
-                            }}
-                            style={{ width: '16px', height: '16px' }}
-                          />
-                          {idx === 0 ? '⭐' : '🛡️'} {unit.name || (idx === 0 ? 'Special Unit' : `Soldier ${idx}`)} ({unit.hp}hp)
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         ) : (
           // Squad Target Selection
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ color: gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
-              <strong>Select Target Player:</strong>
+              <strong>Select Targets:</strong>
             </label>
-            <select
-              value={calculatorData.targetId?.playerId || ''}
-              onChange={(e) => {
-                setCalculatorData({
-                  ...calculatorData,
-                  targetId: e.target.value ? { playerId: parseInt(e.target.value) } : null,
-                  targetSquadMembers: [],
-                });
-              }}
-              style={{
-                width: '100%',
-                background: '#0a0503',
-                color: gold,
-                padding: '0.75rem',
-                borderRadius: '6px',
-                border: '2px solid #5a4a3a',
-                fontFamily: '"Cinzel", Georgia, serif',
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-                marginBottom: '0.5rem',
-              }}
-            >
-              <option value="">Select Player...</option>
+
+            {/* Player rows — collapsible */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.5rem' }}>
               {players
                 .filter(p => p.id !== calculatorData.attackerId)
                 .filter(p => p.commanderStats.hp > 0 || p.subUnits.some(u => u.hp > 0))
-                .map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.playerName || 'Player'}
-                  </option>
-                ))}
-            </select>
+                .map(p => {
+                  const isExpanded = !!expandedPlayers[`squad-${p.id}`];
+                  const selectedCount = (calculatorData.targetSquadMembers || []).filter(m => m.playerId === p.id).length;
+                  const liveUnits = [
+                    ...(p.subUnits || []).map((u, idx) => {
+                      if (u.hp === 0 || u.revivedOnPlayerId) return null;
+                      return { unitType: idx === 0 ? 'special' : `soldier${idx}`, name: u.name || (idx === 0 ? 'Special' : `Soldier ${idx}`), hp: u.hp, icon: idx === 0 ? '⭐' : '🛡️', unitIndex: idx };
+                    }),
+                  ].filter(Boolean);
+                  if (liveUnits.length === 0) return null;
+
+                  return (
+                    <div key={p.id}>
+                      <div
+                        onClick={() => setExpandedPlayers(prev => ({ ...prev, [`squad-${p.id}`]: !prev[`squad-${p.id}`] }))}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.6rem',
+                          padding: '0.5rem 0.75rem',
+                          background: selectedCount > 0 ? 'rgba(201,169,97,0.08)' : 'rgba(0,0,0,0.3)',
+                          border: `1px solid ${selectedCount > 0 ? 'rgba(201,169,97,0.35)' : 'rgba(90,74,58,0.3)'}`,
+                          borderRadius: isExpanded ? '6px 6px 0 0' : '6px',
+                          cursor: 'pointer', userSelect: 'none',
+                        }}
+                      >
+                        <span style={{ color: '#6b7280', fontSize: '0.7rem', fontWeight: '900', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▶</span>
+                        <span style={{ color: selectedCount > 0 ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{p.playerName}</span>
+                        {selectedCount > 0 && (
+                          <span style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '20px', padding: '0.1rem 0.45rem' }}>
+                            {selectedCount} selected
+                          </span>
+                        )}
+                      </div>
+
+                      {isExpanded && (
+                        <div style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(90,74,58,0.25)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.35rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          {liveUnits.map(unit => {
+                            const isSel = (calculatorData.targetSquadMembers || []).some(m => m.playerId === p.id && m.unitType === unit.unitType);
+                            const canSelect = isSel || (calculatorData.targetSquadMembers?.length || 0) < 3;
+                            return (
+                              <div
+                                key={unit.unitType}
+                                onClick={() => {
+                                  if (!canSelect) return;
+                                  let newTargets = [...(calculatorData.targetSquadMembers || [])];
+                                  if (isSel) {
+                                    newTargets = newTargets.filter(m => !(m.playerId === p.id && m.unitType === unit.unitType));
+                                  } else {
+                                    newTargets.push({ playerId: p.id, unitType: unit.unitType, unitIndex: unit.unitIndex });
+                                  }
+                                  setCalculatorData({ ...calculatorData, targetId: { playerId: p.id }, targetSquadMembers: newTargets, targetNPCIds: [], targetNPCId: null });
+                                }}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '0.6rem',
+                                  padding: '0.4rem 0.65rem',
+                                  background: isSel ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.3)',
+                                  border: `2px solid ${isSel ? gold : 'rgba(90,74,58,0.3)'}`,
+                                  borderRadius: '6px', cursor: canSelect ? 'pointer' : 'not-allowed',
+                                  opacity: canSelect ? 1 : 0.5, userSelect: 'none',
+                                }}
+                              >
+                                <div style={{ width: '13px', height: '13px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${isSel ? gold : '#5a4a3a'}`, background: isSel ? gold : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{isSel ? '✓' : ''}</div>
+                                <span style={{ color: isSel ? gold : '#9ca3af', fontWeight: '800', fontSize: '0.82rem', flex: 1 }}>{unit.icon} {unit.name}</span>
+                                <span style={{ color: '#6b7280', fontSize: '0.68rem' }}>{unit.hp}hp</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
 
             {/* ── OR Target NPC ── */}
             {npcs.filter(n => n.active && !n.isDead).length > 0 && (
               <div style={{ marginTop: '0.75rem' }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  marginBottom: '0.6rem',
-                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.6rem' }}>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
                   <span style={{ color: '#5a4a3a', fontSize: '0.75rem', fontWeight: '700', letterSpacing: '0.1em' }}>OR TARGET NPC{(calculatorData.targetNPCIds?.length || 0) > 0 && <span style={{ color: '#ef4444', marginLeft: '0.4rem' }}>({calculatorData.targetNPCIds.length} selected)</span>}</span>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(201,169,97,0.2)' }} />
@@ -1017,120 +971,33 @@ const CalculatorD20 = ({
                     const hpPct = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
                     const hpColor = hpPct > 50 ? '#22c55e' : hpPct > 25 ? '#eab308' : '#ef4444';
                     return (
-                      <div
-                        key={npc.id}
-                        onClick={() => {
-                          const ids = calculatorData.targetNPCIds || [];
-                          const newIds = isSelected ? ids.filter(id => id !== npc.id) : [...ids, npc.id];
-                          setCalculatorData({
-                            ...calculatorData,
-                            targetNPCIds: newIds,
-                            targetNPCId: newIds[0] || null, // keep first for backward compat
-                            targetId: null,
-                            targetSquadMembers: [],
-                          });
-                        }}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: '0.75rem',
-                          padding: '0.6rem 0.85rem',
-                          background: isSelected
-                            ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))'
-                            : 'rgba(0,0,0,0.3)',
-                          border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        {/* Selection indicator */}
-                        <div style={{
-                          width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0,
-                          border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`,
-                          background: isSelected ? '#ef4444' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.6rem', color: '#fff', fontWeight: '900',
-                        }}>{isSelected && '✓'}</div>
-
-                        {/* NPC info */}
+                      <div key={npc.id} onClick={() => {
+                        const newIds = isSelected ? ids.filter(id => id !== npc.id) : [...ids, npc.id];
+                        setCalculatorData({ ...calculatorData, targetNPCIds: newIds, targetNPCId: newIds[0] || null, targetId: null, targetSquadMembers: [] });
+                      }} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        padding: '0.6rem 0.85rem',
+                        background: isSelected ? 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))' : 'rgba(0,0,0,0.3)',
+                        border: `2px solid ${isSelected ? '#ef4444' : 'rgba(90,74,58,0.5)'}`,
+                        borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s',
+                      }}>
+                        <div style={{ width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0, border: `2px solid ${isSelected ? '#ef4444' : '#5a4a3a'}`, background: isSelected ? '#ef4444' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: '#fff', fontWeight: '900' }}>{isSelected && '✓'}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>
-                            {npc.name}
-                          </div>
+                          <div style={{ color: isSelected ? '#fca5a5' : '#c9a961', fontWeight: '800', fontSize: '0.9rem' }}>{npc.name}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
                             <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
                               <div style={{ width: `${hpPct}%`, height: '100%', background: hpColor, borderRadius: '2px' }} />
                             </div>
-                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>
-                              {npc.hp}/{npc.maxHp}hp
-                            </span>
+                            <span style={{ color: '#6b7280', fontSize: '0.72rem', fontWeight: '600', flexShrink: 0 }}>{npc.hp}/{npc.maxHp}hp</span>
                           </div>
                         </div>
-
-                        {/* Armor floor badge */}
-                        <div style={{
-                          padding: '0.15rem 0.5rem',
-                          background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)',
-                          borderRadius: '5px', color: '#5eead4',
-                          fontSize: '0.68rem', fontWeight: '800', flexShrink: 0,
-                        }}>🛡️{npc.armor}+</div>
+                        <div style={{ padding: '0.15rem 0.5rem', background: 'rgba(94,234,212,0.1)', border: '1px solid rgba(94,234,212,0.3)', borderRadius: '5px', color: '#5eead4', fontSize: '0.68rem', fontWeight: '800', flexShrink: 0 }}>🛡️{npc.armor}+</div>
                       </div>
                     );
                   })}
                 </div>
               </div>
             )}
-
-            {/* Squad Member Selection */}
-            {!calculatorData.targetNPCId && calculatorData.targetId?.playerId && (() => {
-              const targetPlayer = players.find(p => p.id === calculatorData.targetId.playerId);
-              if (!targetPlayer) return null;
-
-              return (
-                <div style={{
-                  background: '#0a0503',
-                  padding: '0.75rem',
-                  borderRadius: '6px',
-                  border: '1px solid #5a4a3a',
-                }}>
-                  <div style={{ color: gold, fontSize: '0.75rem', marginBottom: '0.5rem' }}>
-                    Select squad members (1-3):
-                  </div>
-                  {targetPlayer.subUnits.map((unit, idx) => {
-                    if (unit.hp === 0) return null;
-                    if (unit.revivedOnPlayerId) return null; // immune this round
-                    const unitType = idx === 0 ? 'special' : `soldier${idx}`;
-                    const isSelected = calculatorData.targetSquadMembers?.some(m => m.unitType === unitType);
-                    const canSelect = isSelected || (calculatorData.targetSquadMembers?.length || 0) < 3;
-
-                    return (
-                      <div key={idx}
-                        onClick={() => {
-                          if (!canSelect) return;
-                          let newTargets = [...(calculatorData.targetSquadMembers || [])];
-                          if (isSelected) {
-                            newTargets = newTargets.filter(m => m.unitType !== unitType);
-                          } else {
-                            newTargets.push({ playerId: calculatorData.targetId.playerId, unitType, unitIndex: idx });
-                          }
-                          setCalculatorData({ ...calculatorData, targetSquadMembers: newTargets });
-                        }}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: '0.5rem',
-                          padding: '0.5rem 0.75rem', marginBottom: '0.25rem',
-                          background: isSelected ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.25)',
-                          border: `1px solid ${isSelected ? gold : 'rgba(90,74,58,0.3)'}`,
-                          borderRadius: '6px', cursor: canSelect ? 'pointer' : 'not-allowed',
-                          opacity: canSelect ? 1 : 0.5, userSelect: 'none',
-                        }}>
-                        <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: `2px solid ${isSelected ? gold : '#5a4a3a'}`, background: isSelected ? gold : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{isSelected ? '✓' : ''}</div>
-                        <span style={{ color: isSelected ? gold : '#8b7355', fontWeight: '700', fontSize: '0.8rem', flex: 1 }}>{unit.name || (idx === 0 ? '⭐ Special' : `🛡️ Soldier ${idx}`)}</span>
-                        <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>{unit.hp}hp</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
           </div>
         )}
 

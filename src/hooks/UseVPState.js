@@ -183,6 +183,19 @@ export const useVPState = (players, addLog) => {
     setFirstBloodAwarded(false);
   };
 
+  const deleteSession = (sessionName) => {
+    setVpStats(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      Object.keys(next).forEach(id => {
+        if (next[id].sessionAwards) {
+          next[id].sessionAwards = next[id].sessionAwards.filter(a => a.sessionName !== sessionName);
+        }
+      });
+      try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   return {
     vpStats,
     setVpStats,
@@ -203,6 +216,7 @@ export const useVPState = (players, addLog) => {
     handleEndSession,
     handleEndSessionFromFile,
     resetLiveVPTrackers,
+    deleteSession,
     AWARD_CATS,
   };
 };

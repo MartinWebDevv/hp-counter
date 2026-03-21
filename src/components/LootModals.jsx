@@ -70,9 +70,29 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
     onConfirm(result);
   };
 
+  // Count how many non-quest items are being assigned to each unit in this modal session
+  const getPendingCounts = (currentAssignments, excludeIndex = -1) => {
+    const counts = {};
+    currentAssignments.forEach((a, idx) => {
+      if (!a || idx === excludeIndex) return;
+      const ut = typeof a === 'object' ? a.unitType : a;
+      if (!lootTable[idx]?.isQuestItem) counts[ut] = (counts[ut] || 0) + 1;
+    });
+    return counts;
+  };
+
+  const isUnitFullWithPending = (unitType, excludeIndex, isQuestItem) => {
+    if (isQuestItem) return false;
+    const pending = getPendingCounts(assignments, excludeIndex);
+    const slotCount = getSlotCount(player, unitType);
+    const heldCount = getHeldCount(player, unitType);
+    return heldCount + (pending[unitType] || 0) >= slotCount;
+  };
+
   const assign = (itemIndex, unitType) => {
-    const isSwap = !lootTable[itemIndex]?.isQuestItem && unitIsFull(player, unitType);
-    const dropped = isSwap ? (player?.inventory || []).find(it => it.heldBy === unitType && !it.isQuestItem) : null;
+    const isQuestItem = lootTable[itemIndex]?.isQuestItem;
+    const isFull = isUnitFullWithPending(unitType, itemIndex, isQuestItem);
+    const dropped = isFull ? (player?.inventory || []).find(it => it.heldBy === unitType && !it.isQuestItem) : null;
     setAssignments(prev => { const next = [...prev]; next[itemIndex] = { unitType, droppedItemId: dropped?.id || null }; return next; });
     setExpandedItem(null);
   };
@@ -130,7 +150,7 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
                 <div style={{ background: 'rgba(0,0,0,0.4)', border: `1px solid ${colors.goldBorder}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '0.65rem' }}>
                   <div style={{ color: colors.textMuted, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Assign to unit:</div>
                   {units.map(u => {
-                    const full = !item.isQuestItem && unitIsFull(player, u.unitType);
+                    const full = isUnitFullWithPending(u.unitType, i, item.isQuestItem);
                     const disabled = u.isDead;
                     const isSwap = full && !u.isDead;
                     const currentItem = isSwap ? (player.inventory || []).find(it => it.heldBy === u.unitType && !it.isQuestItem) : null;

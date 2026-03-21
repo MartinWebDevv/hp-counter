@@ -12,9 +12,11 @@ const CATS = [
   { id: 'finalBossKill', label: 'Final Boss Kill',     icon: '👑', pts: 2 },
 ];
 
-const VictoryPanel = ({ players, vpStats, onAwardPoints }) => {
+const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession }) => {
   const [manualAward, setManualAward] = useState({ playerId: '', points: 1, reason: '', categoryId: 'finalBossKill' });
   const [showManual, setShowManual] = useState(false);
+  const [showDeleteSession, setShowDeleteSession] = useState(false);
+  const [deleteSessionConfirm, setDeleteSessionConfirm] = useState(null); // sessionName
   const [expanded, setExpanded] = useState({});
   const [selectedSession, setSelectedSession] = useState({});
 
@@ -46,6 +48,11 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints }) => {
   };
 
   const ranked = [...players].sort((a, b) => getTotalVP(b) - getTotalVP(a));
+
+  // All unique session names across all players
+  const allSessionNames = [...new Set(
+    Object.values(vpStats).flatMap(s => (s.sessionAwards || []).map(a => a.sessionName).filter(Boolean))
+  )];
   const rankBadge = ['🥇', '🥈', '🥉'];
   const rankColor = [colors.amber, colors.textSecondary, '#b45309'];
 
@@ -268,6 +275,47 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints }) => {
             cursor: manualAward.playerId && manualAward.reason.trim() ? 'pointer' : 'not-allowed',
             fontFamily: fonts.body,
           }}>🏅 AWARD POINTS</button>
+        </div>
+      )}
+
+      {/* ── Delete Session VP ── */}
+      <button onClick={() => setShowDeleteSession(!showDeleteSession)} style={{
+        width: '100%', padding: '0.55rem', marginTop: '0.5rem',
+        background: showDeleteSession ? colors.redSubtle : 'rgba(0,0,0,0.28)',
+        border: `1px solid ${showDeleteSession ? colors.redBorder : 'rgba(255,255,255,0.06)'}`,
+        borderRadius: '8px', color: showDeleteSession ? '#fca5a5' : colors.textMuted,
+        fontWeight: '800', fontSize: '0.75rem', cursor: 'pointer',
+        fontFamily: fonts.body, letterSpacing: '0.05em',
+        transition: 'all 0.15s',
+      }}>🗑️ DELETE SESSION VP {showDeleteSession ? '▲' : '▼'}</button>
+
+      {showDeleteSession && (
+        <div style={{ marginTop: '0.4rem', background: 'rgba(0,0,0,0.28)', border: `1px solid ${colors.redBorder}`, borderRadius: '8px', padding: '0.8rem' }}>
+          {allSessionNames.length === 0 ? (
+            <div style={{ color: colors.textFaint, fontSize: '0.78rem', textAlign: 'center', padding: '0.5rem' }}>No sessions recorded yet.</div>
+          ) : (
+            <>
+              <div style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                Select a session to remove all its VP awards from every player:
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                {allSessionNames.map(name => (
+                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.65rem', background: 'rgba(0,0,0,0.25)', border: `1px solid ${colors.redBorder}`, borderRadius: '6px' }}>
+                    <span style={{ flex: 1, color: colors.textPrimary, fontSize: '0.8rem', fontWeight: '700' }}>📅 {name}</span>
+                    {deleteSessionConfirm === name ? (
+                      <>
+                        <span style={{ color: '#fca5a5', fontSize: '0.72rem', fontWeight: '700' }}>Are you sure?</span>
+                        <button onClick={() => { onDeleteSession(name); setDeleteSessionConfirm(null); }} style={{ padding: '0.25rem 0.6rem', background: colors.redSubtle, border: `1px solid ${colors.red}`, borderRadius: '5px', color: '#fca5a5', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.68rem', cursor: 'pointer' }}>✓ Yes, delete</button>
+                        <button onClick={() => setDeleteSessionConfirm(null)} style={{ padding: '0.25rem 0.5rem', background: 'rgba(0,0,0,0.3)', border: `1px solid rgba(255,255,255,0.06)`, borderRadius: '5px', color: colors.textMuted, fontFamily: fonts.body, fontWeight: '700', fontSize: '0.68rem', cursor: 'pointer' }}>Cancel</button>
+                      </>
+                    ) : (
+                      <button onClick={() => setDeleteSessionConfirm(name)} style={{ padding: '0.25rem 0.6rem', background: colors.redSubtle, border: `1px solid ${colors.redBorder}`, borderRadius: '5px', color: '#fca5a5', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.68rem', cursor: 'pointer' }}>🗑️ Delete</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

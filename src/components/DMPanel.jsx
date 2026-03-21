@@ -46,16 +46,21 @@ const DMPanel = ({
   const [squadMode,        setSquadMode]        = React.useState(false);
   const [squadSelected,    setSquadSelected]    = React.useState({}); // { npcId: attackIndex }
   const [search,           setSearch]           = React.useState('');
-  const [filterStatus,     setFilterStatus]     = React.useState('all'); // 'all' | 'active' | 'inactive'
+  const [filterStatus,     setFilterStatus]     = React.useState('all'); // 'all' | 'active' | 'inactive' | 'dead'
 
   const orderedNPCs = [...activeNPCs, ...inactiveNPCs];
 
-  const filteredNPCs = orderedNPCs.filter(npc => {
+  // Include dead NPCs only when dead filter is active
+  const npcPool = filterStatus === 'dead'
+    ? [...activeNPCs, ...inactiveNPCs, ...deadNPCs]
+    : orderedNPCs;
+
+  const filteredNPCs = npcPool.filter(npc => {
     const matchesSearch = !search.trim() || npc.name.toLowerCase().includes(search.trim().toLowerCase());
-    const matchesStatus = filterStatus === 'all'
-      ? true
-      : filterStatus === 'active'   ? npc.active && !npc.isDead
-      : /* inactive */                !npc.active && !npc.isDead;
+    const matchesStatus = filterStatus === 'all'      ? !npc.isDead
+      : filterStatus === 'active'                     ? npc.active && !npc.isDead
+      : filterStatus === 'inactive'                   ? !npc.active && !npc.isDead
+      : /* dead */                                      npc.isDead;
     return matchesSearch && matchesStatus;
   });
   const toggleSquadNPC = (npcId) => {
@@ -157,18 +162,27 @@ const DMPanel = ({
             )}
           </div>
           {/* Status filter chips */}
-          {['all', 'active', 'inactive'].map(f => {
-            const labels = { all: '⚡ All', active: '✅ Active', inactive: '😴 Inactive' };
-            const active = filterStatus === f;
+          {['all', 'active', 'inactive', 'dead'].map(f => {
+            const labels   = { all: '⚡ All', active: '✅ Active', inactive: '😴 Inactive', dead: '💀 Dead' };
+            const bgMap    = { all: colors.amberSubtle, active: colors.greenSubtle, inactive: 'rgba(99,102,241,0.15)', dead: colors.redSubtle };
+            const brMap    = { all: colors.amberBorder, active: colors.greenBorder, inactive: 'rgba(99,102,241,0.4)', dead: colors.redBorder };
+            const clMap    = { all: colors.amber, active: colors.green, inactive: '#a5b4fc', dead: '#fca5a5' };
+            const isActive = filterStatus === f;
             return (
               <button key={f} onClick={() => setFilterStatus(f)} style={{
                 padding: '0.45rem 0.75rem', borderRadius: '8px', cursor: 'pointer',
                 fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem',
-                background: active ? (f === 'active' ? colors.greenSubtle : f === 'inactive' ? 'rgba(99,102,241,0.15)' : colors.amberSubtle) : 'rgba(0,0,0,0.25)',
-                border: `1px solid ${active ? (f === 'active' ? colors.greenBorder : f === 'inactive' ? 'rgba(99,102,241,0.4)' : colors.amberBorder) : 'rgba(255,255,255,0.06)'}`,
-                color: active ? (f === 'active' ? colors.green : f === 'inactive' ? '#a5b4fc' : colors.amber) : colors.textMuted,
+                background: isActive ? bgMap[f] : 'rgba(0,0,0,0.25)',
+                border: `1px solid ${isActive ? brMap[f] : 'rgba(255,255,255,0.06)'}`,
+                color: isActive ? clMap[f] : colors.textMuted,
                 whiteSpace: 'nowrap', transition: 'all 0.15s',
-              }}>{labels[f]}</button>
+                display: 'flex', alignItems: 'center', gap: '0.3rem',
+              }}>
+                {labels[f]}
+                {f === 'dead' && deadNPCs.length > 0 && (
+                  <span style={{ background: isActive ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.15)', borderRadius: '20px', padding: '0 0.35rem', fontSize: '0.62rem' }}>{deadNPCs.length}</span>
+                )}
+              </button>
             );
           })}
         </div>

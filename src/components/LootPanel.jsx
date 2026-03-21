@@ -446,11 +446,22 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
 
   const showingArchived = filterTier === 'Archived';
 
+  const TIER_ORDER = { Common: 0, Rare: 1, Legendary: 2, Quest: 3 };
+  const sortByTier = (a, b) => {
+    const ta = a.isQuestItem ? 3 : (TIER_ORDER[a.tier] ?? 2);
+    const tb = b.isQuestItem ? 3 : (TIER_ORDER[b.tier] ?? 2);
+    if (ta !== tb) return ta - tb;
+    return a.name.localeCompare(b.name);
+  };
+
   const filtered = showingArchived
-    ? archivedItems.filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()))
+    ? archivedItems
+        .filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()))
+        .sort(sortByTier)
     : lootPool
         .filter(i => filterTier === 'All' || i.tier === filterTier)
-        .filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()));
+        .filter(i => !search.trim() || i.name.toLowerCase().includes(search.trim().toLowerCase()))
+        .sort(sortByTier);
 
   return (
     <div style={{ width: '100%' }}>
@@ -542,8 +553,8 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
         </div>
       )}
 
-      {/* Item cards */}
-      {filtered.map(item => (
+      {/* Item cards — only for non-archived view */}
+      {!showingArchived && filtered.map(item => (
         <LootItemCard
           key={item.id}
           item={item}

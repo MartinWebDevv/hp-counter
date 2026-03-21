@@ -62,11 +62,14 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
 
   const player = initPlayer || (players || []).find(p => p.id === parseInt(selectedPlayerId));
   const allAssigned = assignments.every(a => a !== null);
+  const isSkipped  = (a) => a === 'skip';
   const getUnitType = (a) => (typeof a === 'object' && a !== null) ? a.unitType : a;
   const getDroppedId = (a) => (typeof a === 'object' && a !== null) ? a.droppedItemId : null;
 
   const handleConfirm = () => {
-    const result = lootTable.map((item, i) => ({ ...item, heldBy: getUnitType(assignments[i]), droppedItemId: getDroppedId(assignments[i]) }));
+    const result = lootTable
+      .map((item, i) => ({ ...item, heldBy: getUnitType(assignments[i]), droppedItemId: getDroppedId(assignments[i]) }))
+      .filter((_, i) => assignments[i] !== 'skip');
     onConfirm(result);
   };
 
@@ -125,30 +128,37 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
 
           return (
             <div key={item.id || i} style={{ marginBottom: '0.55rem' }}>
-              <div onClick={() => player && setExpandedItem(isOpen ? null : i)} style={{
+              <div onClick={() => player && !isSkipped(assigned) && setExpandedItem(isOpen ? null : i)} style={{
                 display: 'flex', alignItems: 'center', gap: '0.65rem',
                 padding: '0.65rem 0.85rem',
-                background: assigned ? colors.greenSubtle : c.bg,
-                border: `1px solid ${assigned ? colors.greenBorder : isOpen ? colors.goldBorder : c.border}`,
+                background: isSkipped(assigned) ? 'rgba(0,0,0,0.25)' : assigned ? colors.greenSubtle : c.bg,
+                border: `1px solid ${isSkipped(assigned) ? 'rgba(255,255,255,0.06)' : assigned ? colors.greenBorder : isOpen ? colors.goldBorder : c.border}`,
                 borderRadius: isOpen ? '8px 8px 0 0' : '8px',
-                cursor: player ? 'pointer' : 'default', transition: 'border-color 0.15s',
+                cursor: player && !isSkipped(assigned) ? 'pointer' : 'default',
+                transition: 'border-color 0.15s', opacity: isSkipped(assigned) ? 0.5 : 1,
               }}>
                 <span style={{ fontSize: '1rem', flexShrink: 0 }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: assigned ? colors.greenLight : c.text, fontWeight: '900', fontSize: '0.85rem' }}>{item.name || 'Unnamed Item'}</div>
+                  <div style={{ color: isSkipped(assigned) ? colors.textFaint : assigned ? colors.greenLight : c.text, fontWeight: '900', fontSize: '0.85rem', textDecoration: isSkipped(assigned) ? 'line-through' : 'none' }}>{item.name || 'Unnamed Item'}</div>
                   {item.description && <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>{item.description}</div>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem', flexShrink: 0 }}>
                   <span style={{ padding: '0.08rem 0.35rem', background: c.bg, border: `1px solid ${c.border}`, borderRadius: '4px', color: c.text, fontSize: '0.58rem', fontWeight: '800' }}>{tier}</span>
                 </div>
-                <div style={{ color: assigned ? colors.green : colors.textMuted, fontSize: '0.72rem', flexShrink: 0 }}>
-                  {assigned ? `✓ ${getUnitType(assigned)}` : (player ? (isOpen ? '▲' : '▼ Assign') : '—')}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                  {isSkipped(assigned)
+                    ? <button onClick={e => { e.stopPropagation(); setAssignments(prev => { const n=[...prev]; n[i]=null; return n; }); }} style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.4)', borderRadius: '5px', color: '#a5b4fc', fontSize: '0.62rem', fontWeight: '800', cursor: 'pointer', padding: '0.15rem 0.45rem', fontFamily: fonts.body }}>↩ Undo</button>
+                    : <span style={{ color: assigned ? colors.green : colors.textMuted, fontSize: '0.72rem' }}>{assigned ? `✓ ${getUnitType(assigned)}` : (player ? (isOpen ? '▲' : '▼ Assign') : '—')}</span>
+                  }
                 </div>
               </div>
 
               {isOpen && player && (
                 <div style={{ background: 'rgba(0,0,0,0.4)', border: `1px solid ${colors.goldBorder}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '0.65rem' }}>
-                  <div style={{ color: colors.textMuted, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Assign to unit:</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                    <div style={{ color: colors.textMuted, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Assign to unit:</div>
+                    <button onClick={() => { setAssignments(prev => { const n=[...prev]; n[i]='skip'; return n; }); setExpandedItem(null); }} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '5px', color: '#fca5a5', fontSize: '0.62rem', fontWeight: '800', cursor: 'pointer', padding: '0.15rem 0.55rem', fontFamily: fonts.body }}>⊘ Skip Item</button>
+                  </div>
                   {units.map(u => {
                     const full = isUnitFullWithPending(u.unitType, i, item.isQuestItem);
                     const disabled = u.isDead;
@@ -199,7 +209,7 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
             borderRadius: '8px', cursor: (allAssigned && player) ? 'pointer' : 'not-allowed',
             fontFamily: fonts.body, fontWeight: '800', fontSize: '0.875rem',
           }}>✓ Confirm Loot</button>
-          <button onClick={onClose} style={{ ...btn.danger(), flex: 1, padding: '0.7rem', fontSize: '0.875rem' }}>Skip</button>
+          <button onClick={onClose} style={{ ...btn.danger(), flex: 1, padding: '0.7rem', fontSize: '0.875rem' }}>✕ Close</button>
         </div>
       </div>
     </div>

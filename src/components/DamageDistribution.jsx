@@ -1,5 +1,4 @@
 import React from "react";
-import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
 import { getUnitName, getUnitStats } from "../utils/statsUtils";
 
 const DamageDistribution = ({
@@ -13,6 +12,7 @@ const DamageDistribution = ({
 }) => {
   if (!calculatorData) return null;
 
+  const gold = "#c9a961";
 
   const totalDamage = calculatorData.totalDamage !== undefined
     ? calculatorData.totalDamage
@@ -83,10 +83,7 @@ const DamageDistribution = ({
   };
 
   const handleApply = () => {
-    if (remaining !== 0) {
-      alert(`You must distribute all ${totalDamage}hp before applying!`);
-      return;
-    }
+    if (remaining !== 0) return;
     onApply();
   };
 
@@ -103,8 +100,8 @@ const DamageDistribution = ({
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: surfaces.elevated,
-          border: `2px solid `,
+          background: "linear-gradient(145deg, #1a0f0a, #0f0805)",
+          border: "3px solid " + gold,
           borderRadius: "12px",
           padding: "1.5rem",
           maxWidth: "95%", width: "1000px",
@@ -114,8 +111,8 @@ const DamageDistribution = ({
       >
         {/* Title */}
         <h3 style={{
-          color: colors.gold, fontSize: "1.5rem", marginBottom: "1rem",
-          textAlign: "center", fontFamily: fonts.display,
+          color: gold, fontSize: "1.5rem", marginBottom: "1rem",
+          textAlign: "center", fontFamily: '"Cinzel", Georgia, serif',
           textShadow: "2px 2px 4px rgba(0,0,0,1)",
         }}>
           💥 Distribute Damage
@@ -124,10 +121,10 @@ const DamageDistribution = ({
         {/* Total */}
         <div style={{
           background: "#0a0503", padding: "1rem", borderRadius: "6px",
-          border: "2px solid " + colors.gold, marginBottom: "1rem", textAlign: "center",
+          border: "2px solid " + gold, marginBottom: "1rem", textAlign: "center",
         }}>
-          <div style={{ color: colors.gold, fontSize: "0.875rem", marginBottom: "0.25rem" }}>Total Damage Available</div>
-          <div style={{ color: "#fecaca", fontSize: "2rem", fontWeight: "bold", fontFamily: fonts.display }}>
+          <div style={{ color: gold, fontSize: "0.875rem", marginBottom: "0.25rem" }}>Total Damage Available</div>
+          <div style={{ color: "#fecaca", fontSize: "2rem", fontWeight: "bold", fontFamily: '"Cinzel", Georgia, serif' }}>
             {totalDamage}hp
           </div>
         </div>
@@ -155,7 +152,7 @@ const DamageDistribution = ({
               background: "linear-gradient(to bottom, #7c3aed, #6d28d9)",
               border: "2px solid #a78bfa", color: "#e9d5ff",
               padding: "0.5rem", borderRadius: "6px", cursor: "pointer",
-              fontFamily: fonts.display, fontWeight: "bold",
+              fontFamily: '"Cinzel", Georgia, serif', fontWeight: "bold",
               fontSize: "0.875rem", marginBottom: "1rem",
             }}
           >
@@ -166,7 +163,7 @@ const DamageDistribution = ({
         {/* Target rows */}
         <div style={{
           background: "#0a0503", padding: "0.75rem", borderRadius: "6px",
-          border: borders.warm, marginBottom: "1rem",
+          border: "1px solid #5a4a3a", marginBottom: "1rem",
           maxHeight: "300px", overflowY: "auto",
         }}>
           {targets.map((target) => {
@@ -252,11 +249,11 @@ const DamageDistribution = ({
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 gap: "0.5rem", padding: "0.75rem", marginBottom: "0.5rem",
                 background: currentDamage > 0 ? "#2a1810" : "transparent",
-                border: currentDamage > 0 ? "1px solid " + colors.gold : "1px solid #3a2a1a",
+                border: currentDamage > 0 ? "1px solid " + gold : "1px solid #3a2a1a",
                 borderRadius: "6px",
               }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ color: colors.gold, fontSize: "0.875rem", fontWeight: "bold" }}>
+                  <div style={{ color: gold, fontSize: "0.875rem", fontWeight: "bold" }}>
                     {targetPlayer.playerName || "Player"}
                   </div>
                   <div style={{ color: "#8b7355", fontSize: "0.75rem" }}>
@@ -287,19 +284,19 @@ const DamageDistribution = ({
         <div style={{ display: "flex", gap: "1rem" }}>
           <button onClick={handleApply} disabled={remaining !== 0} style={{
             flex: 1,
-            background: remaining === 0 ? "linear-gradient(to bottom, #15803d, #14532d)" : surfaces.elevated,
+            background: remaining === 0 ? "linear-gradient(to bottom, #15803d, #14532d)" : "#1a0f0a",
             color: remaining === 0 ? "#86efac" : "#4a3322",
             padding: "0.75rem", borderRadius: "6px", border: "2px solid",
             borderColor: remaining === 0 ? "#16a34a" : "#4a3322",
             cursor: remaining === 0 ? "pointer" : "not-allowed",
-            fontFamily: fonts.display, fontWeight: "bold", fontSize: "1rem",
+            fontFamily: '"Cinzel", Georgia, serif', fontWeight: "bold", fontSize: "1rem",
           }}>✓ Apply Damage</button>
           <button onClick={onClose} style={{
             flex: 1,
             background: "linear-gradient(to bottom, #7f1d1d, #5f1a1a)",
             color: "#fecaca", padding: "0.75rem", borderRadius: "6px",
             border: "2px solid #991b1b", cursor: "pointer",
-            fontFamily: fonts.display, fontWeight: "bold", fontSize: "1rem",
+            fontFamily: '"Cinzel", Georgia, serif', fontWeight: "bold", fontSize: "1rem",
           }}>✕ Cancel</button>
         </div>
       </div>
@@ -308,18 +305,18 @@ const DamageDistribution = ({
 };
 
 const distBtn = (disabled) => ({
-  background: disabled ? surfaces.elevated : "rgba(255,255,255,0.1)",
-  border: borders.warm,
-  color: disabled ? "#4a3322" : colors.gold,
+  background: disabled ? "#1a0f0a" : "rgba(255,255,255,0.1)",
+  border: "1px solid #5a4a3a",
+  color: disabled ? "#4a3322" : "#c9a961",
   padding: "0.25rem 0.5rem", borderRadius: "4px",
   cursor: disabled ? "not-allowed" : "pointer", fontWeight: "bold",
 });
 
 const distInput = {
-  width: "60px", background: surfaces.elevated, color: colors.gold,
-  padding: "0.5rem", borderRadius: "4px", border: borders.warm,
+  width: "60px", background: "#1a0f0a", color: "#c9a961",
+  padding: "0.5rem", borderRadius: "4px", border: "1px solid #5a4a3a",
   textAlign: "center", fontSize: "1rem",
-  fontFamily: fonts.display, fontWeight: "bold",
+  fontFamily: '"Cinzel", Georgia, serif', fontWeight: "bold",
 };
 
 export default DamageDistribution;

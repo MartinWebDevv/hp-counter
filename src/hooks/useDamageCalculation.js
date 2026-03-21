@@ -42,6 +42,11 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     setDamageDistribution({});
   };
 
+  // Close just the calculator without touching the damage distribution state
+  const closeCalculatorKeepDistribution = () => {
+    setShowCalculator(false);
+  };
+
   const updateCalculatorHits = (updates) => {
     setCalculatorData((prev) => ({
       ...prev,

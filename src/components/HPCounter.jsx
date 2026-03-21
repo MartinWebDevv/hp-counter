@@ -21,6 +21,7 @@ import ChestPanel          from './ChestPanel';
 import VictoryPanel        from './VictoryPanel';
 import HandOffModal        from './HandOffModal';
 import { NpcLootModal, StealLootModal, DestroyItemModal } from './LootModals';
+import { getSlotCount, getHeldCount } from './lootUtils';
 import { getModeConfig }   from '../data/gameModes';
 import { useRoundTimers }       from '../hooks/useRoundTimers';
 import { useRooms }             from '../hooks/useRooms';
@@ -273,15 +274,18 @@ const HPCounter = () => {
   const {
     showCalculator, showDamageDistribution, calculatorData, damageDistribution,
     openCalculator, closeCalculator, updateDamageDistribution,
-    setShowDamageDistribution, setCalculatorData, applyDamage,
+    setShowDamageDistribution, closeCalculatorKeepDistribution, setCalculatorData, applyDamage,
   } = useDamageCalculation(players, addLog, npcs);
 
   // ── Squad revive ──────────────────────────────────────────────────────────
   const [squadRevivePlayerId, setSquadRevivePlayerId] = React.useState(null);
-  const [deathLootModal, setDeathLootModal] = React.useState(null); // { unitLabel, items, playerId }
+  const [deathLootModal, setDeathLootModal] = React.useState(null); // { unitLabel, playerName, items, playerId } — NPC killed player unit
+  const [pvpDeathModal,  setPvpDeathModal]  = React.useState(null); // { unitLabel, playerName, items, playerId, attackerPlayer, attackerUnitType }
   const [spawnModal, setSpawnModal] = React.useState(null); // { attack } — confirm before creating NPC
   const setDeathLootModalRef = React.useRef(null);
   setDeathLootModalRef.current = setDeathLootModal;
+  const setPvpDeathModalRef = React.useRef(null);
+  setPvpDeathModalRef.current = setPvpDeathModal;
   const squadRevivePlayer = squadRevivePlayerId ? players.find(p => p.id === squadRevivePlayerId) : null;
   const handleSquadRevive = (playerId, isSuccessful) => {
     processSquadRevive(playerId, isSuccessful);
@@ -302,7 +306,7 @@ const HPCounter = () => {
   const campaignTurnOrder       = isCampaign ? campaign.buildTurnOrder() : [];
   const currentCampaignTurn     = campaignTurnOrder[campaign.campaignTurnIndex] || null;
   const currentCampaignPlayerId = currentCampaignTurn?.type === 'player' ? currentCampaignTurn.id : null;
-  const currentCampaignNPCId    = currentCampaignTurn?.type === 'npc'    ? currentCampaignTurn.id : null;
+  const currentCampaignNPCId    = null; // NPCs are visual-only in turn order — they never hold the active turn
 
   const currentModeConfig = getModeConfig(gameMode);
   const currentPlayer     = isCampaign
@@ -423,7 +427,7 @@ const HPCounter = () => {
           }} style={styles.endTurnBtn}>
             {!gameStarted ? '▶️ START GAME' : (() => {
               if (isCampaign) {
-                const allActed = campaignTurnOrder.every(e => e.type === 'player' ? playersWhoActedThisRound.includes(e.id) : campaign.npcsWhoActedThisRound.includes(e.id));
+                const allActed = campaignTurnOrder.filter(e => e.type === 'player').every(e => playersWhoActedThisRound.includes(e.id));
                 return allActed ? '🔄 END ROUND' : '➡️ END TURN';
               }
               const alive = players.filter(p => p.commanderStats.hp > 0);
@@ -435,9 +439,38 @@ const HPCounter = () => {
           <button onClick={() => setShowStats(true)} style={styles.statsBtn}>📊 STATS</button>
           <button onClick={undo} style={styles.undoBtn}>↩️ UNDO</button>
           <button onClick={() => {
-            if (!window.confirm('Reset the entire game? This will clear all players, NPCs, loot, chests, and progress.')) return;
-            ['hpCounterPlayers','hpCounterRound','hpCounterLog','hpCounterGameMode','hpCounterCustomSettings','hpCounterCurrentPlayerIndex','hpCounterGameStarted','hpCounterLootPool','hpCounterNPCs','hpCounterChests','hpCounterVPStats'].forEach(k => localStorage.removeItem(k));
-            window.location.reload();
+            if (!window.confirm('Hard reset the entire app?\n\nThis will wipe everything — players, NPCs, loot, rooms, timers, VP history, sessions, and archives. This cannot be undone.')) return;
+
+            // 1. Nuke every localStorage key first
+            const ALL_KEYS = [
+              'hpCounterPlayers','hpCounterRound','hpCounterLog',
+              'hpCounterGameMode','hpCounterCustomSettings','hpCounterCurrentPlayerIndex',
+              'hpCounterGameStarted','hpCounterLootPool','hpCounterVPStats',
+              'hpCounterSessionCount','hpCounterTokensEnabled','hpCounterArchivedLoot',
+              'hpCounterNPCs','hpCounterChests','hpCounterRooms','hpCounterRoundTimers',
+              'hpCounterCommanderTokens','hpCounterPastSessionNPCs',
+              'hpCounterPastSessionChests','hpCounterPastSessionRooms',
+            ];
+            ALL_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch {} });
+
+            // 2. Reset all React state so useEffect hooks fire with empty values
+            //    and cannot write old data back before reload
+            setPlayers([]);
+            setNpcs([]);
+            setLootPool([]);
+            setChests([]);
+            setPastSessionNPCs([]);
+            setPastSessionChests([]);
+            setPastSessionRooms([]);
+            roomsState.setRooms([]);
+            clearLog();
+            vp.setVpStats({});
+            vp.setFirstBloodAwarded(false);
+            try { localStorage.setItem('hpCounterSessionCount', '0'); } catch {}
+
+            // 3. Small delay so state-driven useEffects flush empty values to
+            //    localStorage before the page reloads, preventing re-hydration of old data
+            setTimeout(() => window.location.reload(), 100);
           }} style={styles.resetBtn}>🔄 RESET</button>
         </div>
       </div>
@@ -497,8 +530,8 @@ const HPCounter = () => {
           <div style={{ ...styles.sidebar, top: 0 }}>
             <h3 style={styles.sidebarTitle}>⚔️ TURN ORDER</h3>
             {campaignTurnOrder.map((entry, index) => {
-              const isCurr   = index === campaign.campaignTurnIndex;
               const isPlayer = entry.type === 'player';
+              const isCurr   = isPlayer && index === campaign.campaignTurnIndex; // NPCs never hold the active turn
               const entity   = isPlayer ? players.find(p => p.id === entry.id) : getNPCById(entry.id);
               if (!entity) return null;
               const hasActed = isPlayer ? playersWhoActedThisRound.includes(entity.id) : false;
@@ -707,7 +740,7 @@ const HPCounter = () => {
               campaign.handlePlayerAttackNPC(data);
               setCalculatorData(data);
               setShowDamageDistribution(true);
-              // pending bonus state removed — bonuses handled directly in calculator
+              closeCalculatorKeepDistribution();
             }}
             gameMode={isCampaign ? 'd20' : gameMode}
             firstStrike={attacker?.firstStrike === true}
@@ -724,44 +757,95 @@ const HPCounter = () => {
           damageDistribution={damageDistribution}
           onUpdateDistribution={updateDamageDistribution}
           onApply={() => {
-            applyDamage((updatedPlayers) => {
-              const calc       = calculatorData;
-              const attackerId = calc?.attackerId;
-              if (attackerId) {
-                const anyDmg = (calc?.targetSquadMembers||[]).some(t => {
-                  const key = t.isNPC ? `npc-${t.npcId}` : `${t.playerId}-${t.unitType}`;
-                  return (damageDistribution[key]||0) > 0;
-                });
-                if (anyDmg && !vp.firstBloodAwarded) {
-                  vp.trackVP(attackerId, 'firstBlood', 1);
-                  vp.setFirstBloodAwarded(true);
-                  addLog(`🩸 First Blood! ${players.find(p=>p.id===attackerId)?.playerName||'Unknown'} draws first!`);
-                }
-                calc?.targetSquadMembers?.forEach(target => {
-                  if (target.isNPC) return;
-                  const dmg = damageDistribution[`${target.playerId}-${target.unitType}`]||0;
-                  if (dmg > 0) { vp.trackVP(attackerId,'pvpDamage',dmg); vp.trackVP(target.playerId,'damageTaken',dmg); }
-                });
-              }
-              updatedPlayers.forEach(updP => {
-                const origP = players.find(p => p.id === updP.id);
-                if (!origP || updP.id === calculatorData?.attackerId) return;
-                if (!origP.commanderStats?.isDead && updP.commanderStats?.hp === 0) {
-                  loot.checkForSteal(calculatorData?.attackerId, calculatorData?.attackingUnitType||'commander', updP.id, 'commander');
+            const calc       = calculatorData;
+            const attackerId = calc?.attackerId;
+
+            // ── Pre-compute which units will die and how before any state changes ──
+            const pvpTargets = new Set(
+              (calc?.targetSquadMembers||[])
+                .filter(t => !t.isNPC && (damageDistribution[`${t.playerId}-${t.unitType}`]||0) > 0)
+                .map(t => `${t.playerId}-${t.unitType}`)
+            );
+
+            // Snapshot deaths: { steal: [{attackerId, attackerUnitType, victimPlayerId, unitType}], drop: [{unitLabel, items, playerId}] }
+            const pendingSteal = [];
+            const pendingDrop  = [];
+
+            players.forEach(origP => {
+              if (origP.id === attackerId) return;
+              const dmgKey = (unitType) => damageDistribution[`${origP.id}-${unitType}`] || 0;
+
+              // Commander
+              if (!origP.commanderStats?.isDead) {
+                const dmg = dmgKey('commander');
+                if (origP.commanderStats.hp > 0 && origP.commanderStats.hp - dmg <= 0) {
+                  const wasTargeted = pvpTargets.has(`${origP.id}-commander`);
                   const cmdItems = (origP.inventory||[]).filter(it => it.heldBy === 'commander');
-                  if (cmdItems.length > 0) setDeathLootModal({ unitLabel: origP.commanderStats?.customName||origP.commander||'Commander', items: cmdItems, playerId: origP.id });
-                }
-                (updP.subUnits||[]).forEach((u,i) => {
-                  const origU = (origP.subUnits||[])[i];
-                  const unitType = i===0?'special':`soldier${i}`;
-                  if (origU && origU.hp>0 && u.hp===0) {
-                    loot.checkForSteal(calculatorData?.attackerId, calculatorData?.attackingUnitType||'commander', updP.id, unitType);
-                    const unitItems = (origP.inventory||[]).filter(it => it.heldBy === unitType);
-                    if (unitItems.length > 0) setDeathLootModal({ unitLabel: origU.name?.trim()||(i===0?'Special':`Soldier ${i}`), items: unitItems, playerId: origP.id });
+                  if (wasTargeted && cmdItems.length > 0) {
+                    pendingSteal.push({ attackerId, attackerUnitType: calc?.attackingUnitType||'commander', unitLabel: origP.commanderStats?.customName||origP.commander||'Commander', victimPlayerId: origP.id, unitType: 'commander', victimItems: cmdItems, victimPlayer: origP });
+                  } else if (!wasTargeted && cmdItems.length > 0) {
+                    pendingDrop.push({ unitLabel: origP.commanderStats?.customName||origP.commander||'Commander', playerName: origP.playerName, items: cmdItems, playerId: origP.id });
                   }
-                });
+                }
+              }
+
+              // Squad units
+              (origP.subUnits||[]).forEach((u, i) => {
+                const unitType = i===0?'special':`soldier${i}`;
+                const dmg = dmgKey(unitType);
+                if (u.hp > 0 && u.hp - dmg <= 0) {
+                  const wasTargeted = pvpTargets.has(`${origP.id}-${unitType}`);
+                  const unitItems = (origP.inventory||[]).filter(it => it.heldBy === unitType);
+                  if (wasTargeted && unitItems.length > 0) {
+                    pendingSteal.push({ attackerId, attackerUnitType: calc?.attackingUnitType||'commander', unitLabel: u.name?.trim()||(i===0?'Special':`Soldier ${i}`), victimPlayerId: origP.id, unitType, victimItems: unitItems, victimPlayer: origP });
+                  } else if (!wasTargeted && unitItems.length > 0) {
+                    pendingDrop.push({ unitLabel: u.name?.trim()||(i===0?'Special':`Soldier ${i}`), playerName: origP.playerName, items: unitItems, playerId: origP.id });
+                  }
+                }
               });
+            });
+
+            // VP tracking
+            if (attackerId) {
+              const anyDmg = (calc?.targetSquadMembers||[]).some(t => {
+                const key = t.isNPC ? `npc-${t.npcId}` : `${t.playerId}-${t.unitType}`;
+                return (damageDistribution[key]||0) > 0;
+              });
+              if (anyDmg && !vp.firstBloodAwarded) {
+                vp.trackVP(attackerId, 'firstBlood', 1);
+                vp.setFirstBloodAwarded(true);
+                addLog(`🩸 First Blood! ${players.find(p=>p.id===attackerId)?.playerName||'Unknown'} draws first!`);
+              }
+              calc?.targetSquadMembers?.forEach(target => {
+                if (target.isNPC) return;
+                const dmg = damageDistribution[`${target.playerId}-${target.unitType}`]||0;
+                if (dmg > 0) { vp.trackVP(attackerId,'pvpDamage',dmg); vp.trackVP(target.playerId,'damageTaken',dmg); }
+              });
+            }
+
+            // Close modal and apply HP changes
+            setShowDamageDistribution(false);
+            applyDamage((updatedPlayers) => {
               updatedPlayers.forEach(p => updatePlayer(p.id, p));
+
+              // Trigger loot modals after HP state has been committed
+              setTimeout(() => {
+                if (pendingSteal.length > 0) {
+                  const s = pendingSteal[0];
+                  setPvpDeathModalRef.current({
+                    unitLabel: s.unitLabel,
+                    playerName: s.victimPlayer.playerName,
+                    items: s.victimItems,
+                    playerId: s.victimPlayer.id,
+                    victimUnitType: s.unitType,
+                    attackerPlayer: players.find(p => p.id === s.attackerId) || s.victimPlayer,
+                    attackerUnitType: s.attackerUnitType,
+                  });
+                } else if (pendingDrop.length > 0) {
+                  setDeathLootModalRef.current(pendingDrop[0]);
+                }
+              }, 50);
+
               if (calc?.targetSquadMembers) {
                 const atk = players.find(p=>p.id===calc?.attackerId);
                 calc.targetSquadMembers.forEach(t => {
@@ -954,14 +1038,18 @@ const HPCounter = () => {
           onClose={() => vp.setManualStatsModal(null)}
         />
       )}
-      {/* Death loot drop modal */}
+      {/* ── NPC killed player unit — acknowledge and remove items ── */}
       {deathLootModal && (
-        <div onClick={() => setDeathLootModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: '3px solid rgba(239,68,68,0.6)', borderRadius: '12px', padding: '1.5rem', width: '360px', maxWidth: '95%', boxShadow: '0 20px 60px rgba(0,0,0,0.95)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: surfaces.elevated, border: `2px solid ${colors.redBorder}`, borderRadius: '12px', padding: '1.5rem', width: '390px', maxWidth: '95%', boxShadow: '0 20px 60px rgba(0,0,0,0.95)' }}>
             <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>💀</div>
-              <div style={{ color: '#fca5a5', fontWeight: '900', fontSize: '1rem', fontFamily: '"Cinzel",Georgia,serif' }}>{deathLootModal.unitLabel} has fallen!</div>
-              <div style={{ color: colors.textMuted, fontSize: '0.75rem', marginTop: '0.25rem' }}>Items dropped:</div>
+              <div style={{ color: '#fca5a5', fontWeight: '900', fontSize: '1rem', fontFamily: fonts.display }}>
+                {deathLootModal.playerName ? `${deathLootModal.playerName}'s ` : ''}{deathLootModal.unitLabel} has fallen!
+              </div>
+              <div style={{ color: colors.textMuted, fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                {deathLootModal.items.length === 1 ? 'This item was' : 'These items were'} dropped:
+              </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
               {deathLootModal.items.map(item => {
@@ -970,7 +1058,7 @@ const HPCounter = () => {
                   <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.75rem', background: `${tc}12`, border: `1px solid ${tc}35`, borderRadius: '7px' }}>
                     <span>{item.isQuestItem ? '🗝️' : '📦'}</span>
                     <span style={{ color: tc, fontWeight: '800', fontSize: '0.85rem', flex: 1 }}>{item.name}</span>
-                    <span style={{ color: colors.textFaint, fontSize: '0.62rem' }}>{item.tier}</span>
+                    <span style={{ color: colors.textFaint, fontSize: '0.62rem' }}>{item.isQuestItem ? 'Quest' : item.tier}</span>
                   </div>
                 );
               })}
@@ -980,11 +1068,42 @@ const HPCounter = () => {
               const p = players.find(pl => pl.id === deathLootModal.playerId);
               if (p) updatePlayer(p.id, { inventory: (p.inventory||[]).filter(it => !droppedIds.has(it.id)) });
               setDeathLootModal(null);
-            }} style={{ width: '100%', padding: '0.75rem', background: 'linear-gradient(135deg,#b91c1c,#991b1b)', border: '2px solid #dc2626', color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem' }}>
-              🗺️ Remove from Inventory
+            }} style={{ width: '100%', padding: '0.75rem', background: colors.redSubtle, border: `1px solid ${colors.red}`, color: '#fecaca', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem' }}>
+              ✓ Acknowledged — Remove from Inventory
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Player killed player unit — take or drop ── */}
+      {pvpDeathModal && (
+        <PvPDeathModal
+          {...pvpDeathModal}
+          attackerPlayer={players.find(p => p.id === pvpDeathModal.attackerPlayer?.id) || pvpDeathModal.attackerPlayer}
+          onConfirm={(takenItems, droppedItems) => {
+            const { items, playerId, attackerPlayer, unitLabel, playerName } = pvpDeathModal;
+            const allIds = new Set(items.map(it => it.id));
+            const victim = players.find(p => p.id === playerId);
+            if (victim) updatePlayer(victim.id, { inventory: (victim.inventory||[]).filter(it => !allIds.has(it.id)) });
+            if (takenItems.length > 0) {
+              const freshAtk = players.find(p => p.id === attackerPlayer?.id);
+              if (freshAtk) {
+                // Each takenItem has { unitType, droppedItemId } in its selection
+                // Remove any swapped-out items first, then add taken items with correct heldBy
+                let newInv = [...(freshAtk.inventory||[])];
+                takenItems.forEach(it => {
+                  if (it.droppedItemId) newInv = newInv.filter(inv => inv.id !== it.droppedItemId);
+                  newInv.push({ ...it, heldBy: it.unitType || attackerPlayer?.attackerUnitType });
+                  addLog(`⚔️ ${freshAtk.playerName}'s ${loot.unitNameByType(freshAtk, it.unitType)} took "${it.name}" from ${playerName}'s ${unitLabel}`);
+                });
+                updatePlayer(freshAtk.id, { inventory: newInv });
+              }
+            }
+            droppedItems.forEach(it => addLog(`🗺️ "${it.name}" dropped on the map by ${playerName}'s ${unitLabel}`));
+            setPvpDeathModal(null);
+          }}
+          onClose={() => setPvpDeathModal(null)}
+        />
       )}
 
       <TimerExpiredToast notifications={roundTimers.expiredNotifications} />
@@ -1798,10 +1917,13 @@ const AwardShowcase = ({ showcase, onPrev, onNext, onFinish }) => {
       <div style={{background:'#1a0f0a',border:'3px solid rgba(251,191,36,0.7)',borderRadius:'16px',padding:'2rem 1.5rem',width:'100%',maxWidth:'440px',textAlign:'center'}}>
         <div style={{color:colors.textMuted,fontSize:'0.62rem',fontWeight:'800',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:'1.75rem'}}>{sessionName} · Award {index+1} of {awards.length}</div>
         <div style={{fontSize:'5rem',marginBottom:'0.75rem',lineHeight:1}}>{award.icon}</div>
-        <div style={{color:colors.textSecondary,fontWeight:'800',fontSize:'0.72rem',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:'0.5rem'}}>{award.label}</div>
+        <div style={{color:colors.textSecondary,fontWeight:'800',fontSize:'0.72rem',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:'0.2rem'}}>{award.label}</div>
+        {award.desc && <div style={{color:colors.textFaint,fontSize:'0.75rem',fontWeight:'600',marginBottom:'0.85rem',fontStyle:'italic'}}>{award.desc}</div>}
         <div style={{color:award.playerColor||colors.gold,fontWeight:'900',fontSize:'2rem',marginBottom:'0.4rem',textShadow:`0 0 20px ${award.playerColor||colors.gold}66`}}>{award.playerName}</div>
-        <div style={{color:colors.textMuted,fontSize:'0.8rem',marginBottom:'1.5rem'}}>{valLabel()}</div>
-        <div style={{display:'inline-block',padding:'0.5rem 2rem',background:'rgba(251,191,36,0.12)',border:'2px solid rgba(251,191,36,0.5)',borderRadius:'10px',color:'#fbbf24',fontWeight:'900',fontSize:'1.75rem',letterSpacing:'0.05em',marginBottom:'2rem'}}>+{award.pts} VP</div>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0.5rem',marginBottom:'2rem'}}>
+          {valLabel() && <div style={{color:colors.textMuted,fontSize:'0.82rem',padding:'0.35rem 1rem',background:'rgba(0,0,0,0.3)',borderRadius:'6px'}}>{valLabel()}</div>}
+          <div style={{padding:'0.5rem 2rem',background:'rgba(251,191,36,0.12)',border:'2px solid rgba(251,191,36,0.5)',borderRadius:'10px',color:'#fbbf24',fontWeight:'900',fontSize:'1.75rem',letterSpacing:'0.05em'}}>+{award.pts} VP</div>
+        </div>
         <div style={{display:'flex',gap:'0.75rem'}}>
           <button disabled={isFirst} onClick={onPrev} style={{flex:1,padding:'0.75rem',background:'rgba(0,0,0,0.3)',border:`1px solid ${isFirst?'transparent':'rgba(90,74,58,0.4)'}`,borderRadius:'8px',color:isFirst?'#1f2937':colors.textSecondary,fontWeight:'800',cursor:isFirst?'default':'pointer',fontFamily:fonts.body}}>← Prev</button>
           {isLast
@@ -1813,6 +1935,180 @@ const AwardShowcase = ({ showcase, onPrev, onNext, onFinish }) => {
     </div>
   );
 };
+
+// ── PvPDeathModal ─────────────────────────────────────────────────────────────
+// Player killed another player's unit. Each item: Take (goes to killer's unit)
+// or Drop (goes on the map — DM handles). Confirm removes from victim inventory.
+
+const PvPDeathModal = ({ unitLabel, playerName, items, playerId, victimUnitType, attackerPlayer, attackerUnitType, onConfirm, onClose }) => {
+  // selections[itemId] = null | 'drop' | { unitType, droppedItemId }
+  const [selections,   setSelections]   = React.useState(() => Object.fromEntries(items.map(it => [it.id, null])));
+  const [expandedItem, setExpandedItem] = React.useState(null); // item.id whose unit picker is open
+
+  const allDecided   = items.every(it => selections[it.id] !== null);
+  const droppedItems = items.filter(it => selections[it.id] === 'drop');
+  const takenItems   = items.filter(it => selections[it.id] !== null && selections[it.id] !== 'drop');
+
+  const tc = (item) => item.isQuestItem ? '#fde68a' : ({ Common: colors.textSecondary, Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || colors.textSecondary);
+
+  const unitName = (player, unitType) => {
+    if (!player) return unitType;
+    if (unitType === 'commander') return player.commanderStats?.customName || player.commander || 'Commander';
+    if (unitType === 'special') return player.subUnits?.[0]?.name?.trim() || 'Special';
+    const idx = parseInt((unitType || '').replace('soldier', ''));
+    return !isNaN(idx) ? (player.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`) : unitType;
+  };
+
+  const getAllUnits = (player) => {
+    if (!player) return [];
+    const units = [{ unitType: 'commander', label: unitName(player, 'commander'), hp: player.commanderStats?.hp ?? 0, maxHp: player.commanderStats?.maxHp ?? 1, isDead: (player.commanderStats?.hp ?? 0) === 0 }];
+    (player.subUnits || []).forEach((u, i) => {
+      units.push({ unitType: i === 0 ? 'special' : `soldier${i}`, label: u.name?.trim() || (i === 0 ? 'Special' : `Soldier ${i}`), hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0 });
+    });
+    return units;
+  };
+
+  // Count pending "take" assignments for slot tracking
+  const pendingTakeByUnit = (excludeItemId) => {
+    const counts = {};
+    items.forEach(it => {
+      if (it.id === excludeItemId) return;
+      const sel = selections[it.id];
+      if (sel && sel !== 'drop') counts[sel.unitType] = (counts[sel.unitType] || 0) + 1;
+    });
+    return counts;
+  };
+
+  const assignTake = (item, unitType) => {
+    const pending = pendingTakeByUnit(item.id);
+    const slots = attackerPlayer ? getSlotCount(attackerPlayer, unitType) : 1;
+    const held  = attackerPlayer ? getHeldCount(attackerPlayer, unitType) : 0;
+    const isFull = !item.isQuestItem && (held + (pending[unitType] || 0) >= slots);
+    const swapItem = isFull ? (attackerPlayer?.inventory || []).find(it => it.heldBy === unitType && !it.isQuestItem) : null;
+    setSelections(p => ({ ...p, [item.id]: { unitType, droppedItemId: swapItem?.id || null } }));
+    setExpandedItem(null);
+  };
+
+  const hpBar = (hp, maxHp, isDead) => (
+    <div style={{ width: '48px', height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ width: `${isDead ? 0 : (hp/maxHp)*100}%`, height: '100%', background: isDead ? '#374151' : hp/maxHp > 0.5 ? '#22c55e' : hp/maxHp > 0.25 ? '#f59e0b' : '#ef4444', borderRadius: '2px' }} />
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000, padding: '1rem' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: surfaces.elevated, border: `2px solid ${colors.redBorder}`, borderRadius: '12px', padding: '1.5rem', width: '440px', maxWidth: '95%', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.95)' }}>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>⚔️</div>
+          <div style={{ color: '#fca5a5', fontWeight: '900', fontSize: '1rem', fontFamily: fonts.display, marginBottom: '0.3rem' }}>
+            {playerName}'s {unitLabel} has fallen!
+          </div>
+          <div style={{ color: colors.textMuted, fontSize: '0.78rem', lineHeight: 1.5 }}>
+            Killed by <span style={{ color: colors.amber, fontWeight: '800' }}>{attackerPlayer?.playerName}'s {unitName(attackerPlayer, attackerUnitType)}</span>
+          </div>
+          <div style={{ color: colors.textFaint, fontSize: '0.7rem', marginTop: '0.25rem' }}>Choose what happens to each dropped item:</div>
+        </div>
+
+        {/* Per-item decision */}
+        {items.map(item => {
+          const color = tc(item);
+          const sel   = selections[item.id];
+          const isTake = sel !== null && sel !== 'drop';
+          const isDrop = sel === 'drop';
+          const isOpen = expandedItem === item.id;
+          const assignedUnitName = isTake ? unitName(attackerPlayer, sel.unitType) : null;
+          const units = getAllUnits(attackerPlayer);
+
+          return (
+            <div key={item.id} style={{ marginBottom: '0.75rem' }}>
+              {/* Item info row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.85rem', background: `${color}10`, border: `1px solid ${isTake ? colors.greenBorder : isDrop ? 'rgba(255,255,255,0.06)' : `${color}30`}`, borderRadius: '8px 8px 0 0' }}>
+                <span style={{ fontSize: '1rem' }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: isTake ? colors.greenLight : isDrop ? colors.textFaint : color, fontWeight: '800', fontSize: '0.85rem' }}>{item.name}</div>
+                  {item.description && <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>{item.description}</div>}
+                </div>
+                <span style={{ color, fontSize: '0.58rem', fontWeight: '800', background: `${color}18`, border: `1px solid ${color}30`, borderRadius: '4px', padding: '0.1rem 0.4rem' }}>
+                  {item.isQuestItem ? 'Quest' : item.tier}
+                </span>
+              </div>
+
+              {/* Take / Drop toggle row */}
+              <div style={{ display: 'flex', border: `1px solid rgba(255,255,255,0.06)`, borderTop: 'none', borderRadius: isDrop || (isTake && !isOpen) ? '0 0 8px 8px' : '0' }}>
+                <button
+                  onClick={() => {
+                    if (isDrop || !isTake) { setExpandedItem(item.id); setSelections(p => ({ ...p, [item.id]: null })); }
+                    else setExpandedItem(isOpen ? null : item.id);
+                  }}
+                  style={{ flex: 1, padding: '0.45rem 0.5rem', background: isTake ? colors.greenSubtle : 'rgba(0,0,0,0.35)', border: 'none', borderRight: `1px solid rgba(255,255,255,0.06)`, color: isTake ? colors.greenLight : colors.textMuted, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem', transition: 'all 0.15s' }}>
+                  {isTake ? `✓ ${assignedUnitName} ${isOpen ? '▲' : '▼'}` : '⚔️ Take'}
+                </button>
+                <button
+                  onClick={() => { setSelections(p => ({ ...p, [item.id]: 'drop' })); setExpandedItem(null); }}
+                  style={{ flex: 1, padding: '0.45rem 0.5rem', background: isDrop ? colors.redSubtle : 'rgba(0,0,0,0.35)', border: 'none', color: isDrop ? '#fca5a5' : colors.textMuted, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem', transition: 'all 0.15s' }}>
+                  {isDrop ? '✓ DROP' : '🗺️ Drop on Map'}
+                </button>
+              </div>
+
+              {/* Unit picker — expands when Take is clicked */}
+              {isOpen && attackerPlayer && (
+                <div style={{ background: 'rgba(0,0,0,0.4)', border: `1px solid ${colors.goldBorder}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '0.65rem' }}>
+                  <div style={{ color: colors.textMuted, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Assign to {attackerPlayer.playerName}'s unit:</div>
+                  {units.map(u => {
+                    const pending = pendingTakeByUnit(item.id);
+                    const slots = getSlotCount(attackerPlayer, u.unitType);
+                    const held  = getHeldCount(attackerPlayer, u.unitType);
+                    const full  = !item.isQuestItem && (held + (pending[u.unitType] || 0) >= slots);
+                    const disabled = u.isDead;
+                    const isSwap = full && !disabled;
+                    const swapItem = isSwap ? (attackerPlayer.inventory || []).find(it => it.heldBy === u.unitType && !it.isQuestItem) : null;
+                    return (
+                      <div key={u.unitType}>
+                        <div onClick={() => !disabled && assignTake(item, u.unitType)} style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', padding: '0.45rem 0.7rem', marginBottom: swapItem ? 0 : '0.25rem', background: disabled ? 'rgba(0,0,0,0.15)' : isSwap ? 'rgba(249,115,22,0.06)' : 'rgba(0,0,0,0.35)', border: `1px solid ${disabled ? colors.textDisabled : isSwap ? 'rgba(249,115,22,0.35)' : colors.goldBorder}`, borderRadius: swapItem ? '6px 6px 0 0' : '6px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1 }}>
+                          <span style={{ color: disabled ? colors.textFaint : isSwap ? '#f97316' : colors.textSecondary, fontWeight: '800', fontSize: '0.8rem', flex: 1 }}>{u.label}</span>
+                          {hpBar(u.hp, u.maxHp, u.isDead)}
+                          {isSwap && <span style={{ color: '#f97316', fontSize: '0.58rem', fontWeight: '800' }}>↕ SWAP</span>}
+                          {u.isDead && <span style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800' }}>DEAD</span>}
+                        </div>
+                        {swapItem && (
+                          <div style={{ background: 'rgba(249,115,22,0.05)', border: '1px solid rgba(249,115,22,0.25)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.25rem 0.7rem', marginBottom: '0.25rem' }}>
+                            <span style={{ color: colors.textMuted, fontSize: '0.6rem' }}>Drops: </span>
+                            <span style={{ color: colors.amber, fontSize: '0.6rem', fontWeight: '800' }}>{swapItem.name}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Summary */}
+        {takenItems.length > 0 && (
+          <div style={{ padding: '0.45rem 0.75rem', background: colors.greenSubtle, border: `1px solid ${colors.greenBorder}`, borderRadius: '6px', marginBottom: '0.5rem', color: colors.greenLight, fontSize: '0.72rem', fontWeight: '700' }}>
+            ⚔️ {takenItems.length} item{takenItems.length !== 1 ? 's' : ''} assigned to {attackerPlayer?.playerName}'s units
+          </div>
+        )}
+        {droppedItems.length > 0 && (
+          <div style={{ padding: '0.45rem 0.75rem', background: 'rgba(0,0,0,0.25)', border: `1px solid rgba(255,255,255,0.06)`, borderRadius: '6px', marginBottom: '0.5rem', color: colors.textFaint, fontSize: '0.72rem' }}>
+            🗺️ {droppedItems.length} item{droppedItems.length !== 1 ? 's' : ''} left on the map for the DM.
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.75rem' }}>
+          <button disabled={!allDecided} onClick={() => onConfirm(takenItems.map(it => ({ ...it, unitType: selections[it.id]?.unitType, droppedItemId: selections[it.id]?.droppedItemId || null })), droppedItems)} style={{ flex: 2, padding: '0.75rem', background: allDecided ? 'linear-gradient(135deg,#059669,#047857)' : 'rgba(0,0,0,0.3)', border: `1px solid ${allDecided ? '#10b981' : 'rgba(255,255,255,0.06)'}`, color: allDecided ? '#d1fae5' : colors.textDisabled, borderRadius: '8px', cursor: allDecided ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem', transition: 'all 0.15s' }}>✓ Confirm</button>
+          <button onClick={onClose} style={{ flex: 1, padding: '0.75rem', background: colors.redSubtle, border: `1px solid ${colors.redBorder}`, color: '#fca5a5', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem' }}>✕ Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 

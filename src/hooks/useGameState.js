@@ -153,7 +153,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
 
   const undo = () => {
     if (actionHistory.length === 0) {
-      alert('Nothing to undo!');
+      return;
       return;
     }
     
@@ -370,7 +370,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
 
   const startGame = () => {
     if (players.length === 0) {
-      alert('Add at least one player to start!');
+      return;
       return;
     }
     setGameStarted(true);
@@ -413,7 +413,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     const alivePlayers = players.filter(p => !isPlayerFullyDead(p));
     
     if (alivePlayers.length === 0) {
-      alert('All players are eliminated! Game Over!');
+      // Game over — handled visually
       return;
     }
     

@@ -22,6 +22,7 @@ const PlayerCard = ({
   onCommanderDied,
   getTimersForPlayerUnit,
   getTokenForPlayer,
+  isFocusMode = false,
 }) => {
   const [showSquad, setShowSquad] = React.useState(false);
   const [showSetup, setShowSetup] = React.useState(false);
@@ -116,7 +117,7 @@ const PlayerCard = ({
   const pColor   = player.playerColor || colors.blue;
 
   return (
-    <div style={cardShell(isCurrentTurn, pColor, hasActedThisRound)}>
+    <div style={{ ...cardShell(isCurrentTurn, pColor, hasActedThisRound), display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Header ── */}
       <div style={{
@@ -249,12 +250,11 @@ const PlayerCard = ({
           </div>
         )}
 
-        {/* Commander held items */}
+        {/* Commander held items — always rendered to keep uniform height */}
         {(() => {
           const heldItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
-          if (heldItems.length === 0) return null;
           return (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.35rem' }}>
+            <div style={{ minHeight: '28px', display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.35rem', alignItems: 'center' }}>
               {heldItems.map((item, hi) => {
                 const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
                 return (
@@ -295,7 +295,7 @@ const PlayerCard = ({
           border: `1px solid ${colors.purpleBorder}`,
           borderRadius: showSquad ? '8px 8px 0 0' : '8px',
           cursor: 'pointer', userSelect: 'none',
-          marginBottom: showSquad ? 0 : '0.6rem',
+          marginBottom: 0,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -330,7 +330,8 @@ const PlayerCard = ({
         <div style={{
           border: `1px solid ${colors.purpleBorder}`,
           borderTop: 'none', borderRadius: '0 0 8px 8px',
-          overflow: 'hidden', marginBottom: '0.6rem',
+          overflowY: isFocusMode ? 'visible' : 'auto', marginBottom: '0.6rem',
+          maxHeight: isFocusMode ? 'none' : '354px',
         }}>
           {player.subUnits.map((unit, index) => {
             const isDead = unit.hp === 0;
@@ -464,15 +465,14 @@ const PlayerCard = ({
         </div>
       )}
 
-      {/* ── Inventory ── */}
-      {(player.firstStrike || (player.inventory?.length > 0)) && (
-        <div style={{
-          background: 'rgba(0,0,0,0.3)',
-          border: borders.warm,
-          borderRadius: '10px',
-          overflow: 'hidden',
-          marginTop: '0.5rem',
-        }}>
+      {/* ── Inventory ── always visible */}
+      <div style={{
+        background: 'rgba(0,0,0,0.3)',
+        border: borders.warm,
+        borderRadius: '10px',
+        marginTop: '0.5rem',
+        display: 'flex', flexDirection: 'column',
+      }}>
           <div style={{
             padding: '0.35rem 0.85rem',
             borderBottom: `1px solid rgba(201,169,97,0.1)`,
@@ -497,7 +497,13 @@ const PlayerCard = ({
             </div>
           )}
 
-          {/* Loot items */}
+          {/* Loot items — scrollable after 3 */}
+          <div style={{ overflowY: isFocusMode ? 'visible' : 'auto', minHeight: isFocusMode ? 'none' : '130px', maxHeight: isFocusMode ? 'none' : '130px' }}>
+          {(player.inventory || []).length === 0 && !player.firstStrike && (
+            <div style={{ padding: '0.85rem', textAlign: 'center', color: colors.textFaint, fontSize: '0.75rem' }}>
+              No items in inventory
+            </div>
+          )}
           {(player.inventory || []).map((item, i, arr) => {
             const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
             const usesLeft = item.effect?.uses === 0 ? Infinity : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
@@ -580,8 +586,8 @@ const PlayerCard = ({
               </div>
             );
           })}
+          </div>
         </div>
-      )}
 
       {/* ── Death Loot Modal ── */}
       {deathLootModal && (

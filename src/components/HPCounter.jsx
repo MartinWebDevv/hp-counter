@@ -321,8 +321,7 @@ const HPCounter = () => {
 
   // ── Save / Load ───────────────────────────────────────────────────────────
   const saveGameToFile = () => {
-    const archivedLoot = (() => { try { return JSON.parse(localStorage.getItem('hpCounterArchivedLoot') || '[]'); } catch { return []; } })();
-    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, archivedLoot, chests, vpStats: vp.vpStats, rooms: roomsState.rooms, pastSessionNPCs, pastSessionChests, pastSessionRooms, savedAt: new Date().toISOString() };
+    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, chests, vpStats: vp.vpStats, rooms: roomsState.rooms, pastSessionNPCs, pastSessionChests, pastSessionRooms, savedAt: new Date().toISOString() };
     const blob  = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url   = URL.createObjectURL(blob);
     const a     = document.createElement('a');
@@ -343,8 +342,6 @@ const HPCounter = () => {
           loadGameState(state);
           if (state.npcs)     setNpcs(state.npcs);
           if (state.lootPool) setLootPool(state.lootPool);
-          // Always overwrite archived loot — if save has none, clear stale local archives
-          try { localStorage.setItem('hpCounterArchivedLoot', JSON.stringify(state.archivedLoot || [])); } catch {}
           if (state.chests)   setChests(state.chests);
           if (state.vpStats)  vp.setVpStats(state.vpStats);
           // Restore session NPC archive from file, or clear if this save doesn't have one
@@ -473,7 +470,7 @@ const HPCounter = () => {
 
         {/* Turn order sidebar */}
         {viewMode === 'current' && !isCampaign && (
-          <div style={styles.sidebar}>
+          <div style={{ ...styles.sidebar, top: 0 }}>
             <h3 style={styles.sidebarTitle}>⚔️ TURN ORDER</h3>
             {players.map((player, index) => {
               const isCurr   = index === currentPlayerIndex;
@@ -497,7 +494,7 @@ const HPCounter = () => {
 
         {/* Campaign turn order sidebar */}
         {isCampaign && viewMode === 'current' && activePanel === 'players' && (
-          <div style={styles.sidebar}>
+          <div style={{ ...styles.sidebar, top: 0 }}>
             <h3 style={styles.sidebarTitle}>⚔️ TURN ORDER</h3>
             {campaignTurnOrder.map((entry, index) => {
               const isCurr   = index === campaign.campaignTurnIndex;
@@ -537,7 +534,7 @@ const HPCounter = () => {
         <div style={{ flex: 1, minWidth: 0 }}>
 
           {/* Players */}
-          {(!isCampaign || activePanel === 'players') && (
+          {(!isCampaign || activePanel === 'players') && viewMode !== 'current' && (
             <div style={styles.addPlayerSection}>
               <button onClick={addPlayer} style={styles.addPlayerBtn}>+ ADD PLAYER</button>
             </div>
@@ -576,6 +573,7 @@ const HPCounter = () => {
                       onOpenHandOff={(srcPlayer, srcUnitType, item) => loot.openHandOff(srcPlayer, srcUnitType, item)}
                       getTimersForPlayerUnit={roundTimers.getTimersForPlayerUnit}
                       getTokenForPlayer={tokens.getTokenForPlayer}
+                      isFocusMode={viewMode === 'current'}
                     />
                   </div>
                 );
@@ -637,7 +635,7 @@ const HPCounter = () => {
           )}
 
           {isCampaign && activePanel === 'vp' && (
-            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} />
+            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} />
           )}
 
           {isCampaign && activePanel === 'rooms' && (
@@ -1781,24 +1779,11 @@ const ManualStatsModal = ({ data, onChange, onConfirm, onClose }) => (
 
 // ── AwardShowcase (inline) ────────────────────────────────────────────────────
 
-const AWARD_CATEGORY_DESC = {
-  npcDamage:        'Most NPC Damage',
-  pvpDamage:        'Most Player Damage',
-  damageTaken:      'Most Damage Taken',
-  leastDamageTaken: 'Least Damage Taken',
-  leastDeaths:      'Fewest Revives Used',
-  immortal:         'Zero Deaths All Session',
-  itemsObtained:    'Most Items Obtained',
-  finalBossKill:    'Final Boss Kill',
-  firstBlood:       'First Blood',
-  warmonger:        'Most Attacks Initiated',
-};
-
 const AwardShowcase = ({ showcase, onPrev, onNext, onFinish }) => {
   const { awards, index, sessionName } = showcase;
   const award=awards[index], isFirst=index===0, isLast=index===awards.length-1;
   const valLabel = () => {
-    if (award.isManual)                          return null;
+    if (award.isManual)                          return award.label;
     if (award.categoryId==='itemsObtained')      return `${award.value} items obtained`;
     if (award.categoryId==='leastDeaths')        return `only ${award.value} revives used`;
     if (award.categoryId==='immortal')           return 'not a single death all session';
@@ -1806,28 +1791,17 @@ const AwardShowcase = ({ showcase, onPrev, onNext, onFinish }) => {
     if (award.categoryId==='finalBossKill')      return 'delivered the killing blow';
     if (award.categoryId==='firstBlood')         return 'drew first blood this session';
     if (award.categoryId==='warmonger')          return `initiated ${award.value} attacks`;
-    if (award.categoryId==='damageTaken')        return `${award.value} damage taken`;
-    if (award.categoryId==='npcDamage')          return `${award.value} damage dealt to NPCs`;
-    if (award.categoryId==='pvpDamage')          return `${award.value} damage dealt to players`;
-    return null;
+    return `${award.value} damage dealt`;
   };
-  const categoryDesc = award.isManual ? null : AWARD_CATEGORY_DESC[award.categoryId];
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.95)',zIndex:2002,display:'flex',alignItems:'center',justifyContent:'center',padding:'1rem'}}>
       <div style={{background:'#1a0f0a',border:'3px solid rgba(251,191,36,0.7)',borderRadius:'16px',padding:'2rem 1.5rem',width:'100%',maxWidth:'440px',textAlign:'center'}}>
         <div style={{color:colors.textMuted,fontSize:'0.62rem',fontWeight:'800',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:'1.75rem'}}>{sessionName} · Award {index+1} of {awards.length}</div>
         <div style={{fontSize:'5rem',marginBottom:'0.75rem',lineHeight:1}}>{award.icon}</div>
-        <div style={{color:colors.textSecondary,fontWeight:'800',fontSize:'0.72rem',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:'0.2rem'}}>{award.label}</div>
-        {categoryDesc && (
-          <div style={{color:colors.textFaint,fontSize:'0.75rem',fontWeight:'600',marginBottom:'0.85rem',fontStyle:'italic'}}>{categoryDesc}</div>
-        )}
+        <div style={{color:colors.textSecondary,fontWeight:'800',fontSize:'0.72rem',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:'0.5rem'}}>{award.label}</div>
         <div style={{color:award.playerColor||colors.gold,fontWeight:'900',fontSize:'2rem',marginBottom:'0.4rem',textShadow:`0 0 20px ${award.playerColor||colors.gold}66`}}>{award.playerName}</div>
-        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'0.5rem',marginBottom:'2rem'}}>
-          {valLabel() && (
-            <div style={{color:colors.textMuted,fontSize:'0.82rem',padding:'0.35rem 1rem',background:'rgba(0,0,0,0.3)',borderRadius:'6px'}}>{valLabel()}</div>
-          )}
-          <div style={{padding:'0.5rem 2rem',background:'rgba(251,191,36,0.12)',border:'2px solid rgba(251,191,36,0.5)',borderRadius:'10px',color:'#fbbf24',fontWeight:'900',fontSize:'1.75rem',letterSpacing:'0.05em'}}>+{award.pts} VP</div>
-        </div>
+        <div style={{color:colors.textMuted,fontSize:'0.8rem',marginBottom:'1.5rem'}}>{valLabel()}</div>
+        <div style={{display:'inline-block',padding:'0.5rem 2rem',background:'rgba(251,191,36,0.12)',border:'2px solid rgba(251,191,36,0.5)',borderRadius:'10px',color:'#fbbf24',fontWeight:'900',fontSize:'1.75rem',letterSpacing:'0.05em',marginBottom:'2rem'}}>+{award.pts} VP</div>
         <div style={{display:'flex',gap:'0.75rem'}}>
           <button disabled={isFirst} onClick={onPrev} style={{flex:1,padding:'0.75rem',background:'rgba(0,0,0,0.3)',border:`1px solid ${isFirst?'transparent':'rgba(90,74,58,0.4)'}`,borderRadius:'8px',color:isFirst?'#1f2937':colors.textSecondary,fontWeight:'800',cursor:isFirst?'default':'pointer',fontFamily:fonts.body}}>← Prev</button>
           {isLast

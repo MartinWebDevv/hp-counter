@@ -1,16 +1,16 @@
 import { useState } from 'react';
 
 const AWARD_CATS = [
-  { id: 'npcDamage',        label: 'Monster Hunter',  icon: '🐉', desc: 'Most NPC Damage Dealt',      pts: 1, statKey: 'npcDamage',      higher: true  },
-  { id: 'pvpDamage',        label: 'The Reaper',      icon: '⚔️',  desc: 'Most PvP Damage Dealt',      pts: 1, statKey: 'pvpDamage',      higher: true  },
-  { id: 'damageTaken',      label: 'Punching Bag',    icon: '🛡️',  desc: 'Most Damage Taken',          pts: 1, statKey: 'damageTaken',    higher: true  },
-  { id: 'leastDamageTaken', label: 'Ghost Protocol',  icon: '🧊', desc: 'Least Damage Taken',         pts: 1, statKey: 'damageTaken',    higher: false },
-  { id: 'leastDeaths',      label: 'Least Deaths',    icon: '💪', desc: 'Fewest Deaths / Revives',    pts: 1, statKey: 'revivesUsed',    higher: false },
-  { id: 'immortal',         label: 'Immortal',        icon: '✨', desc: 'Never Went Down',            pts: 2, statKey: 'revivesUsed',    higher: false, zeroOnly: true },
-  { id: 'itemsObtained',    label: 'Scavenger',       icon: '📦', desc: 'Most Items Obtained',        pts: 1, statKey: 'itemsObtained',  higher: true  },
-  { id: 'finalBossKill',    label: 'Kingslayer',      icon: '👑', desc: 'Final Blow to the Boss',     pts: 2, statKey: 'finalBossKill',  higher: true  },
-  { id: 'firstBlood',       label: 'First Blood',     icon: '🩸', desc: 'First Strike of the Session',pts: 1, statKey: 'firstBlood',     higher: true  },
-  { id: 'warmonger',        label: 'Warmonger',       icon: '⚡', desc: 'Most Fights Initiated',      pts: 1, statKey: 'warmonger',      higher: true  },
+  { id: 'npcDamage',        label: 'Monster Hunter',  icon: '🐉', pts: 1, statKey: 'npcDamage',      higher: true  },
+  { id: 'pvpDamage',        label: 'The Reaper',      icon: '⚔️',  pts: 1, statKey: 'pvpDamage',     higher: true  },
+  { id: 'damageTaken',      label: 'Punching Bag',    icon: '🛡️',  pts: 1, statKey: 'damageTaken',   higher: true  },
+  { id: 'leastDamageTaken', label: 'Ghost Protocol',  icon: '🧊', pts: 1, statKey: 'damageTaken',   higher: false },
+  { id: 'leastDeaths',      label: 'Least Deaths',    icon: '💪', pts: 1, statKey: 'revivesUsed',   higher: false },
+  { id: 'immortal',         label: 'Immortal',        icon: '✨', pts: 2, statKey: 'revivesUsed',   higher: false, zeroOnly: true },
+  { id: 'itemsObtained',    label: 'Scavenger',       icon: '📦', pts: 1, statKey: 'itemsObtained', higher: true  },
+  { id: 'finalBossKill',    label: 'Kingslayer',      icon: '👑', pts: 2, statKey: 'finalBossKill', higher: true  },
+  { id: 'firstBlood',       label: 'First Blood',     icon: '🩸', pts: 1, statKey: 'firstBlood',    higher: true  },
+  { id: 'warmonger',        label: 'Warmonger',       icon: '⚡', pts: 1, statKey: 'warmonger',     higher: true  },
 ];
 
 export { AWARD_CATS };
@@ -92,11 +92,11 @@ export const useVPState = (players, addLog) => {
 
       if (cat.zeroOnly) {
         scores.filter(s => s.val === 0).forEach(({ player }) => {
-          awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, desc: cat.desc, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: 0, sessionName });
+          awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: 0, sessionName });
           const pid = player.id;
           if (!newVpStats[pid]) newVpStats[pid] = {};
           if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
-          newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, desc: cat.desc, pts: cat.pts, sessionName, value: 0, awardedAt: new Date().toISOString() });
+          newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value: 0, awardedAt: new Date().toISOString() });
         });
         return;
       }
@@ -108,11 +108,11 @@ export const useVPState = (players, addLog) => {
       if (!cat.higher && scores.every(s => s.val === 0)) return;
 
       scores.filter(s => s.val === top).forEach(({ player }) => {
-        awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, desc: cat.desc, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: top, sessionName });
+        awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: top, sessionName });
         const pid = player.id;
         if (!newVpStats[pid]) newVpStats[pid] = {};
         if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
-        newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, desc: cat.desc, pts: cat.pts, sessionName, value: top, awardedAt: new Date().toISOString() });
+        newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value: top, awardedAt: new Date().toISOString() });
       });
     });
 
@@ -166,6 +166,19 @@ export const useVPState = (players, addLog) => {
     }
   };
 
+  const deleteSession = (sessionName) => {
+    setVpStats(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      Object.keys(next).forEach(id => {
+        if (next[id].sessionAwards) {
+          next[id].sessionAwards = next[id].sessionAwards.filter(a => a.sessionName !== sessionName);
+        }
+      });
+      try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   const resetLiveVPTrackers = () => {
     setVpStats(prev => {
       const next = { ...prev };
@@ -203,6 +216,7 @@ export const useVPState = (players, addLog) => {
     handleEndSession,
     handleEndSessionFromFile,
     resetLiveVPTrackers,
+    deleteSession,
     AWARD_CATS,
   };
 };

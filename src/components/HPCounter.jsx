@@ -439,38 +439,14 @@ const HPCounter = () => {
           <button onClick={() => setShowStats(true)} style={styles.statsBtn}>📊 STATS</button>
           <button onClick={undo} style={styles.undoBtn}>↩️ UNDO</button>
           <button onClick={() => {
-            if (!window.confirm('Hard reset the entire app?\n\nThis will wipe everything — players, NPCs, loot, rooms, timers, VP history, sessions, and archives. This cannot be undone.')) return;
-
-            // 1. Nuke every localStorage key first
-            const ALL_KEYS = [
-              'hpCounterPlayers','hpCounterRound','hpCounterLog',
-              'hpCounterGameMode','hpCounterCustomSettings','hpCounterCurrentPlayerIndex',
-              'hpCounterGameStarted','hpCounterLootPool','hpCounterVPStats',
-              'hpCounterSessionCount','hpCounterTokensEnabled','hpCounterArchivedLoot',
-              'hpCounterNPCs','hpCounterChests','hpCounterRooms','hpCounterRoundTimers',
-              'hpCounterCommanderTokens','hpCounterPastSessionNPCs',
-              'hpCounterPastSessionChests','hpCounterPastSessionRooms',
-            ];
-            ALL_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch {} });
-
-            // 2. Reset all React state so useEffect hooks fire with empty values
-            //    and cannot write old data back before reload
-            setPlayers([]);
-            setNpcs([]);
-            setLootPool([]);
-            setChests([]);
-            setPastSessionNPCs([]);
-            setPastSessionChests([]);
-            setPastSessionRooms([]);
-            roomsState.setRooms([]);
-            clearLog();
-            vp.setVpStats({});
-            vp.setFirstBloodAwarded(false);
-            try { localStorage.setItem('hpCounterSessionCount', '0'); } catch {}
-
-            // 3. Small delay so state-driven useEffects flush empty values to
-            //    localStorage before the page reloads, preventing re-hydration of old data
-            setTimeout(() => window.location.reload(), 100);
+            if (!window.confirm('Hard reset the entire app?\n\nThis will wipe all players, NPCs, loot, sessions, VP history, timers, tokens, and past session archives. This cannot be undone.')) return;
+            // Clear all keys — use setItem('[]'/'{}') for keys with persistent hooks
+            // so that even if a useEffect fires on unmount it writes the empty value back
+            const clearEmpty = ['hpCounterRooms','hpCounterRoundTimers','hpCounterCommanderTokens','hpCounterNPCs','hpCounterChests','hpCounterPastSessionNPCs','hpCounterPastSessionChests','hpCounterPastSessionRooms'];
+            const clearRemove = ['hpCounterPlayers','hpCounterRound','hpCounterLog','hpCounterGameMode','hpCounterCustomSettings','hpCounterCurrentPlayerIndex','hpCounterGameStarted','hpCounterLootPool','hpCounterVPStats','hpCounterSessionCount','hpCounterTokensEnabled','hpCounterArchivedLoot'];
+            clearEmpty.forEach(k => { try { localStorage.setItem(k, '[]'); } catch {} });
+            clearRemove.forEach(k => { try { localStorage.removeItem(k); } catch {} });
+            window.location.reload();
           }} style={styles.resetBtn}>🔄 RESET</button>
         </div>
       </div>
@@ -668,7 +644,7 @@ const HPCounter = () => {
           )}
 
           {isCampaign && activePanel === 'vp' && (
-            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} />
+            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} />
           )}
 
           {isCampaign && activePanel === 'rooms' && (

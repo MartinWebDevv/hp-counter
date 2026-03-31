@@ -38,10 +38,12 @@ export const useCampaignTurn = (
 
   // ── Rebuttal state (#8) ──────────────────────────────────────────────────
   const [rebuttalModal, setRebuttalModal] = useState(null); // { npcId, npcName, attacks }
+  const [npcBuffModal,  setNpcBuffModal]  = useState(null); // { sourceNpcId, sourceNpcName, attack, selectedNpcIds }
 
   const openRebuttal = (npcId, aggressorPlayerId, aggressorUnitTypes) => {
     const npc = getNPCById(npcId);
     if (!npc || !npc.active || npc.isDead) return;
+    if (npc.hasRebuttal === false) return; // rebuttal disabled for this NPC
     const attackMoves = (npc.attacks || []).filter(a => (a.attackType || 'attack') === 'attack');
     if (attackMoves.length === 0) return;
     setRebuttalModal({ npcId, npcName: npc.name, attacks: attackMoves, aggressorPlayerId, aggressorUnitTypes: aggressorUnitTypes || [] });
@@ -197,118 +199,116 @@ export const useCampaignTurn = (
     return player?.subUnits?.[idx]?.name || `Unit ${idx}`;
   };
 
-  const applyNPCDamage = () => {
+  const applyNPCDamage = (distributionOverride) => {
     if (!npcAttackData) return;
-    const totalDistributed = Object.values(npcDamageDistribution).reduce((s, v) => s + v, 0);
-    if (totalDistributed !== npcAttackData.totalDamage) {
-      return;
-    }
+    const dist = distributionOverride || npcDamageDistribution;
+    // DamageDistribution already enforces remaining === 0 before calling onApply,
+    // so we trust the distribution passed in rather than re-checking against totalDamage.
 
+    // Group targets by player so we apply all damage in one updatePlayer call per player
+    // (multiple forEach calls for the same player would overwrite each other)
+    const killerLabel = npcAttackData.isSquad
+      ? (npcAttackData.squadMembers?.map(m => m.npcName).join(', ') || 'NPC Squad')
+      : (npcAttackData.npcName || 'NPC');
+    const attackEffect = npcAttackData.isSquad ? null : npcAttackData.attack?.attackEffect;
+
+    const targetsByPlayer = {};
     (npcAttackData.targetSquadMembers || []).forEach(target => {
-      const dmg = npcDamageDistribution[`${target.playerId}-${target.unitType}`] || 0;
+      const dmg = dist[`${target.playerId}-${target.unitType}`] || 0;
       if (dmg <= 0) return;
+      if (!targetsByPlayer[target.playerId]) targetsByPlayer[target.playerId] = [];
+      targetsByPlayer[target.playerId].push({ ...target, dmg });
+    });
 
-      const player = players.find(p => p.id === target.playerId);
+    Object.entries(targetsByPlayer).forEach(([playerIdStr, targets]) => {
+      const player = players.find(p => p.id === parseInt(playerIdStr));
       if (!player) return;
 
-      // Get attack effect — from single attack or from squad member's attack
-      const attackEffect = npcAttackData.isSquad
-        ? null // squad attacks don't apply effects (each member would need its own target)
-        : npcAttackData.attack?.attackEffect;
+      let newCmdStats = { ...player.commanderStats };
+      let newSubs = [...(player.subUnits || [])];
+      let newReviveQueue = [...(player.reviveQueue || [])];
+      let cmdUpdated = false;
 
-      if (target.unitType === 'commander') {
-        const newHp = Math.max(0, player.commanderStats.hp - dmg);
-        const newCmdStats = { ...player.commanderStats, hp: newHp };
-        if (attackEffect && dmg > 0) {
-          if (attackEffect.type === 'poison') {
-            newCmdStats.statusEffects = [...(player.commanderStats.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
-            if (onCreateTimer) onCreateTimer(
-              `🤢 Poison — ${player.commanderStats?.customName || player.commander}`,
-              attackEffect.duration || 2,
-              [{ type: 'player', playerId: player.id, unitType: 'commander' }]
-            );
+      targets.forEach(({ unitType, dmg }) => {
+        if (unitType === 'commander') {
+          cmdUpdated = true;
+          const newHp = Math.max(0, newCmdStats.hp - dmg);
+          newCmdStats = { ...newCmdStats, hp: newHp };
+          if (attackEffect) {
+            if (attackEffect.type === 'poison') {
+              newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
+              if (onCreateTimer) onCreateTimer(`🤢 Poison — ${newCmdStats?.customName || player.commander}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
+            }
+            if (attackEffect.type === 'stun') {
+              newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), { type: 'stun', duration: attackEffect.duration || 1 }];
+              if (onCreateTimer) onCreateTimer(`💫 Stun — ${newCmdStats?.customName || player.commander}`, attackEffect.duration || 1, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
+            }
+            if (['attackBuff','defenseBuff','attackDebuff','defenseDebuff'].includes(attackEffect.type)) {
+              const cmdLabel = newCmdStats?.customName || player.commander || 'Commander';
+              const buffEntry = { type: attackEffect.type, value: attackEffect.value || 2, duration: attackEffect.permanent ? null : (attackEffect.duration || 2), permanent: !!attackEffect.permanent };
+              newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), buffEntry];
+              if (!attackEffect.permanent && onCreateTimer) onCreateTimer(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${attackEffect.type} — ${cmdLabel}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
+              addLog(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${player.playerName}'s ${cmdLabel} ${attackEffect.type} ${attackEffect.type.includes('Debuff') ? 'reduced' : 'boosted'} by ${attackEffect.value || 2}${attackEffect.permanent ? ' (permanent)' : ` for ${attackEffect.duration || 2} rounds`}`);
+            }
           }
-          if (attackEffect.type === 'stun') {
-            newCmdStats.statusEffects = [...(player.commanderStats.statusEffects || []), { type: 'stun', duration: attackEffect.duration || 1 }];
-            if (onCreateTimer) onCreateTimer(
-              `💫 Stun — ${player.commanderStats?.customName || player.commander}`,
-              attackEffect.duration || 1,
-              [{ type: 'player', playerId: player.id, unitType: 'commander' }]
-            );
+          if (newHp === 0 && player.commanderStats.hp > 0) {
+            const cmdLabel = newCmdStats.customName || player.commander || 'Commander';
+            addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${cmdLabel}. Damage dealt: ${dmg}hp.`);
+          }
+        } else {
+          const idx = unitType === 'special' ? 0 : parseInt(unitType.replace('soldier', ''));
+          const unit = newSubs[idx];
+          const newHp = unit ? Math.max(0, unit.hp - dmg) : 0;
+          const justDied = unit && unit.hp > 0 && newHp === 0;
+          let updatedUnit = { ...(newSubs[idx] || {}), hp: newHp };
+          if (attackEffect) {
+            const uLabel = unit?.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`);
+            if (attackEffect.type === 'poison') {
+              updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
+              if (onCreateTimer) onCreateTimer(`🤢 Poison — ${player.playerName}'s ${uLabel}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType }]);
+            }
+            if (attackEffect.type === 'stun') {
+              updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'stun', duration: attackEffect.duration || 1 }];
+              if (onCreateTimer) onCreateTimer(`💫 Stun — ${player.playerName}'s ${uLabel}`, attackEffect.duration || 1, [{ type: 'player', playerId: player.id, unitType }]);
+            }
+            if (['attackBuff','defenseBuff','attackDebuff','defenseDebuff'].includes(attackEffect.type)) {
+              const buffEntry = { type: attackEffect.type, value: attackEffect.value || 2, duration: attackEffect.permanent ? null : (attackEffect.duration || 2), permanent: !!attackEffect.permanent };
+              updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), buffEntry];
+              if (!attackEffect.permanent && onCreateTimer) onCreateTimer(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${attackEffect.type} — ${player.playerName}'s ${uLabel}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType }]);
+              addLog(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${player.playerName}'s ${uLabel} ${attackEffect.type} ${attackEffect.type.includes('Debuff') ? 'reduced' : 'boosted'} by ${attackEffect.value || 2}${attackEffect.permanent ? ' (permanent)' : ` for ${attackEffect.duration || 2} rounds`}`);
+            }
+          }
+          newSubs = newSubs.map((u, i) => i === idx ? updatedUnit : u);
+          if (justDied) {
+            const unitLabel = unit.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`);
+            addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${unitLabel}. Damage dealt: ${dmg}hp.`);
+            const unitItems = (player.inventory || []).filter(it => it.heldBy === unitType);
+            if (unitItems.length > 0 && onUnitDiedRef.current) {
+              onUnitDiedRef.current({ unitLabel, items: unitItems, playerId: player.id });
+            }
+            const lives = unit?.livesRemaining ?? unit?.revives ?? 1;
+            if (lives > 0 && !newReviveQueue.includes(idx)) newReviveQueue = [...newReviveQueue, idx];
           }
         }
-        if (newHp === 0 && player.commanderStats.hp > 0) {
-          const killerLabel = npcAttackData.isSquad
-            ? (npcAttackData.squadMembers?.map(m => m.npcName).join(', ') || 'NPC Squad')
-            : (npcAttackData.npcName || 'NPC');
-          const cmdLabel = player.commanderStats.customName || player.commander || 'Commander';
-          addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${cmdLabel}. Damage dealt: ${dmg}hp.`);
-        }
-        updatePlayer(player.id, { commanderStats: newCmdStats });
-      } else {
-        const idx = target.unitType === 'special' ? 0 : parseInt(target.unitType.replace('soldier', ''));
-        const unit = (player.subUnits || [])[idx];
-        const newHp = unit ? Math.max(0, unit.hp - dmg) : 0;
-        const justDied = unit && unit.hp > 0 && newHp === 0;
-        let updatedUnit = { ...((player.subUnits || [])[idx] || {}), hp: newHp };
-        if (attackEffect && dmg > 0) {
-          const unitType = idx === 0 ? 'special' : `soldier${idx}`;
-          const uLabel = unit?.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`);
-          if (attackEffect.type === 'poison') {
-            updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
-            if (onCreateTimer) onCreateTimer(
-              `🤢 Poison — ${player.playerName}'s ${uLabel}`,
-              attackEffect.duration || 2,
-              [{ type: 'player', playerId: player.id, unitType }]
-            );
-          }
-          if (attackEffect.type === 'stun') {
-            updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'stun', duration: attackEffect.duration || 1 }];
-            if (onCreateTimer) onCreateTimer(
-              `💫 Stun — ${player.playerName}'s ${uLabel}`,
-              attackEffect.duration || 1,
-              [{ type: 'player', playerId: player.id, unitType }]
-            );
-          }
-        }
-        const newSubs = (player.subUnits || []).map((u, i) => i === idx ? updatedUnit : u);
+        trackVP(parseInt(playerIdStr), 'damageTaken', dmg);
+      });
 
-        if (justDied) {
-          const unitType = idx === 0 ? 'special' : `soldier${idx}`;
-          const unitLabel = unit.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`);
-          const killerLabel = npcAttackData.isSquad
-            ? (npcAttackData.squadMembers?.map(m => m.npcName).join(', ') || 'NPC Squad')
-            : (npcAttackData.npcName || 'NPC');
-          addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${unitLabel}. Damage dealt: ${dmg}hp.`);
-          const unitItems = (player.inventory || []).filter(it => it.heldBy === unitType);
-          if (unitItems.length > 0 && onUnitDiedRef.current) {
-            onUnitDiedRef.current({ unitLabel, items: unitItems, playerId: player.id });
-          }
-        }
-
-        // Revive queue — same logic as PlayerCard.handleSubUnitHPChange
-        let newReviveQueue = [...(player.reviveQueue || [])];
-        const lives = unit?.livesRemaining ?? unit?.revives ?? 1;
-        if (justDied && lives > 0 && !newReviveQueue.includes(idx)) {
-          newReviveQueue = [...newReviveQueue, idx];
-        }
-        const allDead = newSubs.every(u => u.hp === 0);
-        let finalSubs = newSubs;
-        if (allDead) {
-          newReviveQueue = [];
-          finalSubs = newSubs.map(u => ({ ...u, livesRemaining: 0, revives: 0 }));
-        }
-        updatePlayer(player.id, { subUnits: finalSubs, reviveQueue: newReviveQueue });
+      const allDead = newSubs.every(u => u.hp === 0);
+      if (allDead) {
+        newReviveQueue = [];
+        newSubs = newSubs.map(u => ({ ...u, livesRemaining: 0, revives: 0 }));
       }
-      trackVP(target.playerId, 'damageTaken', dmg);
+      const updates = { subUnits: newSubs, reviveQueue: newReviveQueue };
+      if (cmdUpdated) updates.commanderStats = newCmdStats;
+      updatePlayer(player.id, updates);
     });
 
     const npc = getNPCById(npcAttackData.npcId);
     const targets = (npcAttackData.targetSquadMembers || [])
-      .filter(t => npcDamageDistribution[`${t.playerId}-${t.unitType}`] > 0)
+      .filter(t => dist[`${t.playerId}-${t.unitType}`] > 0)
       .map(t => {
         const tp = players.find(p => p.id === t.playerId);
-        const dmg = npcDamageDistribution[`${t.playerId}-${t.unitType}`];
+        const dmg = dist[`${t.playerId}-${t.unitType}`];
         return `${tp?.playerName || 'Unknown'}'s ${unitNameByType(tp, t.unitType)} for ${dmg}hp`;
       }).join(', ');
 
@@ -320,6 +320,62 @@ export const useCampaignTurn = (
       addLog(`👾 "${npc?.name}" used "${npcAttackData.attack?.name}" → ${targets}`);
     }
     closeNPCCalculator();
+  };
+
+  // ── NPC Buff/Debuff modal ─────────────────────────────────────────────────
+
+  const openNpcBuffModal = (npcId, attackIndex) => {
+    const npc = getNPCById(npcId);
+    if (!npc) return;
+    const attack = npc.attacks[attackIndex];
+    // Support both dedicated buff type (buffEffect) and action attacks with attackEffect
+    const hasBuff = attack?.buffEffect || (attack?.attackEffect && ['attackBuff','defenseBuff','attackDebuff','defenseDebuff'].includes(attack.attackEffect?.type));
+    if (!hasBuff) return;
+    setNpcBuffModal({ sourceNpcId: npcId, sourceNpcName: npc.name, attack, selectedNpcIds: [] });
+  };
+
+  const toggleNpcBuffTarget = (npcId) => {
+    setNpcBuffModal(prev => {
+      if (!prev) return prev;
+      const already = prev.selectedNpcIds.includes(npcId);
+      return { ...prev, selectedNpcIds: already ? prev.selectedNpcIds.filter(id => id !== npcId) : [...prev.selectedNpcIds, npcId] };
+    });
+  };
+
+  const applyNpcBuff = () => {
+    if (!npcBuffModal) return;
+    const { attack, selectedNpcIds, sourceNpcName } = npcBuffModal;
+    // Resolve effect from buffEffect (dedicated buff type) or attackEffect (legacy action type)
+    let ef, effectType, isBuff, label;
+    if (attack.buffEffect) {
+      ef = attack.buffEffect;
+      isBuff = (ef.value ?? 0) >= 0;
+      effectType = ef.stat === 'attack'
+        ? (isBuff ? 'attackBuff' : 'attackDebuff')
+        : (isBuff ? 'defenseBuff' : 'defenseDebuff');
+      label = ef.stat === 'attack'
+        ? (isBuff ? '⚔️↑ Atk Buff' : '⚔️↓ Atk Debuff')
+        : (isBuff ? '🛡️↑ Def Buff' : '🛡️↓ Def Debuff');
+    } else {
+      ef = attack.attackEffect;
+      isBuff = ['attackBuff', 'defenseBuff'].includes(ef?.type);
+      effectType = ef?.type;
+      label = ef?.type === 'attackBuff' ? '⚔️↑ Atk Buff'
+        : ef?.type === 'defenseBuff'  ? '🛡️↑ Def Buff'
+        : ef?.type === 'attackDebuff' ? '⚔️↓ Atk Debuff'
+        : '🛡️↓ Def Debuff';
+    }
+    if (!ef || selectedNpcIds.length === 0) { setNpcBuffModal(null); return; }
+    const absValue = Math.abs(ef.value ?? 2);
+    setNpcs(prev => prev.map(n => {
+      if (!selectedNpcIds.includes(n.id)) return n;
+      const entry = { type: effectType, value: absValue, duration: ef.permanent ? null : (ef.duration ?? 2), permanent: !!ef.permanent };
+      const updated = { ...n, statusEffects: [...(n.statusEffects || []), entry] };
+      addLog(`${isBuff ? '↑' : '↓'} ${sourceNpcName} applied ${label} to "${n.name}" ${isBuff ? '+' : '-'}${absValue}${ef.permanent ? ' (permanent)' : ` for ${ef.duration ?? 2}r`}`);
+      if (!ef.permanent && onCreateTimer) onCreateTimer(`${label} — ${n.name}`, ef.duration ?? 2, []);
+      return updated;
+    }));
+    setNpcBuffModal(null);
   };
 
   // ── First Strike ──────────────────────────────────────────────────────────
@@ -406,5 +462,10 @@ export const useCampaignTurn = (
     openRebuttal,
     confirmRebuttal,
     dismissRebuttal,
+    npcBuffModal,
+    setNpcBuffModal,
+    openNpcBuffModal,
+    toggleNpcBuffTarget,
+    applyNpcBuff,
   };
 };

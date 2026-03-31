@@ -123,6 +123,20 @@ const CalculatorD20 = ({
   const pendingAttackBonus = (attackingUnit?.pendingAttackBonus || 0) + (attacker.commanderStats?.pendingAttackBonus || 0);
   const pendingDefenseBonus = attackingUnit?.pendingDefenseBonus || attacker.commanderStats?.pendingDefenseBonus || 0;
 
+  // Player unit status-effect debuffs — reduce attack or defense accordingly
+  const unitStatusEffects = calculatorData.attackingUnitType === 'commander'
+    ? (attacker.commanderStats?.statusEffects || [])
+    : (() => {
+        const idx = calculatorData.attackingUnitType === 'special' ? 0 : parseInt((calculatorData.attackingUnitType || '').replace('soldier', ''));
+        return attacker.subUnits?.[idx]?.statusEffects || [];
+      })();
+  const playerAtkDebuff = unitStatusEffects
+    .filter(ef => ef.type === 'attackDebuff')
+    .reduce((s, ef) => s + (ef.value || 0), 0);
+  const playerDefDebuff = unitStatusEffects
+    .filter(ef => ef.type === 'defenseDebuff')
+    .reduce((s, ef) => s + (ef.value || 0), 0);
+
   // Show prompt once when first roll is about to happen
   React.useEffect(() => {
     if (bonusPromptShown || attackRolls.length > 0) return;
@@ -249,13 +263,20 @@ const CalculatorD20 = ({
     }
     
     const baseRoll = isSpecialBonus ? atkRoll + 1 : atkRoll;
-    const finalAtkRoll = (firstStrike ? baseRoll + 2 : baseRoll) + activeAttackBonus;
+    const finalAtkRoll = (firstStrike ? baseRoll + 2 : baseRoll) + activeAttackBonus - playerAtkDebuff;
 
-    // Apply NPC armor floor to defense roll
+    // Apply NPC armor floor + active defense buffs/debuffs to defense roll
     const firstNPCId = (calculatorData.targetNPCIds?.[0]) || calculatorData.targetNPCId;
     const targetNPC = firstNPCId ? npcs.find(n => n.id === firstNPCId) : null;
+    const npcDefBuff = (targetNPC?.statusEffects || [])
+      .filter(ef => ef.type === 'defenseBuff')
+      .reduce((s, ef) => s + (ef.value || 0), 0);
+    const npcDefDebuff = (targetNPC?.statusEffects || [])
+      .filter(ef => ef.type === 'defenseDebuff')
+      .reduce((s, ef) => s + (ef.value || 0), 0);
+    const npcDefBonus = npcDefBuff - npcDefDebuff;
     const effectiveDefRoll = targetNPC
-      ? Math.max(defRoll, targetNPC.armor || 0)
+      ? Math.max(defRoll, targetNPC.armor || 0) + npcDefBonus
       : defRoll;
 
     // Defender must roll >= attacker to block
@@ -284,9 +305,16 @@ const CalculatorD20 = ({
     const firstNPCId2 = (calculatorData.targetNPCIds?.[0]) || calculatorData.targetNPCId;
     const targetNPCForRoll = firstNPCId2 ? npcs.find(n => n.id === firstNPCId2) : null;
     const rawDef = parseInt(defenderRoll);
+    const npcDefBuff2 = (targetNPCForRoll?.statusEffects || [])
+      .filter(ef => ef.type === 'defenseBuff')
+      .reduce((s, ef) => s + (ef.value || 0), 0);
+    const npcDefDebuff2 = (targetNPCForRoll?.statusEffects || [])
+      .filter(ef => ef.type === 'defenseDebuff')
+      .reduce((s, ef) => s + (ef.value || 0), 0);
+    const npcDefBonus2 = npcDefBuff2 - npcDefDebuff2;
     const effectiveDef = (targetNPCForRoll
       ? Math.max(rawDef, targetNPCForRoll.armor || 0)
-      : rawDef) + activeDefenseBonus;
+      : rawDef) + activeDefenseBonus + npcDefBonus2;
 
     const newRoll = {
       attackerRoll: parseInt(attackerRoll),
@@ -298,6 +326,8 @@ const CalculatorD20 = ({
       armorFloored: targetNPCForRoll && effectiveDef > rawDef,
       attackBonusApplied: activeAttackBonus || 0,
       defenseBonusApplied: activeDefenseBonus || 0,
+      npcDefBonus: npcDefBonus2 || 0,
+      playerAtkDebuff: playerAtkDebuff || 0,
     };
     
     const newAttackRolls = [...attackRolls, newRoll];
@@ -363,6 +393,15 @@ const CalculatorD20 = ({
   };
 
   const canAddRoll = attackerRoll && defenderRoll && currentAttackIndex < numAttacks;
+
+  // Live NPC defense buff for display in the UI
+  const currentTargetNPCId = (calculatorData.targetNPCIds?.[0]) || calculatorData.targetNPCId;
+  const currentTargetNPC = currentTargetNPCId ? npcs.find(n => n.id === currentTargetNPCId) : null;
+  const liveNpcDefBuff = (currentTargetNPC?.statusEffects || [])
+    .filter(ef => ef.type === 'defenseBuff').reduce((s, ef) => s + (ef.value || 0), 0);
+  const liveNpcDefDebuff = (currentTargetNPC?.statusEffects || [])
+    .filter(ef => ef.type === 'defenseDebuff').reduce((s, ef) => s + (ef.value || 0), 0);
+  const liveNpcDefBonus = liveNpcDefBuff - liveNpcDefDebuff;
 
   // Consume one use of a reroll item and clear the appropriate roll input
   const consumeRerollItem = (item, owner, clearRoll) => {
@@ -1075,65 +1114,11 @@ const CalculatorD20 = ({
             marginBottom: '1rem'
           }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              {/* ── Attacker column ── */}
               <div>
-                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.35rem' }}>
                   Attacker Roll ({attackerDice}):
                 </label>
-                {/* Attacker reroll buttons — always shown when items exist, before typing */}
-                {(() => {
-                  const allAtkRerolls = [
-                    ...attackerRerollItems.map(it => ({ ...it, label: '⟳ REROLL MY ATTACK', color: '#86efac', owner: attacker })),
-                    ...forceAttackRerollItems.map(it => ({ ...it, label: '⚡ FORCE ATTACKER REROLL', color: '#fca5a5', owner: defender })),
-                  ];
-                  if (allAtkRerolls.length === 0) return null;
-                  return (
-                    <div style={{ marginBottom: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                      {allAtkRerolls.map(item => (
-                        <button key={item.id} onClick={() => consumeRerollItem(item, item.owner, setAttackerRoll)}
-                          style={{
-                            padding: '0.2rem 0.6rem',
-                            background: 'rgba(0,0,0,0.35)',
-                            border: `1px solid ${item.color}50`,
-                            borderRadius: '20px', cursor: 'pointer',
-                            color: item.color, fontFamily: fonts.body,
-                            fontWeight: '800', fontSize: '0.65rem',
-                          }}>
-                          {item.label}
-                          <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
-                            {item.owner?.playerName || ''}
-                          </span>
-                          <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
-                            {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-                {/* Attack bonus item buttons */}
-                {attackBonusItems.length > 0 && (
-                  <div style={{ marginBottom: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                    {attackBonusItems.map(item => (
-                      <button key={item.id} onClick={() => consumeBonusItem(item, attacker, 'attack')}
-                        style={{
-                          padding: '0.2rem 0.6rem',
-                          background: activeAttackBonus > 0 ? 'rgba(34,197,94,0.2)' : 'rgba(34,197,94,0.08)',
-                          border: `1px solid ${activeAttackBonus > 0 ? 'rgba(34,197,94,0.7)' : 'rgba(34,197,94,0.4)'}`,
-                          borderRadius: '20px', cursor: 'pointer',
-                          color: '#86efac', fontFamily: fonts.body,
-                          fontWeight: '800', fontSize: '0.65rem',
-                        }}>
-                        ⚔️ +{item.effect?.value} atk
-                        <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
-                          {attacker?.playerName || ''}
-                        </span>
-                        <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
-                          {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <input
                   type="number"
                   min="1"
@@ -1141,82 +1126,46 @@ const CalculatorD20 = ({
                   value={attackerRoll}
                   onChange={(e) => setAttackerRoll(e.target.value)}
                   style={{
-                    width: '100%',
-                    background: '#1a0f0a',
-                    color: colors.gold,
-                    padding: '0.75rem',
-                    borderRadius: '6px',
-                    border: borders.warm,
-                    fontSize: '1.5rem',
-                    textAlign: 'center',
-                    fontFamily: fonts.display,
-                    fontWeight: 'bold'
+                    width: '100%', boxSizing: 'border-box',
+                    background: '#1a0f0a', color: colors.gold,
+                    padding: '0.75rem', borderRadius: '6px',
+                    border: borders.warm, fontSize: '1.5rem',
+                    textAlign: 'center', fontFamily: fonts.display, fontWeight: 'bold',
+                    marginBottom: '0.4rem',
                   }}
                 />
-              </div>
-
-              {/* Defense bonus item buttons */}
-              {defenseBonusItems.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.4rem 0' }}>
-                  {defenseBonusItems.map(item => (
-                    <button key={item.id} onClick={() => consumeBonusItem(item, defender, 'defense')}
+                {/* Bubbles below input — debuff, rerolls, bonus items */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                  {playerAtkDebuff > 0 && (
+                    <span style={{ padding: '0.2rem 0.55rem', borderRadius: '20px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171', fontSize: '0.65rem', fontWeight: '800' }}>
+                      ⚔️↓ -{playerAtkDebuff} Atk Debuff
+                    </span>
+                  )}
+                  {[
+                    ...attackerRerollItems.map(it => ({ ...it, label: '⟳ Reroll Atk', color: '#86efac', owner: attacker, onClick: () => consumeRerollItem(it, attacker, setAttackerRoll) })),
+                    ...forceAttackRerollItems.map(it => ({ ...it, label: '⚡ Force Reroll', color: '#fca5a5', owner: defender, onClick: () => consumeRerollItem(it, defender, setAttackerRoll) })),
+                    ...attackBonusItems.map(it => ({ ...it, label: `⚔️ +${it.effect?.value} atk`, color: '#86efac', owner: attacker, onClick: () => consumeBonusItem(it, attacker, 'attack') })),
+                  ].map(item => (
+                    <button key={item.id} onClick={item.onClick}
                       style={{
-                        padding: '0.2rem 0.6rem',
-                        background: activeDefenseBonus > 0 ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)',
-                        border: `1px solid ${activeDefenseBonus > 0 ? 'rgba(59,130,246,0.7)' : 'rgba(59,130,246,0.4)'}`,
-                        borderRadius: '20px', cursor: 'pointer',
-                        color: '#93c5fd', fontFamily: fonts.body,
-                        fontWeight: '800', fontSize: '0.65rem',
+                        padding: '0.2rem 0.55rem', borderRadius: '20px', cursor: 'pointer',
+                        background: 'rgba(0,0,0,0.35)', border: `1px solid ${item.color}50`,
+                        color: item.color, fontFamily: fonts.body, fontWeight: '800', fontSize: '0.65rem',
                       }}>
-                      🛡️ +{item.effect?.value} def
-                      <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
-                        {defender?.playerName || ''}
-                      </span>
-                      <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
-                        {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
+                      {item.label}
+                      <span style={{ color: colors.textMuted, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                        {item.owner?.playerName || ''} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
                       </span>
                     </button>
                   ))}
                 </div>
-              )}
+              </div>
 
-
-
+              {/* ── Defender column ── */}
               <div>
-                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.35rem' }}>
                   Defender Roll ({defenderDice}):
                 </label>
-                {/* Defender reroll buttons — always shown when items exist, before typing */}
-                {(() => {
-                  const allDefRerolls = [
-                    ...defenderRerollItems.map(it => ({ ...it, label: '⟳ REROLL MY DEFENSE', color: '#86efac', owner: defender })),
-                    ...forceDefenseRerollItems.map(it => ({ ...it, label: '⚡ FORCE DEFENDER REROLL', color: '#fca5a5', owner: attacker })),
-                  ];
-                  if (allDefRerolls.length === 0) return null;
-                  return (
-                    <div style={{ marginBottom: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                      {allDefRerolls.map(item => (
-                        <button key={item.id} onClick={() => consumeRerollItem(item, item.owner, setDefenderRoll)}
-                          style={{
-                            padding: '0.2rem 0.6rem',
-                            background: 'rgba(0,0,0,0.35)',
-                            border: `1px solid ${item.color}50`,
-                            borderRadius: '20px', cursor: 'pointer',
-                            color: item.color, fontFamily: fonts.body,
-                            fontWeight: '800', fontSize: '0.65rem',
-                          }}>
-                          {item.label}
-                          <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
-                            {item.owner?.playerName || ''}
-                          </span>
-                          <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
-                            {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
                 <input
                   type="number"
                   min="1"
@@ -1224,18 +1173,44 @@ const CalculatorD20 = ({
                   value={defenderRoll}
                   onChange={(e) => setDefenderRoll(e.target.value)}
                   style={{
-                    width: '100%',
-                    background: '#1a0f0a',
-                    color: colors.gold,
-                    padding: '0.75rem',
-                    borderRadius: '6px',
-                    border: borders.warm,
-                    fontSize: '1.5rem',
-                    textAlign: 'center',
-                    fontFamily: fonts.display,
-                    fontWeight: 'bold'
+                    width: '100%', boxSizing: 'border-box',
+                    background: '#1a0f0a', color: colors.gold,
+                    padding: '0.75rem', borderRadius: '6px',
+                    border: borders.warm, fontSize: '1.5rem',
+                    textAlign: 'center', fontFamily: fonts.display, fontWeight: 'bold',
+                    marginBottom: '0.4rem',
                   }}
                 />
+                {/* Bubbles below input — npc def buff, rerolls, bonus items */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                  {liveNpcDefBonus > 0 && (
+                    <span style={{ padding: '0.2rem 0.55rem', borderRadius: '20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.4)', color: '#4ade80', fontSize: '0.65rem', fontWeight: '800' }}>
+                      🛡️↑ +{liveNpcDefBonus} Def Buff
+                    </span>
+                  )}
+                  {liveNpcDefBonus < 0 && (
+                    <span style={{ padding: '0.2rem 0.55rem', borderRadius: '20px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171', fontSize: '0.65rem', fontWeight: '800' }}>
+                      🛡️↓ {liveNpcDefBonus} Def Debuff
+                    </span>
+                  )}
+                  {[
+                    ...defenderRerollItems.map(it => ({ ...it, label: '⟳ Reroll Def', color: '#86efac', owner: defender, onClick: () => consumeRerollItem(it, defender, setDefenderRoll) })),
+                    ...forceDefenseRerollItems.map(it => ({ ...it, label: '⚡ Force Reroll', color: '#fca5a5', owner: attacker, onClick: () => consumeRerollItem(it, attacker, setDefenderRoll) })),
+                    ...defenseBonusItems.map(it => ({ ...it, label: `🛡️ +${it.effect?.value} def`, color: '#93c5fd', owner: defender, onClick: () => consumeBonusItem(it, defender, 'defense') })),
+                  ].map(item => (
+                    <button key={item.id} onClick={item.onClick}
+                      style={{
+                        padding: '0.2rem 0.55rem', borderRadius: '20px', cursor: 'pointer',
+                        background: 'rgba(0,0,0,0.35)', border: `1px solid ${item.color}50`,
+                        color: item.color, fontFamily: fonts.body, fontWeight: '800', fontSize: '0.65rem',
+                      }}>
+                      {item.label}
+                      <span style={{ color: colors.textMuted, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                        {item.owner?.playerName || ''} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1290,12 +1265,15 @@ const CalculatorD20 = ({
                   {roll.isSpecial && <span style={{ color: '#fbbf24' }}>+1</span>}
                   {roll.isFirstStrike && <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>⚡+2</span>}
                   {roll.attackBonusApplied > 0 && <span style={{ color: '#86efac', fontWeight: 'bold' }}>+{roll.attackBonusApplied}</span>}
+                  {roll.playerAtkDebuff > 0 && <span style={{ color: '#f87171', fontWeight: 'bold', fontSize: '0.75rem' }}> -{roll.playerAtkDebuff}⚔️↓</span>}
                   {' '}vs{' '}
                   {roll.armorFloored
                     ? <><span style={{ color: colors.textMuted, textDecoration: 'line-through' }}>{roll.defenderRoll}</span><span style={{ color: '#5eead4' }}> {roll.effectiveDefenderRoll}</span><span style={{ color: colors.textDisabled, fontSize: '0.7rem' }}> 🛡️floor</span></>
                     : roll.defenderRoll
                   }
                   {roll.defenseBonusApplied > 0 && <span style={{ color: '#93c5fd', fontWeight: 'bold' }}>+{roll.defenseBonusApplied}</span>}
+                  {roll.npcDefBonus > 0 && <span style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.75rem' }}> +{roll.npcDefBonus}🛡️↑</span>}
+                  {roll.npcDefBonus < 0 && <span style={{ color: '#f87171', fontWeight: 'bold', fontSize: '0.75rem' }}> {roll.npcDefBonus}🛡️↓</span>}
                 </span>
                 <span style={{ color: roll.damage > 0 ? '#fecaca' : '#86efac', fontWeight: 'bold' }}>
                   {roll.damage > 0 ? `${roll.damage}hp` : 'BLOCKED'}

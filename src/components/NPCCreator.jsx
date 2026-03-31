@@ -31,6 +31,7 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
     lootItemCount: initialNPC.lootItemCount || 1,
     lootTierWeights: initialNPC.lootTierWeights || { Common: 60, Rare: 30, Legendary: 10 },
     isFinalBoss: initialNPC.isFinalBoss || false,
+    hasRebuttal: initialNPC.hasRebuttal !== false, // default true
   }));
 
   // ── Field helpers ────────────────────────────────────────────────────────
@@ -202,9 +203,20 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
         spawnText: a.spawnText || '',
         spawnDieType: a.spawnDieType || '',
         spawnNumRolls: parseInt(a.spawnNumRolls) || 1,
-        spawnPresets: a.spawnPresets || [],
+        spawnPresets: (a.spawnPresets || []).map(p => ({
+          ...p,
+          attacks: (p.attacks || []).map(m => ({
+            name: m.name || '',
+            range: m.range || '',
+            dieType: m.dieType || 'd20',
+            numRolls: parseInt(m.numRolls) || 1,
+            attackType: 'attack',
+          })),
+        })),
+        attacks: a.attacks || [],
         description: a.description || '',
         attackEffect: a.attackEffect || null,
+        buffEffect: a.buffEffect || null,
       })),
       phases: npc.hasPhases ? npc.phases.map(p => ({
         ...p,
@@ -220,9 +232,19 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           spawnText: a.spawnText || '',
           spawnDieType: a.spawnDieType || '',
           spawnNumRolls: parseInt(a.spawnNumRolls) || 1,
-          spawnPresets: a.spawnPresets || [],
+          spawnPresets: (a.spawnPresets || []).map(p => ({
+            ...p,
+            attacks: (p.attacks || []).map(m => ({
+              name: m.name || '',
+              range: m.range || '',
+              dieType: m.dieType || 'd20',
+              numRolls: parseInt(m.numRolls) || 1,
+              attackType: 'attack',
+            })),
+          })),
           description: a.description || '',
           attackEffect: a.attackEffect || null,
+          buffEffect: a.buffEffect || null,
         })),
       })) : [],
     });
@@ -502,6 +524,31 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           </div>
         </div>
 
+        {/* ── Rebuttal Toggle ── */}
+        <div onClick={() => set('hasRebuttal', !npc.hasRebuttal)} style={{
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+          padding: '0.6rem 0.85rem', marginBottom: '0.75rem',
+          background: npc.hasRebuttal ? 'rgba(124,58,237,0.1)' : 'rgba(0,0,0,0.25)',
+          border: `2px solid ${npc.hasRebuttal ? 'rgba(124,58,237,0.5)' : 'rgba(90,74,58,0.3)'}`,
+          borderRadius: '8px', cursor: 'pointer',
+        }}>
+          <div style={{
+            width: '16px', height: '16px', borderRadius: '3px', flexShrink: 0,
+            border: `2px solid ${npc.hasRebuttal ? '#a78bfa' : colors.textFaint}`,
+            background: npc.hasRebuttal ? '#7c3aed' : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.6rem', color: '#fff', fontWeight: '900',
+          }}>{npc.hasRebuttal && '✓'}</div>
+          <div>
+            <div style={{ color: npc.hasRebuttal ? '#c4b5fd' : colors.textMuted, fontWeight: '800', fontSize: '0.82rem' }}>
+              ⚔️ Has Rebuttal Action
+            </div>
+            <div style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '600' }}>
+              When checked, a rebuttal window opens after this NPC is attacked
+            </div>
+          </div>
+        </div>
+
         {/* ── Loot Table ── */}
         <div style={{
           background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(201,169,97,0.2)',
@@ -693,9 +740,10 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
 // ── AttackRow sub-component ──────────────────────────────────────────────────
 
 const ATTACK_TYPES = [
-  { value: 'attack', label: '⚔️ Attack', color: '#fca5a5' },
-  { value: 'action', label: '✦ Action',  color: '#a78bfa' },
-  { value: 'spawn',  label: '🐣 Spawn',  color: '#86efac' },
+  { value: 'attack', label: '⚔️ Attack',     color: '#fca5a5' },
+  { value: 'action', label: '✦ Action',      color: '#a78bfa' },
+  { value: 'spawn',  label: '🐣 Spawn',      color: '#86efac' },
+  { value: 'buff',   label: '✨ Buff/Debuff', color: '#fbbf24' },
 ];
 
 const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, labelStyle }) => {
@@ -704,7 +752,7 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
   return (
     <div style={{
       background: 'rgba(0,0,0,0.3)',
-      border: `1px solid ${type === 'attack' ? 'rgba(139,92,246,0.25)' : type === 'spawn' ? 'rgba(74,222,128,0.25)' : 'rgba(167,139,250,0.25)'}`,
+      border: `1px solid ${type === 'attack' ? 'rgba(139,92,246,0.25)' : type === 'spawn' ? 'rgba(74,222,128,0.25)' : type === 'buff' ? 'rgba(251,191,36,0.25)' : 'rgba(167,139,250,0.25)'}`,
       borderRadius: '8px', padding: '0.75rem', marginBottom: '0.5rem',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
@@ -713,7 +761,7 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
             <button key={t.value} onClick={() => onChange('attackType', t.value)} style={{
               padding: '0.2rem 0.55rem', borderRadius: '20px', fontFamily: fonts.body,
               fontWeight: '800', fontSize: '0.62rem', cursor: 'pointer',
-              background: type === t.value ? `rgba(${t.value === 'attack' ? '239,68,68' : t.value === 'action' ? '139,92,246' : '74,222,128'},0.15)` : 'rgba(0,0,0,0.3)',
+              background: type === t.value ? `rgba(${t.value === 'attack' ? '239,68,68' : t.value === 'action' ? '139,92,246' : t.value === 'buff' ? '251,191,36' : '74,222,128'},0.15)` : 'rgba(0,0,0,0.3)',
               border: `1px solid ${type === t.value ? t.color : 'rgba(90,74,58,0.3)'}`,
               color: type === t.value ? t.color : colors.textFaint,
             }}>{t.label}</button>
@@ -763,6 +811,72 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
         </div>
       )}
 
+      {/* Buff/Debuff-only fields */}
+      {type === 'buff' && (() => {
+        const ef = attack.buffEffect || { stat: 'attack', value: 2, duration: 2, permanent: false };
+        const isBuff = ef.value >= 0;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {/* Stat choice */}
+            <div>
+              <label style={labelStyle}>Affects</label>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                {[{ value: 'attack', label: '⚔️ Attack Power' }, { value: 'defense', label: '🛡️ Defense Power' }].map(opt => (
+                  <div key={opt.value} onClick={() => onChange('buffEffect', { ...ef, stat: opt.value })}
+                    style={{ flex: 1, padding: '0.4rem 0.6rem', borderRadius: '7px', cursor: 'pointer', textAlign: 'center',
+                      background: ef.stat === opt.value ? 'rgba(251,191,36,0.12)' : 'rgba(0,0,0,0.3)',
+                      border: `1px solid ${ef.stat === opt.value ? 'rgba(251,191,36,0.5)' : 'rgba(90,74,58,0.3)'}`,
+                      color: ef.stat === opt.value ? '#fbbf24' : colors.textFaint,
+                      fontWeight: '800', fontSize: '0.75rem', fontFamily: fonts.body,
+                    }}>{opt.label}</div>
+                ))}
+              </div>
+            </div>
+
+            {/* Value — positive = buff, negative = debuff */}
+            <div>
+              <label style={labelStyle}>Value <span style={{ color: colors.textFaint, fontWeight: '400' }}>(positive = buff, negative = debuff)</span></label>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                <button type='button' onClick={() => onChange('buffEffect', { ...ef, value: ef.value > 0 ? -Math.abs(ef.value) : Math.abs(ef.value) })}
+                  style={{ padding: '0.4rem 0.75rem', background: isBuff ? 'rgba(74,222,128,0.12)' : 'rgba(239,68,68,0.12)', border: `1px solid ${isBuff ? 'rgba(74,222,128,0.4)' : 'rgba(239,68,68,0.4)'}`, borderRadius: '6px', cursor: 'pointer', color: isBuff ? '#4ade80' : '#f87171', fontWeight: '800', fontSize: '0.75rem', fontFamily: fonts.body, whiteSpace: 'nowrap' }}>
+                  {isBuff ? '↑ Buff' : '↓ Debuff'}
+                </button>
+                <input style={{ ...inputStyle, flex: 1, textAlign: 'center' }} type='number'
+                  value={ef.value}
+                  onChange={e => onChange('buffEffect', { ...ef, value: parseInt(e.target.value) || 0 })} />
+              </div>
+            </div>
+
+            {/* Duration */}
+            {!ef.permanent && (
+              <div>
+                <label style={labelStyle}>Duration (rounds) <span style={{ color: colors.textFaint, fontWeight: '400' }}>— leave blank to make permanent</span></label>
+                <input style={inputStyle} type='number' min='1'
+                  value={ef.duration ?? 2}
+                  onChange={e => onChange('buffEffect', { ...ef, duration: parseInt(e.target.value) || 2 })} />
+              </div>
+            )}
+
+            {/* Permanent toggle */}
+            <div onClick={() => onChange('buffEffect', { ...ef, permanent: !ef.permanent, duration: ef.permanent ? 2 : null })}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.6rem', borderRadius: '6px', cursor: 'pointer',
+                background: ef.permanent ? 'rgba(251,191,36,0.08)' : 'rgba(0,0,0,0.2)',
+                border: `1px solid ${ef.permanent ? 'rgba(251,191,36,0.35)' : 'rgba(90,74,58,0.3)'}`,
+              }}>
+              <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
+                border: `2px solid ${ef.permanent ? '#fbbf24' : colors.textFaint}`,
+                background: ef.permanent ? '#fbbf24' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.55rem', color: '#000', fontWeight: '900',
+              }}>{ef.permanent && '✓'}</div>
+              <span style={{ color: ef.permanent ? '#fbbf24' : colors.textMuted, fontSize: '0.72rem', fontWeight: '700' }}>
+                Permanent — lasts until DM removes it manually
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Spawn-only: preset NPC builder */}
       {type === 'spawn' && (
         <>
@@ -796,7 +910,7 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
           <div style={{ marginBottom: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
               <label style={labelStyle}>Spawn Presets</label>
-              <button type='button' onClick={() => onChange('spawnPresets', [...(attack.spawnPresets || []), { name: '', hp: 10, maxHp: 10, armor: 0, attackBonus: 0 }])}
+              <button type='button' onClick={() => onChange('spawnPresets', [...(attack.spawnPresets || []), { name: '', hp: 10, maxHp: 10, armor: 0, attackBonus: 0, attacks: [] }])}
                 style={{ padding: '0.2rem 0.55rem', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.4)', borderRadius: '5px', cursor: 'pointer', color: '#86efac', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>
                 + Add NPC Type
               </button>
@@ -804,41 +918,122 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
             {(attack.spawnPresets || []).length === 0 && (
               <div style={{ color: colors.textFaint, fontSize: '0.72rem', fontStyle: 'italic', padding: '0.4rem' }}>Add NPC types that will be spawned when this attack is used.</div>
             )}
-            {(attack.spawnPresets || []).map((preset, pi) => (
-              <div key={pi} style={{ background: 'rgba(74,222,128,0.05)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.4rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                  <span style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '800' }}>NPC Type {pi + 1}</span>
-                  <button type='button' onClick={() => onChange('spawnPresets', (attack.spawnPresets || []).filter((_, i) => i !== pi))}
-                    style={{ padding: '0.1rem 0.4rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#fca5a5', fontSize: '0.6rem', fontFamily: fonts.body }}>✕</button>
-                </div>
-                <div style={{ marginBottom: '0.4rem' }}>
-                  <label style={labelStyle}>NPC Name</label>
-                  <input style={inputStyle} value={preset.name} onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], name: e.target.value}; onChange('spawnPresets', p); }} placeholder='e.g. Cave Troll' />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
-                  <div>
-                    <label style={labelStyle}>HP</label>
-                    <input style={inputStyle} type='number' min='1' value={preset.hp}
-                      onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], hp: parseInt(e.target.value)||1, maxHp: parseInt(e.target.value)||1}; onChange('spawnPresets', p); }} />
+            {(attack.spawnPresets || []).map((preset, pi) => {
+              const updatePreset = (updates) => {
+                const p = [...(attack.spawnPresets||[])];
+                p[pi] = { ...p[pi], ...updates };
+                onChange('spawnPresets', p);
+              };
+              const presetMoves = preset.attacks || [];
+              const addPresetMove = () => {
+                updatePreset({ attacks: [...presetMoves, { name: '', range: '', dieType: 'd20', numRolls: 1 }] });
+              };
+              const updatePresetMove = (mi, field, val) => {
+                const moves = [...presetMoves];
+                moves[mi] = { ...moves[mi], [field]: val };
+                updatePreset({ attacks: moves });
+              };
+              const removePresetMove = (mi) => {
+                updatePreset({ attacks: presetMoves.filter((_, i) => i !== mi) });
+              };
+              return (
+                <div key={pi} style={{ background: 'rgba(74,222,128,0.05)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: '6px', padding: '0.6rem', marginBottom: '0.4rem' }}>
+                  {/* Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                    <span style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '800' }}>NPC Type {pi + 1}</span>
+                    <button type='button' onClick={() => onChange('spawnPresets', (attack.spawnPresets || []).filter((_, i) => i !== pi))}
+                      style={{ padding: '0.1rem 0.4rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#fca5a5', fontSize: '0.6rem', fontFamily: fonts.body }}>✕</button>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Armor</label>
-                    <input style={inputStyle} type='number' min='0' value={preset.armor || 0}
-                      onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], armor: parseInt(e.target.value)||0}; onChange('spawnPresets', p); }} />
+
+                  {/* Name */}
+                  <div style={{ marginBottom: '0.4rem' }}>
+                    <label style={labelStyle}>NPC Name</label>
+                    <input style={inputStyle} value={preset.name}
+                      onChange={e => updatePreset({ name: e.target.value })}
+                      placeholder='e.g. Cave Troll' />
                   </div>
-                  <div>
-                    <label style={labelStyle}>Atk Bonus</label>
-                    <input style={inputStyle} type='number' min='0' value={preset.attackBonus || 0}
-                      onChange={e => { const p = [...(attack.spawnPresets||[])]; p[pi] = {...p[pi], attackBonus: parseInt(e.target.value)||0}; onChange('spawnPresets', p); }} />
+
+                  {/* Stats row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginBottom: '0.6rem' }}>
+                    <div>
+                      <label style={labelStyle}>HP</label>
+                      <input style={inputStyle} type='number' min='1' value={preset.hp}
+                        onChange={e => updatePreset({ hp: parseInt(e.target.value)||1, maxHp: parseInt(e.target.value)||1 })} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Armor</label>
+                      <input style={inputStyle} type='number' min='0' value={preset.armor || 0}
+                        onChange={e => updatePreset({ armor: parseInt(e.target.value)||0 })} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Atk Bonus</label>
+                      <input style={inputStyle} type='number' min='0' value={preset.attackBonus || 0}
+                        onChange={e => updatePreset({ attackBonus: parseInt(e.target.value)||0 })} />
+                    </div>
+                  </div>
+
+                  {/* Move set */}
+                  <div style={{ borderTop: '1px solid rgba(74,222,128,0.15)', paddingTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <label style={{ ...labelStyle, margin: 0 }}>Move Set</label>
+                      <button type='button' onClick={addPresetMove}
+                        style={{ padding: '0.15rem 0.5rem', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.35)', borderRadius: '5px', cursor: 'pointer', color: '#86efac', fontSize: '0.62rem', fontWeight: '800', fontFamily: fonts.body }}>
+                        + Add Move
+                      </button>
+                    </div>
+
+                    {presetMoves.length === 0 && (
+                      <div style={{ color: colors.textFaint, fontSize: '0.65rem', fontStyle: 'italic', padding: '0.25rem 0' }}>
+                        No moves — will inherit parent spawn move set.
+                      </div>
+                    )}
+
+                    {presetMoves.map((move, mi) => (
+                      <div key={mi} style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(74,222,128,0.12)', borderRadius: '5px', padding: '0.45rem', marginBottom: '0.3rem' }}>
+                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginBottom: '0.35rem' }}>
+                          <input style={{ ...inputStyle, flex: 2, fontSize: '0.78rem', padding: '0.35rem 0.5rem' }}
+                            value={move.name} placeholder='Move name'
+                            onChange={e => updatePresetMove(mi, 'name', e.target.value)} />
+                          <input style={{ ...inputStyle, flex: 1, fontSize: '0.78rem', padding: '0.35rem 0.5rem' }}
+                            value={move.range || ''} placeholder='Range'
+                            onChange={e => updatePresetMove(mi, 'range', e.target.value)} />
+                          <button type='button' onClick={() => removePresetMove(mi)}
+                            style={{ padding: '0.25rem 0.45rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', cursor: 'pointer', color: '#fca5a5', fontSize: '0.6rem', fontFamily: fonts.body, flexShrink: 0 }}>✕</button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem' }}>
+                          <div>
+                            <label style={labelStyle}>Die Type</label>
+                            <select style={{ ...inputStyle, cursor: 'pointer', fontSize: '0.78rem', padding: '0.3rem 0.5rem' }}
+                              value={move.dieType || 'd20'}
+                              onChange={e => updatePresetMove(mi, 'dieType', e.target.value)}>
+                              <option value='d4'>D4</option>
+                              <option value='d6'>D6</option>
+                              <option value='d10'>D10</option>
+                              <option value='d20'>D20</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelStyle}># Rolls</label>
+                            <input style={{ ...inputStyle, fontSize: '0.78rem', padding: '0.3rem 0.5rem' }}
+                              type='number' min='1' max='10'
+                              value={move.numRolls || 1}
+                              onChange={e => updatePresetMove(mi, 'numRolls', parseInt(e.target.value)||1)} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div>
             <label style={labelStyle}>Description (optional)</label>
             <input style={inputStyle} value={attack.description || ''} onChange={e => onChange('description', e.target.value)}
               placeholder='e.g. Appears at the cave entrance' />
+          </div>
+          <div style={{ padding: '0.4rem 0.6rem', background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: '6px', color: '#86efac', fontSize: '0.68rem', fontWeight: '600' }}>
+            💡 Each NPC type can have its own moves. If none are added, the spawned NPC inherits this spawn attack's move set.
           </div>
         </>
       )}
@@ -848,36 +1043,59 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
         <div style={{ marginTop: '0.5rem' }}>
           <label style={labelStyle}>Apply Effect (optional)</label>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
-            {[{ value: null, label: 'None' }, { value: 'poison', label: '🤢 Poison' }, { value: 'stun', label: '💫 Stun' }].map(opt => (
-              <div key={String(opt.value)} onClick={() => onChange('attackEffect', opt.value ? { type: opt.value, value: opt.value === 'poison' ? 2 : 0, duration: 2 } : null)}
-                style={{ padding: '0.25rem 0.6rem', borderRadius: '20px', cursor: 'pointer', fontWeight: '800', fontSize: '0.68rem', fontFamily: fonts.body,
-                  background: (attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? 'rgba(167,139,250,0.15)' : 'rgba(0,0,0,0.3)',
-                  border: `1px solid ${(attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
-                  color: (attack.attackEffect?.type === opt.value || (!attack.attackEffect && opt.value === null)) ? '#a78bfa' : colors.textFaint,
-                }}>{opt.label}</div>
-            ))}
+            {[
+              { value: null,            label: 'None',            defaults: null },
+              { value: 'poison',        label: '🤢 Poison',       defaults: { value: 2, duration: 2, permanent: false } },
+              { value: 'stun',          label: '💫 Stun',         defaults: { value: 0, duration: 1, permanent: false } },
+              { value: 'attackDebuff',  label: '⚔️↓ Atk Debuff',  defaults: { value: 2, duration: 2, permanent: false } },
+              { value: 'defenseDebuff', label: '🛡️↓ Def Debuff',  defaults: { value: 2, duration: 2, permanent: false } },
+            ].map(opt => {
+              const isActive = opt.value === null ? !attack.attackEffect : attack.attackEffect?.type === opt.value;
+              return (
+                <div key={String(opt.value)} onClick={() => onChange('attackEffect', opt.defaults ? { type: opt.value, ...opt.defaults } : null)}
+                  style={{ padding: '0.25rem 0.6rem', borderRadius: '20px', cursor: 'pointer', fontWeight: '800', fontSize: '0.68rem', fontFamily: fonts.body,
+                    background: isActive ? 'rgba(167,139,250,0.15)' : 'rgba(0,0,0,0.3)',
+                    border: `1px solid ${isActive ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
+                    color: isActive ? '#a78bfa' : colors.textFaint,
+                  }}>{opt.label}</div>
+              );
+            })}
           </div>
-          {attack.attackEffect?.type === 'poison' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+
+          {/* Effect config — shared value + duration + permanent toggle */}
+          {attack.attackEffect && (() => {
+            const ef = attack.attackEffect;
+            const isPoison = ef.type === 'poison';
+            const isStun   = ef.type === 'stun';
+            const isBuff   = ['attackDebuff','defenseDebuff'].includes(ef.type);
+            return (
               <div>
-                <label style={labelStyle}>Damage per Round</label>
-                <input style={inputStyle} type='number' min='1' value={attack.attackEffect.value || 2}
-                  onChange={e => onChange('attackEffect', { ...attack.attackEffect, value: parseInt(e.target.value)||1 })} />
+                <div style={{ display: 'grid', gridTemplateColumns: isStun ? '1fr' : '1fr 1fr', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                  {!isStun && (
+                    <div>
+                      <label style={labelStyle}>{isPoison ? 'Damage per Round' : 'Modifier Value'}</label>
+                      <input style={inputStyle} type='number' min='1' value={ef.value || 2}
+                        onChange={e => onChange('attackEffect', { ...ef, value: parseInt(e.target.value)||1 })} />
+                    </div>
+                  )}
+                  {!ef.permanent && (
+                    <div>
+                      <label style={labelStyle}>Duration (rounds)</label>
+                      <input style={inputStyle} type='number' min='1' value={ef.duration || 2}
+                        onChange={e => onChange('attackEffect', { ...ef, duration: parseInt(e.target.value)||1 })} />
+                    </div>
+                  )}
+                </div>
+                {isBuff && (
+                  <div onClick={() => onChange('attackEffect', { ...ef, permanent: !ef.permanent, duration: ef.permanent ? 2 : null })}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.35rem 0.6rem', borderRadius: '6px', cursor: 'pointer', background: ef.permanent ? 'rgba(245,158,11,0.1)' : 'rgba(0,0,0,0.25)', border: `1px solid ${ef.permanent ? 'rgba(245,158,11,0.4)' : 'rgba(90,74,58,0.3)'}` }}>
+                    <div style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${ef.permanent ? '#fbbf24' : colors.textFaint}`, background: ef.permanent ? '#fbbf24' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900' }}>{ef.permanent && '✓'}</div>
+                    <span style={{ color: ef.permanent ? colors.amber : colors.textMuted, fontSize: '0.72rem', fontWeight: '700' }}>Permanent (lasts until manually removed)</span>
+                  </div>
+                )}
               </div>
-              <div>
-                <label style={labelStyle}>Duration (rounds)</label>
-                <input style={inputStyle} type='number' min='1' value={attack.attackEffect.duration || 2}
-                  onChange={e => onChange('attackEffect', { ...attack.attackEffect, duration: parseInt(e.target.value)||1 })} />
-              </div>
-            </div>
-          )}
-          {attack.attackEffect?.type === 'stun' && (
-            <div>
-              <label style={labelStyle}>Duration (rounds)</label>
-              <input style={inputStyle} type='number' min='1' value={attack.attackEffect.duration || 1}
-                onChange={e => onChange('attackEffect', { ...attack.attackEffect, duration: parseInt(e.target.value)||1 })} />
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>

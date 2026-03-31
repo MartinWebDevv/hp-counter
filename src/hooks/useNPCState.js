@@ -46,7 +46,8 @@ export const useNPCState = (addLog, onNPCKilled) => {
     spawnNumRolls: 1,      // how many of that die to roll
     spawnPresets: [],      // [{ name, hp, maxHp, armor, attackBonus }] preset NPCs to spawn
     description: '',       // used for action/spawn type
-    attackEffect: null,    // { type: 'poison'|'stun', value?, duration? }
+    attackEffect: null,    // { type: 'poison'|'stun'|'attackBuff'|'defenseBuff'|'attackDebuff'|'defenseDebuff', value, duration, permanent }
+    buffEffect: null,      // { stat: 'attack'|'defense', value: number, duration: number|null, permanent: bool }
   });
 
   /**
@@ -86,6 +87,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
     active: false,        // whether this NPC is in the turn rotation
     isDead: false,
     isFinalBoss: false,   // marks this NPC for Final Boss Kill VP award
+    hasRebuttal: true,    // if false, rebuttal window never opens for this NPC
   });
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -264,19 +266,20 @@ export const useNPCState = (addLog, onNPCKilled) => {
   /**
    * DM manually triggers next phase
    */
-  const triggerNextPhase = (npcId) => {
+  const triggerNextPhase = (npcId, targetPhaseIndex = null) => {
     setNpcs(prev => prev.map(n => {
       if (n.id !== npcId) return n;
-      if (!n.hasPhases || n.currentPhase >= n.phases.length) return n;
-
-      const nextPhase = n.phases[n.currentPhase];
+      if (!n.hasPhases || n.phases.length === 0) return n;
+      const phaseIdx = targetPhaseIndex !== null ? targetPhaseIndex : n.currentPhase;
+      if (phaseIdx >= n.phases.length) return n;
+      const nextPhase = n.phases[phaseIdx];
       const resurrectHP = nextPhase.triggerHP === 0 ? (nextPhase.resurrectHP || 20) : null;
 
       const phaseAttacksFilled = nextPhase.attacks?.some(a => a.name?.trim());
 
       let updated = {
         ...n,
-        currentPhase: n.currentPhase + 1,
+        currentPhase: phaseIdx + 1,
         name:         nextPhase.name?.trim()                                          ? nextPhase.name         : n.name,
         armor:        (nextPhase.armor !== null && nextPhase.armor !== '')             ? nextPhase.armor        : n.armor,
         attackBonus:  (nextPhase.attackBonus !== null && nextPhase.attackBonus !== '') ? nextPhase.attackBonus  : n.attackBonus,
@@ -292,7 +295,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
         updated.active = true;
       }
 
-      addLog(`🔄 DM triggered: "${n.name}" → ${nextPhase.label || `Phase ${n.currentPhase + 1}`}!`);
+      addLog(`🔄 DM triggered: "${n.name}" → ${nextPhase.label || `Phase ${phaseIdx + 1}`}!`);
       return updated;
     }));
   };

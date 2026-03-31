@@ -732,7 +732,7 @@ const HPCounter = () => {
           calculatorData={calculatorData} players={players} npcs={activeNPCs}
           damageDistribution={damageDistribution}
           onUpdateDistribution={updateDamageDistribution}
-          onApply={() => {
+          onApply={(distributionOverride) => {
             const calc       = calculatorData;
             const attackerId = calc?.attackerId;
 
@@ -826,7 +826,7 @@ const HPCounter = () => {
                 const atk = players.find(p=>p.id===calc?.attackerId);
                 calc.targetSquadMembers.forEach(t => {
                   if (!t.isNPC) return;
-                  const dmg = damageDistribution[`npc-${t.npcId}`]||0;
+                  const dmg = (distributionOverride||damageDistribution)[`npc-${t.npcId}`]||0;
                   // Check synchronously if this hit will kill the NPC
                   const npcSnapshot = getNPCById(t.npcId);
                   const willDie = npcSnapshot && (npcSnapshot.hp - dmg) <= 0;
@@ -843,7 +843,7 @@ const HPCounter = () => {
                   }
                 });
               }
-            });
+            }, distributionOverride);
           }}
           onClose={() => setShowDamageDistribution(false)}
         />
@@ -880,6 +880,21 @@ const HPCounter = () => {
                     newNPC.lootMode = 'weighted';
                     newNPC.lootTierWeights = { Common: 60, Rare: 30, Legendary: 10 };
                     newNPC.lootItemCount = 1;
+                    // Apply move set: preset's own moves take priority, else inherit spawn move's attacks
+                    if (preset.attacks && preset.attacks.length > 0) {
+                      newNPC.attacks = preset.attacks.map(m => ({
+                        name: m.name || '',
+                        attackType: 'attack',
+                        dieType: m.dieType || 'd20',
+                        numRolls: parseInt(m.numRolls) || 1,
+                        range: m.range || '',
+                        attackBonus: 0,
+                        attackEffect: null,
+                        buffEffect: null,
+                      }));
+                    } else if (attack.attacks && attack.attacks.length > 0) {
+                      newNPC.attacks = attack.attacks;
+                    }
                     saveNPC(newNPC);
                     totalSpawned++;
                   }
@@ -894,6 +909,10 @@ const HPCounter = () => {
                   newNPC.lootMode = 'weighted';
                   newNPC.lootTierWeights = { Common: 60, Rare: 30, Legendary: 10 };
                   newNPC.lootItemCount = 1;
+                  // Inherit move set from the spawn attack
+                  if (attack.attacks && attack.attacks.length > 0) {
+                    newNPC.attacks = attack.attacks;
+                  }
                   saveNPC(newNPC);
                   totalSpawned++;
                 }
@@ -961,7 +980,7 @@ const HPCounter = () => {
           onUpdatePlayer={updatePlayer}
           onAddLog={addLog}
           onCreateTimer={roundTimers.createTimer}
-          onProceed={(updatedData) => { campaign.setNpcAttackData(updatedData); campaign.setShowNPCCalculator(false); campaign.setShowNPCDamageDistribution(true); }}
+          onProceed={(updatedData) => { campaign.setNpcDamageDistribution({}); campaign.setNpcAttackData(updatedData); campaign.setShowNPCCalculator(false); campaign.setShowNPCDamageDistribution(true); }}
         />
       )}
       {campaign.showNPCDamageDistribution && campaign.npcAttackData && (
@@ -1262,7 +1281,7 @@ const NPCCalculator = ({ npcAttackData, players, onClose, onProceed, onUpdatePla
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: `2px solid ${colors.gold}`, borderRadius: '12px', padding: '1.5rem', maxWidth: '520px', width: '95%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 0 0 1px rgba(201,169,97,0.1), 0 24px 64px rgba(0,0,0,0.95)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: `2px solid ${colors.gold}`, borderRadius: '12px', padding: '1.5rem', maxWidth: '720px', width: '95%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 0 0 1px rgba(201,169,97,0.1), 0 24px 64px rgba(0,0,0,0.95)' }}>
 
         {/* Title */}
         <h3 style={{ color: colors.gold, fontSize: '1.4rem', marginBottom: '0.75rem', textAlign: 'center', fontFamily: '"Cinzel", Georgia, serif', textShadow: '2px 2px 4px rgba(0,0,0,1)' }}>
@@ -1297,14 +1316,14 @@ const NPCCalculator = ({ npcAttackData, players, onClose, onProceed, onUpdatePla
         )}
 
         {/* Use Item panel */}
-        {allCalcItems.length > 0 && (
+        {allCalcItems.filter(it => !['closecall','diceSwap'].includes(it.effect?.type)).length > 0 && (
           <div style={{ marginBottom: '0.75rem' }}>
             <button onClick={() => setShowItemPanel(s => !s)} style={{ width: '100%', padding: '0.45rem', background: showItemPanel ? 'rgba(99,102,241,0.15)' : 'rgba(0,0,0,0.3)', border: `1px solid ${showItemPanel ? 'rgba(99,102,241,0.5)' : 'rgba(90,74,58,0.3)'}`, borderRadius: showItemPanel ? '6px 6px 0 0' : '6px', color: showItemPanel ? '#a5b4fc' : colors.textMuted, fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem', cursor: 'pointer' }}>
-              🎒 Use Item ({allCalcItems.length} available) {showItemPanel ? '▲' : '▼'}
+              🎒 Use Item ({allCalcItems.filter(it => !['closecall','diceSwap'].includes(it.effect?.type)).length} available) {showItemPanel ? '▲' : '▼'}
             </button>
             {showItemPanel && (
               <div style={{ background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(99,102,241,0.3)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.5rem' }}>
-                {allCalcItems.map((item, idx) => {
+                {allCalcItems.filter(it => !['closecall','diceSwap'].includes(it.effect?.type)).map((item, idx) => {
                   const tc = ({ Common: colors.textSecondary, Rare: '#a78bfa', Legendary: '#fbbf24' }[item.tier] || colors.textSecondary);
                   const typeLabel = { attackBonus: `⚔️ +${item.effect?.value} Atk Bonus`, defenseBonus: `🛡️ +${item.effect?.value} Def Bonus`, rerollAttack: '⟳ Reroll Attack', rerollDefense: '⟳ Reroll Defense', forceAttackReroll: '⚡ Force NPC Reroll', forceDefenseReroll: '⚡ Force Defender Reroll', diceSwap: '⇅ Swap Dice', closecall: '🛡️ Close Call' }[item.effect?.type] || item.effect?.type;
                   return (
@@ -1409,18 +1428,8 @@ const NPCCalculator = ({ npcAttackData, players, onClose, onProceed, onUpdatePla
               </div>
             </div>
 
-            {/* Side-specific item pills */}
+            {/* Two-column inputs — pills sit below each input */}
             {(() => {
-              const defItems = allCalcItems.filter(it => DEFENDER_TYPES.includes(it.effect?.type) && it.effect?.type !== 'diceSwap');
-              const swapItems = allCalcItems.filter(it => it.effect?.type === 'diceSwap');
-              const hasAny = defItems.length > 0 || swapItems.length > 0;
-              if (!hasAny) return null;
-              const pillBtn = (item, label, color, onClick) => (
-                <button key={item.id} onClick={onClick} style={{ padding: '0.18rem 0.55rem', background: 'rgba(0,0,0,0.35)', border: `1px solid ${color}50`, borderRadius: '20px', cursor: 'pointer', color, fontFamily: fonts.body, fontWeight: '800', fontSize: '0.62rem', whiteSpace: 'nowrap' }}>
-                  {label} <span style={{ color: colors.textFaint, fontSize: '0.55rem' }}>{item.playerName} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕</span>
-                </button>
-              );
-              const typeLabel = (t, val) => ({ attackBonus: `⚔️ +${val} Atk`, rerollAttack: '⟳ Reroll Atk', forceDefenseReroll: '⚡ Force Def Reroll', defenseBonus: `🛡️ +${val} Def`, rerollDefense: '⟳ Reroll Def', forceAttackReroll: '⚡ Force NPC Reroll', closecall: '🛡️ Close Call' }[t] || t);
               const pillAction = (it) => {
                 const t = it.effect?.type;
                 if (t === 'rerollAttack')       return () => npcConsumeReroll(it, setAtkRoll);
@@ -1433,37 +1442,49 @@ const NPCCalculator = ({ npcAttackData, players, onClose, onProceed, onUpdatePla
                 if (t === 'closecall')          return () => npcConsumeClosecall(it);
                 return () => consumeNPCItem(it);
               };
+              const pill = (item, label, color) => (
+                <button key={item.id} onClick={pillAction(item)}
+                  style={{ padding: '0.18rem 0.55rem', background: 'rgba(0,0,0,0.35)', border: `1px solid ${color}55`, borderRadius: '20px', cursor: 'pointer', color, fontFamily: fonts.body, fontWeight: '800', fontSize: '0.62rem' }}>
+                  {label} <span style={{ color: colors.textFaint, fontSize: '0.55rem' }}>{item.playerName} · {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕</span>
+                </button>
+              );
+              const atkItems = allCalcItems.filter(it => ['rerollAttack','attackBonus','forceAttackReroll'].includes(it.effect?.type));
+              const defItems = allCalcItems.filter(it => ['rerollDefense','defenseBonus','forceDefenseReroll','closecall','diceSwap'].includes(it.effect?.type));
               return (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.75rem', justifyContent: 'flex-end' }}>
-                  {defItems.map(it => pillBtn(it, typeLabel(it.effect?.type, it.effect?.value), '#86efac', pillAction(it)))}
-                  {swapItems.map(it => pillBtn(it, '⇅ Swap Dice', '#a5b4fc', pillAction(it)))}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
+                  {/* Attacker column */}
+                  <div>
+                    <label style={{ color: '#fca5a5', fontSize: '0.72rem', fontWeight: '800', display: 'block', marginBottom: '0.4rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      Attacker Roll ({dieType.toUpperCase()})
+                    </label>
+                    <input type='number' min='1' max={dieMax} value={atkRoll} onChange={e => setAtkRoll(e.target.value)} placeholder={`1–${dieMax}`} style={{ ...inputStyle, border: '2px solid rgba(239,68,68,0.5)', marginBottom: '0.4rem' }} />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      {activeAtkBonus > 0 && <span style={{ padding: '0.18rem 0.5rem', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '20px', color: '#86efac', fontSize: '0.62rem', fontWeight: '800' }}>⚔️ +{activeAtkBonus} active</span>}
+                      {atkItems.map(it => {
+                        const t = it.effect?.type;
+                        const lbl = t === 'attackBonus' ? `⚔️ +${it.effect?.value} Atk` : t === 'rerollAttack' ? '⟳ Reroll Atk' : '⚡ Force NPC Reroll';
+                        return pill(it, lbl, '#fca5a5');
+                      })}
+                    </div>
+                  </div>
+                  {/* Defender column */}
+                  <div>
+                    <label style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '800', display: 'block', marginBottom: '0.4rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      Defender Roll (D10)
+                    </label>
+                    <input type='number' min='1' max='20' value={defRoll} onChange={e => setDefRoll(e.target.value)} placeholder='Roll...' style={{ ...inputStyle, border: '2px solid rgba(34,197,94,0.5)', marginBottom: '0.4rem' }} />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      {activeDefBonus > 0 && <span style={{ padding: '0.18rem 0.5rem', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '20px', color: '#93c5fd', fontSize: '0.62rem', fontWeight: '800' }}>🛡️ +{activeDefBonus} active</span>}
+                      {defItems.map(it => {
+                        const t = it.effect?.type;
+                        const lbl = t === 'defenseBonus' ? `🛡️ +${it.effect?.value} Def` : t === 'rerollDefense' ? '⟳ Reroll Def' : t === 'forceDefenseReroll' ? '⚡ Force Def Reroll' : t === 'closecall' ? '🛡️ Close Call' : '⇅ Swap Dice';
+                        return pill(it, lbl, '#86efac');
+                      })}
+                    </div>
+                  </div>
                 </div>
               );
             })()}
-
-            {/* Active bonus indicators */}
-            {(activeAtkBonus > 0 || activeDefBonus > 0) && (
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', justifyContent: 'center' }}>
-                {activeAtkBonus > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '5px', color: '#86efac', fontSize: '0.72rem', fontWeight: '800' }}>⚔️ +{activeAtkBonus} ATK BONUS ACTIVE</span>}
-                {activeDefBonus > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '5px', color: '#93c5fd', fontSize: '0.72rem', fontWeight: '800' }}>🛡️ +{activeDefBonus} DEF BONUS ACTIVE</span>}
-              </div>
-            )}
-
-            {/* Two-column inputs */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
-              <div>
-                <label style={{ color: '#fca5a5', fontSize: '0.72rem', fontWeight: '800', display: 'block', marginBottom: '0.4rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  Attacker Roll ({dieType.toUpperCase()})
-                </label>
-                <input type='number' min='1' max={dieMax} value={atkRoll} onChange={e => setAtkRoll(e.target.value)} placeholder={`1–${dieMax}`} style={{ ...inputStyle, border: '2px solid rgba(239,68,68,0.5)' }} />
-              </div>
-              <div>
-                <label style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '800', display: 'block', marginBottom: '0.4rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  Defender Roll (D10)
-                </label>
-                <input type='number' min='1' max='20' value={defRoll} onChange={e => setDefRoll(e.target.value)} placeholder='Roll...' style={{ ...inputStyle, border: '2px solid rgba(34,197,94,0.5)' }} />
-              </div>
-            </div>
             <button onClick={addRoll} disabled={!atkRoll || !defRoll} style={{ width: '100%', padding: '0.75rem', background: (atkRoll && defRoll) ? 'linear-gradient(135deg,#7c3aed,#6d28d9)' : 'rgba(0,0,0,0.3)', color: (atkRoll && defRoll) ? '#e9d5ff' : colors.textDisabled, border: `2px solid ${(atkRoll && defRoll) ? '#a78bfa' : '#1f2937'}`, borderRadius: '8px', cursor: (atkRoll && defRoll) ? 'pointer' : 'not-allowed', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
               + Add Roll
             </button>

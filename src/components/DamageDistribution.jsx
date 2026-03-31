@@ -47,25 +47,30 @@ const DamageDistribution = ({
 
   const targets = calculatorData.targetSquadMembers || [];
 
-  // Single target: auto-assign all damage and apply immediately
+  // Single target: pre-fill the full damage amount (DM still clicks Apply)
+  const singleInitDone = React.useRef(false);
   React.useEffect(() => {
-    if (targets.length !== 1 || totalDamage <= 0 || totalDistributed > 0) return;
+    if (singleInitDone.current) return;
+    if (targets.length !== 1 || totalDamage <= 0) return;
+    singleInitDone.current = true;
     const target = targets[0];
     const key = target.isNPC ? `npc-${target.npcId}` : `${target.playerId}-${target.unitType}`;
     onUpdateDistribution(key, totalDamage);
-    setTimeout(() => onApply(), 300);
-  }, [targets.length, totalDamage, totalDistributed]);
+  }, [targets.length, totalDamage]);
 
-  // Multiple targets: auto-distribute evenly on open, but don't apply — let DM adjust
+  // Multiple targets: auto-distribute evenly once on mount
+  const autoInitDone = React.useRef(false);
   React.useEffect(() => {
-    if (targets.length <= 1 || totalDamage <= 0 || totalDistributed > 0) return;
+    if (autoInitDone.current) return;
+    if (targets.length <= 1 || totalDamage <= 0) return;
+    autoInitDone.current = true;
     const perTarget = Math.floor(totalDamage / targets.length);
     const remainder = totalDamage % targets.length;
     targets.forEach((target, idx) => {
       const key = target.isNPC ? `npc-${target.npcId}` : `${target.playerId}-${target.unitType}`;
       onUpdateDistribution(key, perTarget + (idx < remainder ? 1 : 0));
     });
-  }, [targets.length, totalDamage, totalDistributed]);
+  }, [targets.length, totalDamage]);
 
   const handleDistributionChange = (key, value) => {
     onUpdateDistribution(key, Math.max(0, parseInt(value) || 0));
@@ -82,9 +87,9 @@ const DamageDistribution = ({
     });
   };
 
-  const handleApply = () => {
+  const handleApply = (distOverride) => {
     if (remaining !== 0) return;
-    onApply();
+    onApply(distOverride || damageDistribution);
   };
 
   return (
@@ -282,7 +287,7 @@ const DamageDistribution = ({
 
         {/* Buttons */}
         <div style={{ display: "flex", gap: "1rem" }}>
-          <button onClick={handleApply} disabled={remaining !== 0} style={{
+          <button onClick={() => handleApply(damageDistribution)} disabled={remaining !== 0} style={{
             flex: 1,
             background: remaining === 0 ? "linear-gradient(to bottom, #15803d, #14532d)" : "#1a0f0a",
             color: remaining === 0 ? "#86efac" : "#4a3322",

@@ -42,11 +42,6 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     setDamageDistribution({});
   };
 
-  // Close just the calculator without touching the damage distribution state
-  const closeCalculatorKeepDistribution = () => {
-    setShowCalculator(false);
-  };
-
   const updateCalculatorHits = (updates) => {
     setCalculatorData((prev) => ({
       ...prev,
@@ -71,8 +66,9 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     return [...queue, unitIndex];
   };
 
-  const applyDamage = (onPlayersUpdate) => {
+  const applyDamage = (onPlayersUpdate, distributionOverride) => {
     if (!calculatorData) return;
+    const dist = distributionOverride || damageDistribution;
 
     let totalAvailable;
     if (calculatorData.totalDamage !== undefined) {
@@ -85,7 +81,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
       );
     }
 
-    const totalDistributed = Object.values(damageDistribution).reduce(
+    const totalDistributed = Object.values(dist).reduce(
       (sum, val) => sum + val,
       0,
     );
@@ -116,7 +112,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
         if (target.playerId !== player.id) return;
 
         const damageKey = `${target.playerId}-${target.unitType}`;
-        const damageAmount = damageDistribution[damageKey] || 0;
+        const damageAmount = dist[damageKey] || 0;
 
         if (damageAmount > 0) {
           hasChanges = true;
@@ -202,10 +198,10 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
 
     // Player targets
     calculatorData.targetSquadMembers
-      .filter((m) => !m.isNPC && damageDistribution[`${m.playerId}-${m.unitType}`] > 0)
+      .filter((m) => !m.isNPC && dist[`${m.playerId}-${m.unitType}`] > 0)
       .forEach((m) => {
         const target = players.find((p) => p.id === m.playerId);
-        const damage = damageDistribution[`${m.playerId}-${m.unitType}`];
+        const damage = dist[`${m.playerId}-${m.unitType}`];
         let unitName = '';
         if (m.unitType === 'commander') {
           unitName = target?.commanderStats?.customName || target?.commander || 'Commander';
@@ -220,10 +216,10 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
 
     // NPC targets
     calculatorData.targetSquadMembers
-      .filter((m) => m.isNPC && damageDistribution[`npc-${m.npcId}`] > 0)
+      .filter((m) => m.isNPC && dist[`npc-${m.npcId}`] > 0)
       .forEach((m) => {
         const npc = (calculatorData.npcs || []).find(n => n.id === m.npcId);
-        const damage = damageDistribution[`npc-${m.npcId}`];
+        const damage = dist[`npc-${m.npcId}`];
         allTargetDetails.push(`${npc?.name || 'NPC'} for ${damage}hp`);
       });
 

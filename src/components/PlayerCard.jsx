@@ -1,6 +1,7 @@
 import React from 'react';
 import { FACTIONS } from '../data/factions';
 import { getUnitName } from '../utils/statsUtils';
+import { getSlotCount, getHeldCount } from './lootUtils';
 import {
   colors, surfaces, borders, fonts, text, btn, hpBarColor,
   cardShell, insetSection, pill, inputStyle, selectStyle, tierColors,
@@ -22,13 +23,13 @@ const PlayerCard = ({
   onCommanderDied,
   getTimersForPlayerUnit,
   getTokenForPlayer,
-  isFocusMode = false,
 }) => {
-  const [showSquad, setShowSquad] = React.useState(false);
+  const [showSquad, setShowSquad] = React.useState(true);
   const [showSetup, setShowSetup] = React.useState(false);
   const [showReviveModal, setShowReviveModal] = React.useState(false);
   const [healTargetItem, setHealTargetItem] = React.useState(null);
   const [maxHpTargetItem, setMaxHpTargetItem] = React.useState(null);
+  const [extraSlotItem, setExtraSlotItem] = React.useState(null);
 
   const reviveQueue = player.reviveQueue || [];
   const [deathLootModal, setDeathLootModal] = React.useState(null);
@@ -117,7 +118,7 @@ const PlayerCard = ({
   const pColor   = player.playerColor || colors.blue;
 
   return (
-    <div style={{ ...cardShell(isCurrentTurn, pColor, hasActedThisRound), display: 'flex', flexDirection: 'column' }}>
+    <div style={cardShell(isCurrentTurn, pColor, hasActedThisRound)}>
 
       {/* ── Header ── */}
       <div style={{
@@ -236,8 +237,18 @@ const PlayerCard = ({
         {(player.commanderStats.statusEffects || []).length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.35rem' }}>
             {(player.commanderStats.statusEffects || []).map((effect, ei) => {
-              const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp×${effect.duration}r` : effect.type === 'stun' ? `💫 Stun ${effect.duration}r` : `⚡ ${effect.type}`;
-              const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder } : { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder };
+              const dur = effect.permanent ? '∞' : `${effect.duration}r`;
+              const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp×${dur}`
+                : effect.type === 'stun'        ? `💫 Stun ${dur}`
+                : effect.type === 'attackBuff'  ? `⚔️↑ +${effect.value} Atk ${dur}`
+                : effect.type === 'defenseBuff' ? `🛡️↑ +${effect.value} Def ${dur}`
+                : effect.type === 'attackDebuff'  ? `⚔️↓ -${effect.value} Atk ${dur}`
+                : effect.type === 'defenseDebuff' ? `🛡️↓ -${effect.value} Def ${dur}`
+                : `⚡ ${effect.type}`;
+              const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
+                : effect.type === 'stun' ? { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder }
+                : effect.type.includes('Buff')   ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
+                : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
               return (
                 <span key={ei} onClick={() => {
                   const newStats = { ...player.commanderStats, statusEffects: (player.commanderStats.statusEffects || []).filter((_, i) => i !== ei) };
@@ -250,12 +261,18 @@ const PlayerCard = ({
           </div>
         )}
 
-        {/* Commander held items — always rendered to keep uniform height */}
+        {/* Commander slot indicator + held items */}
         {(() => {
           const heldItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
+          const slotCount = getSlotCount(player, 'commander');
+          const heldCount = getHeldCount(player, 'commander');
           return (
-            <div style={{ minHeight: '28px', display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.35rem', alignItems: 'center' }}>
-              {heldItems.map((item, hi) => {
+            <div style={{ marginBottom: '0.35rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                <span style={{ ...pill(colors.textFaint, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.3)'), fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.02em', flexShrink: 0 }}>
+                  🎒 {heldCount}/{slotCount}
+                </span>
+                {heldItems.map((item, hi) => {
                 const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
                 return (
                   <div key={hi} style={{ ...pill(tc.text, tc.bg, tc.border) }}>
@@ -263,7 +280,8 @@ const PlayerCard = ({
                     {item.name}
                   </div>
                 );
-              })}
+                })}
+              </div>
             </div>
           );
         })()}
@@ -295,7 +313,7 @@ const PlayerCard = ({
           border: `1px solid ${colors.purpleBorder}`,
           borderRadius: showSquad ? '8px 8px 0 0' : '8px',
           cursor: 'pointer', userSelect: 'none',
-          marginBottom: 0,
+          marginBottom: showSquad ? 0 : '0.6rem',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -330,9 +348,13 @@ const PlayerCard = ({
         <div style={{
           border: `1px solid ${colors.purpleBorder}`,
           borderTop: 'none', borderRadius: '0 0 8px 8px',
-          overflowY: isFocusMode ? 'visible' : 'auto', marginBottom: '0.6rem',
-          maxHeight: isFocusMode ? 'none' : '354px',
+          overflow: 'hidden', marginBottom: '0.6rem',
         }}>
+          <div style={{
+            maxHeight: 'calc(3 * 120px)',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}>
           {player.subUnits.map((unit, index) => {
             const isDead = unit.hp === 0;
             const queuePos = getQueuePosition(index);
@@ -388,8 +410,18 @@ const PlayerCard = ({
                   )}
                   {/* Status effects */}
                   {!isDead && (unit.statusEffects || []).map((effect, ei) => {
-                    const label = effect.type === 'poison' ? `🤢 ${effect.value}×${effect.duration}r` : effect.type === 'stun' ? `💫 ${effect.duration}r` : `⚡`;
-                    const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder } : { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder };
+                    const dur = effect.permanent ? '∞' : `${effect.duration}r`;
+                    const label = effect.type === 'poison' ? `🤢 ${effect.value}×${dur}`
+                      : effect.type === 'stun'          ? `💫 ${dur}`
+                      : effect.type === 'attackBuff'    ? `⚔️↑+${effect.value} ${dur}`
+                      : effect.type === 'defenseBuff'   ? `🛡️↑+${effect.value} ${dur}`
+                      : effect.type === 'attackDebuff'  ? `⚔️↓-${effect.value} ${dur}`
+                      : effect.type === 'defenseDebuff' ? `🛡️↓-${effect.value} ${dur}`
+                      : `⚡`;
+                    const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
+                      : effect.type === 'stun' ? { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder }
+                      : effect.type.includes('Buff')   ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
+                      : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
                     return (
                       <span key={ei} onClick={e => {
                         e.stopPropagation();
@@ -440,13 +472,17 @@ const PlayerCard = ({
                   </button>
                 </div>
 
-                {/* Unit held items */}
+                {/* Unit slot indicator + held items */}
                 {(() => {
                   const unitType = index === 0 ? 'special' : `soldier${index}`;
                   const heldItems = (player.inventory || []).filter(it => it.heldBy === unitType);
-                  if (heldItems.length === 0) return null;
+                  const slotCount = getSlotCount(player, unitType);
+                  const heldCount = getHeldCount(player, unitType);
                   return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
+                      <span style={{ ...pill(colors.textFaint, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.3)'), fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.02em', flexShrink: 0 }}>
+                        🎒 {heldCount}/{slotCount}
+                      </span>
                       {heldItems.map((item, hi) => {
                         const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
                         return (
@@ -462,16 +498,17 @@ const PlayerCard = ({
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
-      {/* ── Inventory ── always visible */}
+      {/* ── Inventory ── */}
       <div style={{
         background: 'rgba(0,0,0,0.3)',
         border: borders.warm,
         borderRadius: '10px',
+        overflow: 'hidden',
         marginTop: '0.5rem',
-        display: 'flex', flexDirection: 'column',
       }}>
           <div style={{
             padding: '0.35rem 0.85rem',
@@ -497,13 +534,25 @@ const PlayerCard = ({
             </div>
           )}
 
-          {/* Loot items — scrollable after 3 */}
-          <div style={{ overflowY: isFocusMode ? 'visible' : 'auto', minHeight: isFocusMode ? 'none' : '130px', maxHeight: isFocusMode ? 'none' : '130px' }}>
-          {(player.inventory || []).length === 0 && !player.firstStrike && (
-            <div style={{ padding: '0.85rem', textAlign: 'center', color: colors.textFaint, fontSize: '0.75rem' }}>
-              No items in inventory
-            </div>
-          )}
+          {/* Loot items */}
+          <div style={{ maxHeight: 'calc(3 * 72px)', overflowY: 'auto', overflowX: 'hidden' }}>
+          {(() => {
+            const items = player.inventory || [];
+            const emptySlots = Math.max(0, 3 - items.length);
+            return [...Array(emptySlots)].map((_, ei) => (
+              <div key={`empty-${ei}`} style={{
+                display: 'flex', alignItems: 'center', gap: '0.6rem',
+                padding: '0.55rem 0.85rem', height: '72px', boxSizing: 'border-box',
+                borderBottom: ei < emptySlots - 1 || items.length > 0 ? `1px solid rgba(201,169,97,0.05)` : 'none',
+                opacity: 0.25,
+              }}>
+                <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>📦</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: colors.textFaint, fontWeight: '600', fontSize: '0.75rem', fontStyle: 'italic' }}>Empty slot</div>
+                </div>
+              </div>
+            ));
+          })()}
           {(player.inventory || []).map((item, i, arr) => {
             const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
             const usesLeft = item.effect?.uses === 0 ? Infinity : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
@@ -512,7 +561,8 @@ const PlayerCard = ({
             const isManual = item.effect?.type === 'manual';
             const isDestroyItem = item.effect?.type === 'destroyItem';
             const isKey = item.effect?.type === 'key';
-            const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem);
+            const isExtraSlot = item.effect?.type === 'extraSlot';
+            const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem || isExtraSlot);
 
             const handleUseKey = () => {
               onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
@@ -532,6 +582,9 @@ const PlayerCard = ({
               if (ef?.type === 'attackBonus' || ef?.type === 'defenseBonus') {
                 const bonusKey = ef.type === 'attackBonus' ? 'pendingAttackBonus' : 'pendingDefenseBonus';
                 onUpdate(player.id, { [bonusKey]: (player[bonusKey] || 0) + ef.value, inventory: newInventory });
+              } else if (ef?.type === 'extraSlot') {
+                setExtraSlotItem({ item, itemIndex: i });
+                return;
               } else if (ef?.type === 'destroyItem') {
                 if (onOpenDestroyModal) onOpenDestroyModal(player);
                 return;
@@ -566,21 +619,21 @@ const PlayerCard = ({
                 </div>
                 {item.isQuestItem && <span style={pill('#fde68a', 'rgba(234,179,8,0.1)', 'rgba(234,179,8,0.35)')}>QUEST</span>}
                 <span style={pill(tc.text, tc.subtle || tc.bg, tc.border)}>{item.isQuestItem ? 'Quest' : item.tier}</span>
-                <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: '0.3rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {showUseButton && (
-                    <button onClick={handleUse} disabled={!canUse} style={btn.secondary(!canUse)}>USE</button>
+                    <button onClick={handleUse} disabled={!canUse} style={{ ...pill(canUse ? tc.text : colors.textDisabled, canUse ? (tc.subtle || tc.bg) : 'rgba(0,0,0,0.2)', canUse ? tc.border : 'rgba(90,74,58,0.2)'), cursor: canUse ? 'pointer' : 'not-allowed', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body, border: `1px solid ${canUse ? tc.border : 'rgba(90,74,58,0.2)'}` }}>✦ USE</button>
                   )}
                   {isKey && (
-                    <button onClick={handleUseKey} style={btn.secondary()}>🔑 USE</button>
+                    <button onClick={handleUseKey} style={{ ...pill(colors.amber, colors.amberSubtle, colors.amberBorder), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🔑 USE</button>
                   )}
                   {!item.isQuestItem && onOpenHandOff && (
-                    <button onClick={() => onOpenHandOff(player, item.heldBy, item)} style={btn.secondary()}>🤝 PASS</button>
+                    <button onClick={() => onOpenHandOff(player, item.heldBy, item)} style={{ ...pill(colors.textMuted, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.35)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🤝 PASS</button>
                   )}
                   {!item.isQuestItem && (
                     <button onClick={() => {
                       if (!window.confirm(`Drop "${item.name}"?`)) return;
                       onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
-                    }} style={btn.danger()}>🗑</button>
+                    }} style={{ ...pill('#f87171', 'rgba(239,68,68,0.08)', 'rgba(239,68,68,0.3)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🗑</button>
                   )}
                 </div>
               </div>
@@ -657,6 +710,40 @@ const PlayerCard = ({
           <UnitPickerModal title={item.name} subtitle={`Increases max HP by +${ef.value} — choose a unit`} icon="❤️" accentColor={tc.text}
             units={units} onPick={applyMaxHPToUnit} onClose={() => setMaxHpTargetItem(null)}
             rightLabel={(u) => !u.isDead ? `→${u.maxHp + ef.value}` : null} rightColor="#fca5a5" />
+        );
+      })()}
+
+      {/* ── Extra Slot Unit Picker ── */}
+      {extraSlotItem && (() => {
+        const { item, itemIndex } = extraSlotItem;
+        const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
+
+        const applyExtraSlot = (unitKey) => {
+          // Remove the item from inventory (consumed)
+          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          // Increment bonusSlots on the chosen unit
+          let updates = { inventory: newInventory };
+          if (unitKey === 'commander') {
+            updates.commanderStats = { ...player.commanderStats, bonusSlots: (player.commanderStats.bonusSlots || 0) + 1 };
+          } else {
+            const idx = unitKey === 'special' ? 0 : parseInt(unitKey.replace('soldier', ''));
+            updates.subUnits = (player.subUnits || []).map((u, si) =>
+              si === idx ? { ...u, bonusSlots: (u.bonusSlots || 0) + 1 } : u
+            );
+          }
+          onUpdate(player.id, updates);
+          setExtraSlotItem(null);
+        };
+
+        const units = [
+          { key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: player.commanderStats.hp, maxHp: player.commanderStats.maxHp, isDead: player.commanderStats.hp === 0 },
+          ...(player.subUnits || []).map((u, idx) => ({ key: idx === 0 ? 'special' : `soldier${idx}`, label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`), icon: idx === 0 ? '⭐' : '🛡️', hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0 })),
+        ];
+
+        return (
+          <UnitPickerModal title={item.name} subtitle="Choose which unit receives the extra carrying slot" icon="🎒" accentColor={tc.text}
+            units={units} onPick={applyExtraSlot} onClose={() => setExtraSlotItem(null)}
+            rightLabel={(u) => !u.isDead ? '+1 slot' : null} rightColor="#fbbf24" />
         );
       })()}
 

@@ -20,8 +20,11 @@ const NPCCard = ({
   players = [],
   onDropLoot,
   getTimersForNPC = () => [],
+  onOpenNpcBuff,
+  onUpdateNPC,
 }) => {
   const [manualHP, setManualHP] = React.useState('');
+  const [showPhaseMenu, setShowPhaseMenu] = React.useState(false);
 
   const hpPercent = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
   const hasNextPhase = npc.hasPhases && npc.currentPhase < (npc.phases?.length || 0);
@@ -86,15 +89,45 @@ const NPCCard = ({
               color: colors.purpleLight, fontSize: '0.66rem', fontWeight: '800',
               whiteSpace: 'nowrap', flexShrink: 0,
             }}>{currentPhaseName}</div>
-            {hasNextPhase && (
-              <button onClick={() => onTriggerPhase(npc.id)} style={{
-                padding: '0.22rem 0.6rem',
-                background: 'linear-gradient(135deg, #5b21b6, #4c1d95)',
-                border: `1px solid ${colors.purpleLight}60`, borderRadius: '6px',
-                color: '#e9d5ff', fontSize: '0.66rem', fontWeight: '800',
-                cursor: 'pointer', fontFamily: fonts.body,
-                whiteSpace: 'nowrap', flexShrink: 0,
-              }}>⚡ Next Phase</button>
+            {npc.hasPhases && npc.phases?.length > 0 && (
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <button onClick={() => setShowPhaseMenu(s => !s)} style={{
+                  padding: '0.22rem 0.6rem',
+                  background: 'linear-gradient(135deg, #5b21b6, #4c1d95)',
+                  border: `1px solid ${colors.purpleLight}60`, borderRadius: '6px',
+                  color: '#e9d5ff', fontSize: '0.66rem', fontWeight: '800',
+                  cursor: 'pointer', fontFamily: fonts.body,
+                  whiteSpace: 'nowrap',
+                }}>⚡ Phase {showPhaseMenu ? '▲' : '▼'}</button>
+                {showPhaseMenu && (
+                  <div style={{
+                    position: 'absolute', top: '110%', right: 0, zIndex: 50,
+                    background: surfaces.elevated, border: `1px solid ${colors.purpleBorder}`,
+                    borderRadius: '8px', padding: '0.4rem', minWidth: '160px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
+                  }}>
+                    <div style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '0.2rem 0.5rem 0.4rem' }}>Jump to phase:</div>
+                    {npc.phases.map((phase, idx) => {
+                      const isCurrent = idx + 1 === npc.currentPhase;
+                      return (
+                        <div key={phase.id || idx} onClick={() => { if (!isCurrent) { onTriggerPhase(npc.id, idx); } setShowPhaseMenu(false); }} style={{
+                          padding: '0.4rem 0.6rem', borderRadius: '5px', cursor: isCurrent ? 'default' : 'pointer',
+                          background: isCurrent ? colors.purpleSubtle : 'transparent',
+                          color: isCurrent ? colors.purpleLight : colors.textSecondary,
+                          fontSize: '0.72rem', fontWeight: '700',
+                          opacity: isCurrent ? 0.6 : 1,
+                          display: 'flex', alignItems: 'center', gap: '0.4rem',
+                        }}>
+                          {isCurrent && <span style={{ color: colors.purpleLight }}>▶</span>}
+                          {phase.label || `Phase ${idx + 1}`}
+                          {phase.triggerType === 'manual' && <span style={{ color: colors.textFaint, fontSize: '0.6rem' }}>manual</span>}
+                          {phase.triggerType !== 'manual' && phase.triggerHP > 0 && <span style={{ color: colors.textFaint, fontSize: '0.6rem' }}>≤{phase.triggerHP}hp</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </>
         )}
@@ -116,6 +149,32 @@ const NPCCard = ({
           </div>
         ))}
       </div>
+
+      {/* Status effects */}
+      {(npc.statusEffects || []).length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.5rem' }}>
+          {(npc.statusEffects || []).map((ef, ei) => {
+            const dur = ef.permanent ? '∞' : `${ef.duration}r`;
+            const label = ef.type === 'attackBuff'    ? `⚔️↑ +${ef.value} ${dur}`
+              : ef.type === 'defenseBuff'   ? `🛡️↑ +${ef.value} ${dur}`
+              : ef.type === 'attackDebuff'  ? `⚔️↓ -${ef.value} ${dur}`
+              : ef.type === 'defenseDebuff' ? `🛡️↓ -${ef.value} ${dur}`
+              : ef.type === 'poison'        ? `🤢 ${ef.value}×${dur}`
+              : ef.type === 'stun'          ? `💫 ${dur}` : `⚡ ${ef.type}`;
+            const isBuff = ['attackBuff','defenseBuff'].includes(ef.type);
+            const clr = isBuff ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
+              : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
+            return (
+              <span key={ei} onClick={() => {
+                const newEffects = (npc.statusEffects || []).filter((_, i) => i !== ei);
+                if (onUpdateNPC) onUpdateNPC(npc.id, { statusEffects: newEffects });
+              }} style={{ ...pill(clr.color, clr.bg, clr.border), cursor: 'pointer', fontSize: '0.6rem' }}>
+                {label} ✕
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* HP section */}
       <div style={{ ...insetSection('default'), marginBottom: '0.75rem' }}>
@@ -173,10 +232,11 @@ const NPCCard = ({
             const type = attack.attackType || 'attack';
             const isSpawn  = type === 'spawn';
             const isAction = type === 'action';
+            const isBuff   = type === 'buff';
             const isDisabled = isSpawn ? npc.isDead : (!npc.active || npc.isDead);
-            const accentColor = isSpawn ? '#10b981' : isAction ? colors.purple : colors.red;
-            const accentBg    = isSpawn ? 'rgba(6,95,70,0.35)' : isAction ? 'rgba(76,29,149,0.35)' : 'rgba(185,28,28,0.35)';
-            const rowBorder   = isSpawn ? 'rgba(74,222,128,0.15)' : isAction ? colors.purpleBorder : 'rgba(255,255,255,0.05)';
+            const accentColor = isSpawn ? '#10b981' : isAction ? colors.purple : isBuff ? '#fbbf24' : colors.red;
+            const accentBg    = isSpawn ? 'rgba(6,95,70,0.35)' : isAction ? 'rgba(76,29,149,0.35)' : isBuff ? 'rgba(251,191,36,0.2)' : 'rgba(185,28,28,0.35)';
+            const rowBorder   = isSpawn ? 'rgba(74,222,128,0.15)' : isAction ? colors.purpleBorder : isBuff ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.05)';
 
             return (
               <div key={attack.id || i} style={{
@@ -189,11 +249,13 @@ const NPCCard = ({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.32rem', marginBottom: '0.22rem' }}>
                       {isSpawn  && <span style={pill('#86efac', 'rgba(74,222,128,0.1)', 'rgba(74,222,128,0.28)')}>🐣 SPAWN</span>}
                       {isAction && <span style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>✦ ACTION</span>}
+                      {isBuff   && <span style={pill('#fbbf24', 'rgba(251,191,36,0.1)', 'rgba(251,191,36,0.35)')}>✨ {(attack.buffEffect?.value ?? 0) >= 0 ? 'BUFF' : 'DEBUFF'}</span>}
                       <span style={{ color: colors.gold, fontWeight: '800', fontSize: '0.88rem' }}>{attack.name || `Attack ${i + 1}`}</span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      {!isSpawn && !isAction && <span style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>{attack.dieType?.toUpperCase()} × {attack.numRolls}</span>}
-                      {!isSpawn && !isAction && attack.range && <span style={pill(colors.tealLight, colors.tealSubtle, colors.tealBorder)}>📏 {attack.range}</span>}
+                      {!isSpawn && !isAction && !isBuff && <span style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>{attack.dieType?.toUpperCase()} × {attack.numRolls}</span>}
+                      {!isSpawn && !isAction && !isBuff && attack.range && <span style={pill(colors.tealLight, colors.tealSubtle, colors.tealBorder)}>📏 {attack.range}</span>}
+                      {isBuff && attack.buffEffect && (() => { const ef = attack.buffEffect; const sign = ef.value >= 0 ? '+' : ''; return <span style={pill('#fbbf24', 'rgba(251,191,36,0.08)', 'rgba(251,191,36,0.25)')}>{ef.stat === 'attack' ? '⚔️' : '🛡️'} {sign}{ef.value} · {ef.permanent ? '∞' : `${ef.duration}r`}</span>; })()}
                       {isSpawn && attack.spawnText && <span style={pill('#86efac', 'rgba(74,222,128,0.08)', 'rgba(74,222,128,0.22)')}>🐣 {attack.spawnText}</span>}
                       {isSpawn && attack.spawnDieType && <span style={pill('#86efac', 'rgba(74,222,128,0.08)', 'rgba(74,222,128,0.18)')}>{attack.spawnDieType.toUpperCase()} × {attack.spawnNumRolls || 1}</span>}
                       {(isAction || isSpawn) && attack.description && <span style={{ color: colors.textMuted, fontSize: '0.68rem', fontStyle: 'italic' }}>{attack.description}</span>}
@@ -202,7 +264,9 @@ const NPCCard = ({
                   <button
                     onClick={() => {
                       if (isSpawn) { if (onSpawnAttack) onSpawnAttack(attack, npc.name); }
-                      else if (!isAction) onOpenNPCAttack(npc.id, i);
+                      else if (isBuff) { if (onOpenNpcBuff) onOpenNpcBuff(npc.id, i); }
+                      else if (isAction) { /* action — no click behavior */ }
+                      else onOpenNPCAttack(npc.id, i);
                     }}
                     disabled={isDisabled}
                     style={{
@@ -215,7 +279,7 @@ const NPCCard = ({
                       letterSpacing: '0.04em', textTransform: 'uppercase',
                       whiteSpace: 'nowrap', flexShrink: 0, transition: 'all 0.15s',
                     }}
-                  >{isSpawn ? '🐣 SPAWN' : isAction ? '✦ USE' : '⚔️ USE'}</button>
+                  >{isSpawn ? '🐣 SPAWN' : isBuff ? '✨ USE' : isAction ? '✦ USE' : '⚔️ USE'}</button>
                 </div>
               </div>
             );

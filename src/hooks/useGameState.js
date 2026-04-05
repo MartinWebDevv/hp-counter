@@ -529,32 +529,42 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     const fullCmdHp = modeConfig.commanderHP;
     const fullSqdHp = modeConfig.squadHP;
     // Reset all player HP, revives, queues — keep inventory/loot
-    setPlayers(prev => prev.map(player => ({
-      ...player,
-      selectedUnit: 'commander',
-      commanderStats: {
-        ...player.commanderStats,
-        hp: 20,
-        maxHp: 20,
-        revives: modeConfig.commanderRevives,
-        isDead: false,
-        cooldownRounds: 0,
-        statusEffects: [],
-      },
-      subUnits: (player.subUnits || []).map(unit => ({
-        ...unit,
-        hp: 10,
-        maxHp: 10,
-        revives: modeConfig.squadRevives,
-        livesRemaining: soldierLives,
-        revivedOnPlayerId: null,
-        statusEffects: [],
-      })),
-      reviveQueue: [],
-      pendingAttackBonus: 0,
-      pendingDefenseBonus: 0,
-      firstStrike: false,
-    })));
+    setPlayers(prev => prev.map(player => {
+      // baseMaxHp is stored before halving on revive — use it to restore pre-death max
+      // Falls back to maxHp if never revived, then to defaults
+      const cmdMax = player.commanderStats.baseMaxHp || player.commanderStats.maxHp || 20;
+      return {
+        ...player,
+        selectedUnit: 'commander',
+        commanderStats: {
+          ...player.commanderStats,
+          hp: cmdMax,
+          maxHp: cmdMax,
+          baseMaxHp: cmdMax,
+          revives: modeConfig.commanderRevives,
+          isDead: false,
+          cooldownRounds: 0,
+          statusEffects: [],
+        },
+        subUnits: (player.subUnits || []).map(unit => {
+          const unitMax = unit.baseMaxHp || unit.maxHp || 10;
+          return {
+            ...unit,
+            hp: unitMax,
+            maxHp: unitMax,
+            baseMaxHp: unitMax,
+            revives: modeConfig.squadRevives,
+            livesRemaining: soldierLives,
+            revivedOnPlayerId: null,
+            statusEffects: [],
+          };
+        }),
+        reviveQueue: [],
+        pendingAttackBonus: 0,
+        pendingDefenseBonus: 0,
+        firstStrike: false,
+      };
+    }));
     setCurrentRound(1);
     setCurrentPlayerIndex(0);
     setPlayersWhoActedThisRound([]);

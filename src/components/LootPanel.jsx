@@ -165,9 +165,9 @@ const ItemCreator = ({ onSave, onCancel }) => {
         </div>
       )}
 
-      {/* DM config: Damage per Round + Duration */}
-      {(needsDamage || needsDuration || needsDebuffVal) && (
-        <div style={{ display: 'grid', gridTemplateColumns: [needsDamage, needsDuration, needsDebuffVal].filter(Boolean).length > 1 ? '1fr 1fr' : '1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+      {/* DM config: Damage per Round + Debuff Amount + Duration */}
+      {(needsDamage || needsDebuffVal || needsDuration) && (
+        <div style={{ display: 'grid', gridTemplateColumns: [needsDamage || needsDebuffVal, needsDuration].filter(Boolean).length > 1 ? '1fr 1fr' : '1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
           {needsDamage && (
             <div>
               <label style={labelStyle}>Damage per Round (hp)</label>

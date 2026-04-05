@@ -38,6 +38,8 @@ const PlayerCard = ({
 
   const reviveQueue = player.reviveQueue || [];
   const [deathLootModal, setDeathLootModal] = React.useState(null);
+  const [maxHpEditModal, setMaxHpEditModal] = React.useState(null); // { unitKey: 'commander'|'special'|'soldier1'... }
+  const [maxHpEditValue, setMaxHpEditValue] = React.useState('');
   const aliveUnits = player.subUnits.filter(u => u.hp > 0).length;
   const totalUnits = player.subUnits.length;
 
@@ -207,7 +209,7 @@ const PlayerCard = ({
           <button onClick={() => handleCommanderHPChange(-1)} disabled={cmdDead} style={btn.hp(cmdDead)}>−</button>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-              <span style={{ color: colors.amber, fontSize: '0.85rem', fontWeight: '700' }}>{cmdHP} / {cmdMaxHP} HP</span>
+              <span onClick={() => { setMaxHpEditModal({ unitKey: 'commander' }); setMaxHpEditValue(String(cmdMaxHP)); }} style={{ color: colors.amber, fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: '3px' }} title="Click to set max HP">{cmdHP} / {cmdMaxHP} HP</span>
               {/* Revive pips */}
               <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
                 {[...Array(2)].map((_, i) => (
@@ -472,7 +474,7 @@ const PlayerCard = ({
                   <button onClick={() => handleSubUnitHPChange(index, -1)} disabled={isDead} style={btn.hpSmall(isDead)}>−</button>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.18rem' }}>
-                      <span style={{ color: colors.purpleLight, fontSize: '0.75rem', fontWeight: '700' }}>{unit.hp}/{unit.maxHp}</span>
+                      <span onClick={() => { const uk = index === 0 ? 'special' : `soldier${index}`; setMaxHpEditModal({ unitKey: uk, index }); setMaxHpEditValue(String(unit.maxHp)); }} style={{ color: colors.purpleLight, fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: '3px' }} title="Click to set max HP">{unit.hp}/{unit.maxHp}</span>
                     </div>
                     <div style={{ height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
                       <div style={{ width: `${unitHPPct}%`, height: '100%', background: hpBarColor(unitHPPct), transition: 'width 0.3s ease' }} />
@@ -675,6 +677,53 @@ const PlayerCard = ({
           </div>
         </div>
 
+      {/* ── Max HP Edit Modal ── */}
+      {maxHpEditModal && (() => {
+        const isCommander = maxHpEditModal.unitKey === 'commander';
+        const applyMaxHpEdit = () => {
+          const val = parseInt(maxHpEditValue);
+          if (!val || val < 1) return;
+          if (isCommander) {
+            const cs = player.commanderStats;
+            const newHp = Math.min(cs.hp, val);
+            onUpdate(player.id, { commanderStats: { ...cs, maxHp: val, baseMaxHp: val, hp: newHp } });
+          } else {
+            const idx = maxHpEditModal.index;
+            onUpdate(player.id, { subUnits: (player.subUnits || []).map((u, si) => {
+              if (si !== idx) return u;
+              return { ...u, maxHp: val, baseMaxHp: val, hp: Math.min(u.hp, val) };
+            })});
+          }
+          setMaxHpEditModal(null);
+          setMaxHpEditValue('');
+        };
+        const label = isCommander
+          ? (player.commanderStats?.customName || player.commander || 'Commander')
+          : (player.subUnits?.[maxHpEditModal.index]?.name?.trim() || (maxHpEditModal.index === 0 ? 'Special' : `Soldier ${maxHpEditModal.index}`));
+        return (
+          <div onClick={() => { setMaxHpEditModal(null); setMaxHpEditValue(''); }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: '2px solid #c9a961', borderRadius: '12px', padding: '1.5rem', width: '300px', maxWidth: '95%' }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>❤️</div>
+                <div style={{ color: '#c9a961', fontWeight: '900', fontSize: '0.95rem', fontFamily: '"Cinzel",Georgia,serif' }}>Set Max HP</div>
+                <div style={{ color: '#9ca3af', fontSize: '0.72rem', marginTop: '0.2rem' }}>{label}</div>
+              </div>
+              <input
+                type="number" min="1" max="999" autoFocus
+                value={maxHpEditValue}
+                onChange={e => setMaxHpEditValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') applyMaxHpEdit(); if (e.key === 'Escape') { setMaxHpEditModal(null); setMaxHpEditValue(''); } }}
+                style={{ width: '100%', background: '#0f0805', color: '#c9a961', border: '2px solid #c9a961', borderRadius: '8px', padding: '0.75rem', fontSize: '1.5rem', textAlign: 'center', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', marginBottom: '1rem', boxSizing: 'border-box' }}
+              />
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button onClick={applyMaxHpEdit} style={{ flex: 1, background: 'linear-gradient(to bottom,#15803d,#14532d)', border: '2px solid #16a34a', color: '#86efac', padding: '0.65rem', borderRadius: '8px', cursor: 'pointer', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem' }}>✓ Set</button>
+                <button onClick={() => { setMaxHpEditModal(null); setMaxHpEditValue(''); }} style={{ flex: 1, background: 'linear-gradient(to bottom,#7f1d1d,#5f1a1a)', border: '2px solid #991b1b', color: '#fecaca', padding: '0.65rem', borderRadius: '8px', cursor: 'pointer', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem' }}>✕ Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Death Loot Modal ── */}
       {deathLootModal && (
         <div onClick={() => setDeathLootModal(null)} style={{ position: 'fixed', inset: 0, background: surfaces.overlay, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000 }}>
@@ -868,12 +917,12 @@ const PlayerCard = ({
           setResurrectItem(null);
         };
 
-        // Only show dead units — isDead:false so UnitPickerModal allows clicking them
+        // Only show dead units
         const units = [
-          ...(player.commanderStats.hp === 0 ? [{ key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: 0, maxHp: player.commanderStats.maxHp, isDead: false }] : []),
-          ...(player.subUnits || []).filter(u => u.hp === 0).map((u) => {
+          ...(player.commanderStats.hp === 0 ? [{ key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: 0, maxHp: player.commanderStats.maxHp, isDead: true }] : []),
+          ...(player.subUnits || []).filter(u => u.hp === 0).map((u, _) => {
             const origIdx = player.subUnits.indexOf(u);
-            return { key: origIdx === 0 ? 'special' : `soldier${origIdx}`, label: u.name?.trim() || (origIdx === 0 ? 'Special' : `Soldier ${origIdx}`), icon: origIdx === 0 ? '⭐' : '🛡️', hp: 0, maxHp: u.maxHp, isDead: false };
+            return { key: origIdx === 0 ? 'special' : `soldier${origIdx}`, label: u.name?.trim() || (origIdx === 0 ? 'Special' : `Soldier ${origIdx}`), icon: origIdx === 0 ? '⭐' : '🛡️', hp: 0, maxHp: u.maxHp, isDead: true };
           }),
         ];
         return (

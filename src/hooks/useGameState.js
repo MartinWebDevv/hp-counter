@@ -95,6 +95,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
       commanderStats: {
         hp: modeConfig.commanderHP,
         maxHp: modeConfig.commanderHP,
+        baseMaxHp: modeConfig.commanderHP,
         cooldownRounds: 0,
         revives: modeConfig.commanderRevives,
         isDead: false,
@@ -102,6 +103,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
       subUnits: Array(5).fill(null).map((_, i) => ({
         hp: modeConfig.squadHP,
         maxHp: modeConfig.squadHP,
+        baseMaxHp: modeConfig.squadHP,
         name: '',
         unitType: i === 0 ? 'special' : 'soldier',
         revives: modeConfig.squadRevives,
@@ -200,6 +202,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
       }
       
       if (isSuccessful) {
+        const baseMax = player.commanderStats.baseMaxHp || player.commanderStats.maxHp;
         const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
         const restoredHP = newMaxHP;
         
@@ -209,6 +212,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
             ...player.commanderStats,
             hp: restoredHP,
             maxHp: newMaxHP,
+            baseMaxHp: baseMax,
             revives: player.commanderStats.revives - 1,
             isDead: false
           }
@@ -276,6 +280,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
       if (!unit) return player;
 
       if (isSuccessful) {
+        const baseMax = unit.baseMaxHp || unit.maxHp;
         const newMaxHP = Math.floor(unit.maxHp / 2);
         const restoredHP = newMaxHP;
 
@@ -285,6 +290,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
                 ...u,
                 hp: restoredHP,
                 maxHp: newMaxHP,
+                baseMaxHp: baseMax,
                 livesRemaining: Math.max(0, (u.livesRemaining ?? 1) - 1),
               }
             : u
@@ -519,23 +525,30 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
   const startNewSession = (resetNPCsFn) => {
     const modeConfig = getModeValues();
     const soldierLives = getSoldierLives();
+    // Use modeConfig HP values as the authoritative reset — avoids stale/halved maxHp
+    const fullCmdHp = modeConfig.commanderHP;
+    const fullSqdHp = modeConfig.squadHP;
     // Reset all player HP, revives, queues — keep inventory/loot
     setPlayers(prev => prev.map(player => ({
       ...player,
       selectedUnit: 'commander',
       commanderStats: {
         ...player.commanderStats,
-        hp: player.commanderStats.maxHp,
+        hp: 20,
+        maxHp: 20,
         revives: modeConfig.commanderRevives,
         isDead: false,
         cooldownRounds: 0,
+        statusEffects: [],
       },
       subUnits: (player.subUnits || []).map(unit => ({
         ...unit,
-        hp: unit.maxHp,
+        hp: 10,
+        maxHp: 10,
         revives: modeConfig.squadRevives,
         livesRemaining: soldierLives,
         revivedOnPlayerId: null,
+        statusEffects: [],
       })),
       reviveQueue: [],
       pendingAttackBonus: 0,

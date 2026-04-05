@@ -23,6 +23,8 @@ const PlayerCard = ({
   onCommanderDied,
   getTimersForPlayerUnit,
   getTokenForPlayer,
+  onUseItemOnEnemy,
+  onUseGlobalItem,
 }) => {
   const [showSquad, setShowSquad] = React.useState(true);
   const [showSetup, setShowSetup] = React.useState(false);
@@ -30,6 +32,9 @@ const PlayerCard = ({
   const [healTargetItem, setHealTargetItem] = React.useState(null);
   const [maxHpTargetItem, setMaxHpTargetItem] = React.useState(null);
   const [extraSlotItem, setExtraSlotItem] = React.useState(null);
+  const [cleanseItem, setCleanseItem] = React.useState(null);       // { item, itemIndex, fullCleanse }
+  const [resurrectItem, setResurrectItem] = React.useState(null);   // { item, itemIndex }
+  const [shieldWallItem, setShieldWallItem] = React.useState(null); // { item, itemIndex }
 
   const reviveQueue = player.reviveQueue || [];
   const [deathLootModal, setDeathLootModal] = React.useState(null);
@@ -239,14 +244,20 @@ const PlayerCard = ({
             {(player.commanderStats.statusEffects || []).map((effect, ei) => {
               const dur = effect.permanent ? '∞' : `${effect.duration}r`;
               const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp×${dur}`
-                : effect.type === 'stun'        ? `💫 Stun ${dur}`
-                : effect.type === 'attackBuff'  ? `⚔️↑ +${effect.value} Atk ${dur}`
-                : effect.type === 'defenseBuff' ? `🛡️↑ +${effect.value} Def ${dur}`
+                : effect.type === 'stun'          ? `💫 Stun ${dur}`
+                : effect.type === 'attackBuff'    ? `⚔️↑ +${effect.value} Atk ${dur}`
+                : effect.type === 'defenseBuff'   ? `🛡️↑ +${effect.value} Def ${dur}`
                 : effect.type === 'attackDebuff'  ? `⚔️↓ -${effect.value} Atk ${dur}`
                 : effect.type === 'defenseDebuff' ? `🛡️↓ -${effect.value} Def ${dur}`
+                : effect.type === 'shieldWall'    ? `🛡️ Shield Wall ${dur}`
+                : effect.type === 'counterStrike' ? `⚡ Counter Strike ${dur}`
+                : effect.type === 'marked'        ? `🎯 Marked ${dur}`
                 : `⚡ ${effect.type}`;
               const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
                 : effect.type === 'stun' ? { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder }
+                : effect.type === 'shieldWall' ? { color: '#93c5fd', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.4)' }
+                : effect.type === 'counterStrike' ? { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.4)' }
+                : effect.type === 'marked' ? { color: '#f87171', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.5)' }
                 : effect.type.includes('Buff')   ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
                 : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
               return (
@@ -417,9 +428,15 @@ const PlayerCard = ({
                       : effect.type === 'defenseBuff'   ? `🛡️↑+${effect.value} ${dur}`
                       : effect.type === 'attackDebuff'  ? `⚔️↓-${effect.value} ${dur}`
                       : effect.type === 'defenseDebuff' ? `🛡️↓-${effect.value} ${dur}`
+                      : effect.type === 'shieldWall'    ? `🛡️ Shield ${dur}`
+                      : effect.type === 'counterStrike' ? `⚡ Counter ${dur}`
+                      : effect.type === 'marked'        ? `🎯 Marked ${dur}`
                       : `⚡`;
                     const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
                       : effect.type === 'stun' ? { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder }
+                      : effect.type === 'shieldWall' ? { color: '#93c5fd', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.4)' }
+                      : effect.type === 'counterStrike' ? { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.4)' }
+                      : effect.type === 'marked' ? { color: '#f87171', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.5)' }
                       : effect.type.includes('Buff')   ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
                       : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
                     return (
@@ -562,7 +579,10 @@ const PlayerCard = ({
             const isDestroyItem = item.effect?.type === 'destroyItem';
             const isKey = item.effect?.type === 'key';
             const isExtraSlot = item.effect?.type === 'extraSlot';
-            const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem || isExtraSlot);
+            const isSelfTarget = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'].includes(item.effect?.type);
+            const isEnemyTarget = ['poisonVial','stunGrenade','attackDebuffItem','marked'].includes(item.effect?.type);
+            const isGlobal = ['plague','crownsFavor'].includes(item.effect?.type);
+            const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem || isExtraSlot || isSelfTarget || isEnemyTarget || isGlobal);
 
             const handleUseKey = () => {
               onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
@@ -585,6 +605,19 @@ const PlayerCard = ({
               } else if (ef?.type === 'extraSlot') {
                 setExtraSlotItem({ item, itemIndex: i });
                 return;
+              } else if (ef?.type === 'cleanse' || ef?.type === 'fullCleanse') {
+                setCleanseItem({ item, itemIndex: i, fullCleanse: ef.type === 'fullCleanse' });
+                return;
+              } else if (ef?.type === 'resurrect') {
+                setResurrectItem({ item, itemIndex: i });
+                return;
+              } else if (ef?.type === 'shieldWall' || ef?.type === 'counterStrike') {
+                setShieldWallItem({ item, itemIndex: i });
+                return;
+              } else if (ef?.type === 'poisonVial' || ef?.type === 'stunGrenade' || ef?.type === 'attackDebuffItem' || ef?.type === 'marked') {
+                if (onUseItemOnEnemy) { onUseItemOnEnemy(player, item, i); return; }
+              } else if (ef?.type === 'plague' || ef?.type === 'crownsFavor') {
+                if (onUseGlobalItem) { onUseGlobalItem(player, item, i); return; }
               } else if (ef?.type === 'destroyItem') {
                 if (onOpenDestroyModal) onOpenDestroyModal(player);
                 return;
@@ -744,6 +777,111 @@ const PlayerCard = ({
           <UnitPickerModal title={item.name} subtitle="Choose which unit receives the extra carrying slot" icon="🎒" accentColor={tc.text}
             units={units} onPick={applyExtraSlot} onClose={() => setExtraSlotItem(null)}
             rightLabel={(u) => !u.isDead ? '+1 slot' : null} rightColor="#fbbf24" />
+        );
+      })()}
+
+
+      {/* ── Cleanse / Full Cleanse Modal ── */}
+      {cleanseItem && (() => {
+        const { item, itemIndex, fullCleanse } = cleanseItem;
+        const tc = tierColors[item.tier] || tierColors.Common;
+
+        const applyCleanseToUnit = (unitKey) => {
+          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          if (unitKey === 'commander') {
+            const cs = player.commanderStats;
+            const newEffects = fullCleanse ? [] : (cs.statusEffects || []).slice(1);
+            onUpdate(player.id, { inventory: newInventory, commanderStats: { ...cs, statusEffects: newEffects } });
+          } else {
+            const idx = unitKey === 'special' ? 0 : parseInt(unitKey.replace('soldier', ''));
+            const newSubs = (player.subUnits || []).map((u, si) =>
+              si !== idx ? u : { ...u, statusEffects: fullCleanse ? [] : (u.statusEffects || []).slice(1) }
+            );
+            onUpdate(player.id, { inventory: newInventory, subUnits: newSubs });
+          }
+          setCleanseItem(null);
+        };
+
+        const units = [
+          { key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: player.commanderStats.hp, maxHp: player.commanderStats.maxHp, isDead: player.commanderStats.hp === 0 },
+          ...(player.subUnits || []).map((u, idx) => ({ key: idx === 0 ? 'special' : `soldier${idx}`, label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`), icon: idx === 0 ? '⭐' : '🛡️', hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0 })),
+        ];
+        return (
+          <UnitPickerModal title={item.name} subtitle={fullCleanse ? 'Remove ALL status effects — choose a unit' : 'Remove one status effect — choose a unit'} icon={fullCleanse ? '✨✨' : '✨'} accentColor={tc.text}
+            units={units} onPick={applyCleanseToUnit} onClose={() => setCleanseItem(null)} />
+        );
+      })()}
+
+      {/* ── Shield Wall / Counter Strike Modal ── */}
+      {shieldWallItem && (() => {
+        const { item, itemIndex } = shieldWallItem;
+        const tc = tierColors[item.tier] || tierColors.Common;
+        const isCounter = item.effect?.type === 'counterStrike';
+        const effectType = isCounter ? 'counterStrike' : 'shieldWall';
+
+        const applyToUnit = (unitKey) => {
+          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          const entry = { type: effectType, duration: 1, permanent: false };
+          if (unitKey === 'commander') {
+            const cs = player.commanderStats;
+            onUpdate(player.id, { inventory: newInventory, commanderStats: { ...cs, statusEffects: [...(cs.statusEffects || []), entry] } });
+          } else {
+            const idx = unitKey === 'special' ? 0 : parseInt(unitKey.replace('soldier', ''));
+            const newSubs = (player.subUnits || []).map((u, si) =>
+              si !== idx ? u : { ...u, statusEffects: [...(u.statusEffects || []), entry] }
+            );
+            onUpdate(player.id, { inventory: newInventory, subUnits: newSubs });
+          }
+          setShieldWallItem(null);
+        };
+
+        const units = [
+          { key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: player.commanderStats.hp, maxHp: player.commanderStats.maxHp, isDead: player.commanderStats.hp === 0 },
+          ...(player.subUnits || []).map((u, idx) => ({ key: idx === 0 ? 'special' : `soldier${idx}`, label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`), icon: idx === 0 ? '⭐' : '🛡️', hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0 })),
+        ];
+        return (
+          <UnitPickerModal title={item.name}
+            subtitle={isCounter ? 'Reflects half damage when attacked — choose a unit' : 'Cannot be targeted this round — choose a unit'}
+            icon={isCounter ? '⚡' : '🛡️'} accentColor={tc.text}
+            units={units} onPick={applyToUnit} onClose={() => setShieldWallItem(null)} />
+        );
+      })()}
+
+      {/* ── Resurrect Modal ── */}
+      {resurrectItem && (() => {
+        const { item, itemIndex } = resurrectItem;
+        const tc = tierColors[item.tier] || tierColors.Common;
+
+        const applyResurrect = (unitKey) => {
+          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          if (unitKey === 'commander') {
+            const cs = player.commanderStats;
+            onUpdate(player.id, { inventory: newInventory, commanderStats: { ...cs, hp: 5, isDead: false } });
+          } else {
+            const idx = unitKey === 'special' ? 0 : parseInt(unitKey.replace('soldier', ''));
+            const newSubs = (player.subUnits || []).map((u, si) =>
+              si !== idx ? u : { ...u, hp: 5, livesRemaining: (u.livesRemaining || 0) }
+            );
+            const newReviveQueue = (player.reviveQueue || []).filter(qi => qi !== idx);
+            onUpdate(player.id, { inventory: newInventory, subUnits: newSubs, reviveQueue: newReviveQueue });
+          }
+          setResurrectItem(null);
+        };
+
+        // Only show dead units — isDead:false so UnitPickerModal allows clicking them
+        const units = [
+          ...(player.commanderStats.hp === 0 ? [{ key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', icon: '⚔️', hp: 0, maxHp: player.commanderStats.maxHp, isDead: false }] : []),
+          ...(player.subUnits || []).filter(u => u.hp === 0).map((u) => {
+            const origIdx = player.subUnits.indexOf(u);
+            return { key: origIdx === 0 ? 'special' : `soldier${origIdx}`, label: u.name?.trim() || (origIdx === 0 ? 'Special' : `Soldier ${origIdx}`), icon: origIdx === 0 ? '⭐' : '🛡️', hp: 0, maxHp: u.maxHp, isDead: false };
+          }),
+        ];
+        return (
+          <UnitPickerModal title={item.name} subtitle="Revive a defeated unit at 5HP — choose who" icon="💫" accentColor={tc.text}
+            units={units.length > 0 ? units : [{ key: '__none', label: 'No defeated units', icon: '✓', hp: 1, maxHp: 1, isDead: false }]}
+            onPick={(k) => { if (k !== '__none') applyResurrect(k); else setResurrectItem(null); }}
+            onClose={() => setResurrectItem(null)}
+            rightLabel={(u) => !u.isDead ? null : '→ 5hp'} rightColor="#4ade80" />
         );
       })()}
 

@@ -20,8 +20,7 @@ const NPCCard = ({
   players = [],
   onDropLoot,
   getTimersForNPC = () => [],
-  onOpenNpcBuff,
-  onUpdateNPC,
+  onUpdateNPC = () => {},
 }) => {
   const [manualHP, setManualHP] = React.useState('');
   const [showPhaseMenu, setShowPhaseMenu] = React.useState(false);
@@ -135,6 +134,37 @@ const NPCCard = ({
         <button onClick={() => onRemove(npc.id)} title="Remove NPC" style={btn.icon('#fca5a5')}>✕</button>
       </div>
 
+      {/* Status Effects */}
+      {(npc.statusEffects || []).length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.6rem' }}>
+          {(npc.statusEffects || []).map((ef, ei) => {
+            const dur = ef.permanent ? '∞' : (ef.duration ? ef.duration + 'r' : '');
+            const label = ef.type === 'poison'        ? '🤢 Poison ' + (ef.value || 2) + 'hp×' + dur
+                        : ef.type === 'stun'          ? '💫 Stun ' + dur
+                        : ef.type === 'attackDebuff'  ? '⚔️↓ -' + (ef.value || 2) + ' Atk ' + dur
+                        : ef.type === 'defenseDebuff' ? '🛡️↓ -' + (ef.value || 2) + ' Def ' + dur
+                        : ef.type === 'attackBuff'    ? '⚔️↑ +' + (ef.value || 2) + ' Atk ' + dur
+                        : ef.type === 'defenseBuff'   ? '🛡️↑ +' + (ef.value || 2) + ' Def ' + dur
+                        : ef.type === 'marked'        ? '🎯 Marked ' + dur
+                        : ef.type;
+            const col = ef.type === 'poison'        ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.35)' }
+                      : ef.type === 'stun'          ? { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.35)' }
+                      : ef.type === 'marked'        ? { color: '#f87171', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.4)' }
+                      : ef.type.includes('Debuff')  ? { color: '#f87171', bg: 'rgba(239,68,68,0.1)',  border: 'rgba(239,68,68,0.35)' }
+                      : { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.35)' };
+            return (
+              <div key={ei} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.18rem 0.45rem', background: col.bg, border: '1px solid ' + col.border, borderRadius: '20px' }}>
+                <span style={{ color: col.color, fontSize: '0.62rem', fontWeight: '800' }}>{label}</span>
+                <button
+                  onClick={() => onUpdateNPC(npc.id, { statusEffects: (npc.statusEffects || []).filter((_, i) => i !== ei) })}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: col.color, fontSize: '0.6rem', fontWeight: '900', padding: '0', lineHeight: 1, opacity: 0.7 }}
+                >✕</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', marginBottom: '0.75rem' }}>
         {[
@@ -149,32 +179,6 @@ const NPCCard = ({
           </div>
         ))}
       </div>
-
-      {/* Status effects */}
-      {(npc.statusEffects || []).length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginBottom: '0.5rem' }}>
-          {(npc.statusEffects || []).map((ef, ei) => {
-            const dur = ef.permanent ? '∞' : `${ef.duration}r`;
-            const label = ef.type === 'attackBuff'    ? `⚔️↑ +${ef.value} ${dur}`
-              : ef.type === 'defenseBuff'   ? `🛡️↑ +${ef.value} ${dur}`
-              : ef.type === 'attackDebuff'  ? `⚔️↓ -${ef.value} ${dur}`
-              : ef.type === 'defenseDebuff' ? `🛡️↓ -${ef.value} ${dur}`
-              : ef.type === 'poison'        ? `🤢 ${ef.value}×${dur}`
-              : ef.type === 'stun'          ? `💫 ${dur}` : `⚡ ${ef.type}`;
-            const isBuff = ['attackBuff','defenseBuff'].includes(ef.type);
-            const clr = isBuff ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
-              : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
-            return (
-              <span key={ei} onClick={() => {
-                const newEffects = (npc.statusEffects || []).filter((_, i) => i !== ei);
-                if (onUpdateNPC) onUpdateNPC(npc.id, { statusEffects: newEffects });
-              }} style={{ ...pill(clr.color, clr.bg, clr.border), cursor: 'pointer', fontSize: '0.6rem' }}>
-                {label} ✕
-              </span>
-            );
-          })}
-        </div>
-      )}
 
       {/* HP section */}
       <div style={{ ...insetSection('default'), marginBottom: '0.75rem' }}>
@@ -232,11 +236,10 @@ const NPCCard = ({
             const type = attack.attackType || 'attack';
             const isSpawn  = type === 'spawn';
             const isAction = type === 'action';
-            const isBuff   = type === 'buff';
             const isDisabled = isSpawn ? npc.isDead : (!npc.active || npc.isDead);
-            const accentColor = isSpawn ? '#10b981' : isAction ? colors.purple : isBuff ? '#fbbf24' : colors.red;
-            const accentBg    = isSpawn ? 'rgba(6,95,70,0.35)' : isAction ? 'rgba(76,29,149,0.35)' : isBuff ? 'rgba(251,191,36,0.2)' : 'rgba(185,28,28,0.35)';
-            const rowBorder   = isSpawn ? 'rgba(74,222,128,0.15)' : isAction ? colors.purpleBorder : isBuff ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.05)';
+            const accentColor = isSpawn ? '#10b981' : isAction ? colors.purple : colors.red;
+            const accentBg    = isSpawn ? 'rgba(6,95,70,0.35)' : isAction ? 'rgba(76,29,149,0.35)' : 'rgba(185,28,28,0.35)';
+            const rowBorder   = isSpawn ? 'rgba(74,222,128,0.15)' : isAction ? colors.purpleBorder : 'rgba(255,255,255,0.05)';
 
             return (
               <div key={attack.id || i} style={{
@@ -249,13 +252,11 @@ const NPCCard = ({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.32rem', marginBottom: '0.22rem' }}>
                       {isSpawn  && <span style={pill('#86efac', 'rgba(74,222,128,0.1)', 'rgba(74,222,128,0.28)')}>🐣 SPAWN</span>}
                       {isAction && <span style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>✦ ACTION</span>}
-                      {isBuff   && <span style={pill('#fbbf24', 'rgba(251,191,36,0.1)', 'rgba(251,191,36,0.35)')}>✨ {(attack.buffEffect?.value ?? 0) >= 0 ? 'BUFF' : 'DEBUFF'}</span>}
                       <span style={{ color: colors.gold, fontWeight: '800', fontSize: '0.88rem' }}>{attack.name || `Attack ${i + 1}`}</span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                      {!isSpawn && !isAction && !isBuff && <span style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>{attack.dieType?.toUpperCase()} × {attack.numRolls}</span>}
-                      {!isSpawn && !isAction && !isBuff && attack.range && <span style={pill(colors.tealLight, colors.tealSubtle, colors.tealBorder)}>📏 {attack.range}</span>}
-                      {isBuff && attack.buffEffect && (() => { const ef = attack.buffEffect; const sign = ef.value >= 0 ? '+' : ''; return <span style={pill('#fbbf24', 'rgba(251,191,36,0.08)', 'rgba(251,191,36,0.25)')}>{ef.stat === 'attack' ? '⚔️' : '🛡️'} {sign}{ef.value} · {ef.permanent ? '∞' : `${ef.duration}r`}</span>; })()}
+                      {!isSpawn && !isAction && <span style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>{attack.dieType?.toUpperCase()} × {attack.numRolls}</span>}
+                      {!isSpawn && !isAction && attack.range && <span style={pill(colors.tealLight, colors.tealSubtle, colors.tealBorder)}>📏 {attack.range}</span>}
                       {isSpawn && attack.spawnText && <span style={pill('#86efac', 'rgba(74,222,128,0.08)', 'rgba(74,222,128,0.22)')}>🐣 {attack.spawnText}</span>}
                       {isSpawn && attack.spawnDieType && <span style={pill('#86efac', 'rgba(74,222,128,0.08)', 'rgba(74,222,128,0.18)')}>{attack.spawnDieType.toUpperCase()} × {attack.spawnNumRolls || 1}</span>}
                       {(isAction || isSpawn) && attack.description && <span style={{ color: colors.textMuted, fontSize: '0.68rem', fontStyle: 'italic' }}>{attack.description}</span>}
@@ -264,9 +265,7 @@ const NPCCard = ({
                   <button
                     onClick={() => {
                       if (isSpawn) { if (onSpawnAttack) onSpawnAttack(attack, npc.name); }
-                      else if (isBuff) { if (onOpenNpcBuff) onOpenNpcBuff(npc.id, i); }
-                      else if (isAction) { /* action — no click behavior */ }
-                      else onOpenNPCAttack(npc.id, i);
+                      else if (!isAction) onOpenNPCAttack(npc.id, i);
                     }}
                     disabled={isDisabled}
                     style={{
@@ -279,7 +278,7 @@ const NPCCard = ({
                       letterSpacing: '0.04em', textTransform: 'uppercase',
                       whiteSpace: 'nowrap', flexShrink: 0, transition: 'all 0.15s',
                     }}
-                  >{isSpawn ? '🐣 SPAWN' : isBuff ? '✨ USE' : isAction ? '✦ USE' : '⚔️ USE'}</button>
+                  >{isSpawn ? '🐣 SPAWN' : isAction ? '✦ USE' : '⚔️ USE'}</button>
                 </div>
               </div>
             );

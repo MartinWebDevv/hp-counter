@@ -183,6 +183,31 @@ const HPCounter = () => {
     let newCmdStats = { ...player.commanderStats };
     let newSubUnits = (player.subUnits || []).map(u => ({ ...u }));
 
+    // Shield Wall — remove from ALL players' units where shieldedPlayerId === this player's turn
+    // (Shield Wall lasts from when applied until this player's next turn starts)
+    players.forEach(p => {
+      let pCmdChanged = false;
+      let pSubChanged = false;
+      const filteredCmd = (p.commanderStats.statusEffects || []).filter(ef => {
+        if (ef.type === 'shieldWall' && ef.shieldedPlayerId === playerId) { pCmdChanged = true; return false; }
+        return true;
+      });
+      const filteredSubs = (p.subUnits || []).map(u => {
+        const filtered = (u.statusEffects || []).filter(ef => {
+          if (ef.type === 'shieldWall' && ef.shieldedPlayerId === playerId) { pSubChanged = true; return false; }
+          return true;
+        });
+        return pSubChanged ? { ...u, statusEffects: filtered } : u;
+      });
+      if (pCmdChanged || pSubChanged) {
+        updatePlayer(p.id, {
+          commanderStats: pCmdChanged ? { ...p.commanderStats, statusEffects: filteredCmd } : p.commanderStats,
+          subUnits: filteredSubs,
+        });
+        addLog(`🛡️ Shield Wall expired on ${p.playerName}'s units (${player.playerName}'s turn started)`);
+      }
+    });
+
     // Tick commander effects
     if ((newCmdStats.statusEffects || []).length > 0) {
       const next = [];
@@ -197,7 +222,8 @@ const HPCounter = () => {
         if (dur > 0) {
           next.push({ ...effect, duration: dur });
         } else {
-          addLog(`✨ ${effect.type} wore off on ${player.playerName}'s ${newCmdStats.customName || player.commander}`);
+          const expireLabel = { shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
+          addLog(`${expireLabel} expired on ${player.playerName}'s ${newCmdStats.customName || player.commander}`);
           changed = true;
         }
       }
@@ -221,7 +247,8 @@ const HPCounter = () => {
         if (dur > 0) {
           next.push({ ...effect, duration: dur });
         } else {
-          addLog(`✨ ${effect.type} wore off on ${player.playerName}'s ${uName}`);
+          const expLabel = { shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
+          addLog(`${expLabel} expired on ${player.playerName}'s ${uName}`);
         }
       }
       return { ...unit, hp, statusEffects: next };
@@ -232,10 +259,48 @@ const HPCounter = () => {
     }
   };
 
+  // ── Tick NPC status effects each round ──────────────────────────────────
+  const tickNPCStatusRef = React.useRef(null);
+  tickNPCStatusRef.current = () => {
+    setNpcs(prev => prev.map(npc => {
+      if (!npc.active || npc.isDead) return npc;
+      const effects = npc.statusEffects || [];
+      if (effects.length === 0) return npc;
+      let hp = npc.hp;
+      const next = [];
+      for (const ef of effects) {
+        // Apply per-round damage
+        if (ef.type === 'poison') {
+          const dmg = ef.value || 2;
+          hp = Math.max(0, hp - dmg);
+          addLog('🤢 NPC "' + npc.name + '" took ' + dmg + 'hp poison damage');
+        }
+        // Skip permanent effects
+        if (ef.permanent) { next.push(ef); continue; }
+        // Tick duration
+        const dur = (ef.duration || 1) - 1;
+        if (dur > 0) {
+          next.push({ ...ef, duration: dur });
+        } else {
+          const expLabel = {
+            poison: '🤢 Poison', stun: '💫 Stun', marked: '🎯 Marked',
+            attackDebuff: '⚔️↓ Attack Debuff', defenseDebuff: '🛡️↓ Defense Debuff',
+            attackBuff: '⚔️↑ Attack Buff', defenseBuff: '🛡️↑ Defense Buff',
+            shieldWall: '🛡️ Shield Wall',
+          }[ef.type] || ef.type;
+          addLog(expLabel + ' expired on NPC "' + npc.name + '"');
+        }
+      }
+      const justDied = npc.hp > 0 && hp <= 0;
+      if (justDied) addLog('💀 NPC "' + npc.name + '" was killed by poison!');
+      return { ...npc, hp, isDead: justDied ? true : npc.isDead, statusEffects: next };
+    }));
+  };
+
   const campaign = useCampaignTurn(
     players, activeNPCs, getNPCById, playersWhoActedThisRound, currentRound,
     endTurn, addLog, updatePlayer, setNpcs, applyDamageToNPC, vp.trackVP,
-    () => { roundTimers.onRoundAdvance(); },
+    () => { roundTimers.onRoundAdvance(); tickNPCStatusRef.current?.(); },
     (deathData) => setDeathLootModal(deathData)
   );
 
@@ -281,7 +346,10 @@ const HPCounter = () => {
   const [squadRevivePlayerId, setSquadRevivePlayerId] = React.useState(null);
   const [deathLootModal, setDeathLootModal] = React.useState(null); // { unitLabel, playerName, items, playerId } — NPC killed player unit
   const [pvpDeathModal,  setPvpDeathModal]  = React.useState(null); // { unitLabel, playerName, items, playerId, attackerPlayer, attackerUnitType }
-  const [spawnModal, setSpawnModal] = React.useState(null); // { attack } — confirm before creating NPC
+  const [spawnModal, setSpawnModal] = React.useState(null);
+  const [enemyItemModal, setEnemyItemModal] = React.useState(null); // { sourcePlayer, item, itemIndex }
+  const [lastItemPlayed, setLastItemPlayed] = React.useState(null); // { item, sourcePlayerId }
+  const [enemyTargetMode, setEnemyTargetMode] = React.useState(null); // 'npc' | 'player' // { attack } — confirm before creating NPC
   const setDeathLootModalRef = React.useRef(null);
   setDeathLootModalRef.current = setDeathLootModal;
   const setPvpDeathModalRef = React.useRef(null);
@@ -583,6 +651,82 @@ const HPCounter = () => {
                       getTimersForPlayerUnit={roundTimers.getTimersForPlayerUnit}
                       getTokenForPlayer={tokens.getTokenForPlayer}
                       isFocusMode={viewMode === 'current'}
+                      onUseItemOnEnemy={(srcPlayer, item, itemIndex) => { setEnemyItemModal({ sourcePlayer: srcPlayer, item, itemIndex }); setEnemyTargetMode(null); }}
+                      onNullifyLastEffect={(playerId) => {
+                        // Remove the most recently added status effect from each unit of this player
+                        const p = players.find(pl => pl.id === playerId);
+                        if (!p) return;
+                        const removeLastEffect = (effects) => effects.length > 0 ? effects.slice(0, -1) : [];
+                        const newCmdStats = { ...p.commanderStats, statusEffects: removeLastEffect(p.commanderStats.statusEffects || []) };
+                        const newSubs = (p.subUnits || []).map(u => ({ ...u, statusEffects: removeLastEffect(u.statusEffects || []) }));
+                        updatePlayer(playerId, { commanderStats: newCmdStats, subUnits: newSubs });
+                        addLog('🚫 ' + p.playerName + ' activated Nullify — last status effect removed from all units!');
+                      }}
+                      onUseGlobalItem={(srcPlayer, item, itemIndex) => {
+                        const ef = item.effect;
+                        const dmgPerRound = ef.damagePerRound || 2;
+                        const duration = ef.duration || 3;
+                        const consume = () => {
+                          updatePlayer(srcPlayer.id, { inventory: (srcPlayer.inventory || []).filter((_, i) => i !== itemIndex) });
+                          setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id });
+                        };
+                        if (ef?.type === 'npcPlague') {
+                          // Poison all active NPCs
+                          const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
+                          setNpcs(prev => prev.map(n => n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), poisonEntry] } : n));
+                          consume();
+                          addLog(`☠️ ${srcPlayer.playerName} unleashed NPC Plague! All active NPCs are poisoned (${dmgPerRound}hp×${duration}r).`);
+                        } else if (ef?.type === 'playerPlague') {
+                          // Poison all enemy players' units
+                          const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
+                          players.forEach(p => {
+                            if (p.id === srcPlayer.id) return;
+                            const newCmdStats = { ...p.commanderStats, statusEffects: [...(p.commanderStats.statusEffects || []), poisonEntry] };
+                            const newSubs = (p.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), poisonEntry] } : u);
+                            updatePlayer(p.id, { commanderStats: newCmdStats, subUnits: newSubs });
+                          });
+                          consume();
+                          addLog(`☠️ ${srcPlayer.playerName} unleashed Player Plague! All enemy units are poisoned (${dmgPerRound}hp×${duration}r).`);
+                        } else if (ef?.type === 'crownsFavor') {
+                          const buffDuration = ef.duration || 1;
+                          const buffEntry = { type: 'attackBuff', value: 1, duration: buffDuration, permanent: false };
+                          const freshSrc = players.find(p => p.id === srcPlayer.id);
+                          if (freshSrc) {
+                            const newCmdStats = { ...freshSrc.commanderStats, statusEffects: [...(freshSrc.commanderStats.statusEffects || []), buffEntry] };
+                            const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), buffEntry] } : u);
+                            updatePlayer(freshSrc.id, { commanderStats: newCmdStats, subUnits: newSubs });
+                          }
+                          consume();
+                          addLog(`👑 Crown's Favor! ${srcPlayer.playerName}'s faction gains +1 to all rolls for ${buffDuration} round(s).`);
+                        } else if (ef?.type === 'mirror') {
+                          // Mirror — re-fire the last item played
+                          if (!lastItemPlayed) {
+                            addLog(`🪞 Mirror failed — no item has been played yet.`);
+                            return;
+                          }
+                          const { item: mirroredItem } = lastItemPlayed;
+                          const mef = mirroredItem.effect;
+                          if (mef?.type === 'mirror' || mef?.type === 'nullify') {
+                            addLog(`🪞 Mirror cannot copy Mirror or Nullify.`);
+                            return;
+                          }
+                          // For enemy-targeted items, open enemy picker with mirrored item
+                          const enemyTargetTypes = ['poisonVial','stunGrenade','attackDebuffItem','marked'];
+                          const globalTypes = ['npcPlague','playerPlague','crownsFavor'];
+                          const selfTypes = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'];
+                          if (enemyTargetTypes.includes(mef?.type)) {
+                            setEnemyItemModal({ sourcePlayer: srcPlayer, item: { ...mirroredItem, id: `mirror_${Date.now()}` }, itemIndex: -1, isMirror: true, originalItemIndex: itemIndex, mirrorSourcePlayerId: srcPlayer.id }); setEnemyTargetMode(null);
+                            updatePlayer(srcPlayer.id, { inventory: (srcPlayer.inventory || []).filter((_, i) => i !== itemIndex) });
+                          } else if (globalTypes.includes(mef?.type)) {
+                            // Directly re-apply global effect — re-call this same handler
+                            consume();
+                            addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}"!`);
+                          } else {
+                            consume();
+                            addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}"!`);
+                          }
+                        }
+                      }}
                     />
                   </div>
                 );
@@ -1100,6 +1244,142 @@ const HPCounter = () => {
           onClose={() => setPvpDeathModal(null)}
         />
       )}
+
+
+      {/* ── Enemy Item Targeting Modal ── */}
+      {enemyItemModal && (() => {
+        const { sourcePlayer, item, itemIndex, isMirror } = enemyItemModal;
+        const ef = item.effect;
+        const dmgPerRound = ef.damagePerRound || 2;
+        const duration = ef.duration || 1;
+        const debuffVal = ef.debuffValue || 2;
+
+        const consume = () => {
+          if (!isMirror && itemIndex >= 0) {
+            updatePlayer(sourcePlayer.id, { inventory: (sourcePlayer.inventory || []).filter((_, i) => i !== itemIndex) });
+          }
+          setLastItemPlayed({ item, sourcePlayerId: sourcePlayer.id });
+        };
+
+        const targetMode = enemyTargetMode;
+        const setTargetMode = setEnemyTargetMode;
+
+        const applyToPlayerUnit = (targetPlayerId, unitType) => {
+          const target = players.find(p => p.id === targetPlayerId);
+          if (!target) return;
+          let statusEntry = null;
+          if (ef.type === 'poisonVial')            statusEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
+          else if (ef.type === 'stunGrenade')       statusEntry = { type: 'stun', duration, permanent: false };
+          else if (ef.type === 'attackDebuffItem')  statusEntry = { type: 'attackDebuff', value: debuffVal, duration, permanent: false };
+          else if (ef.type === 'marked')            statusEntry = { type: 'marked', duration, permanent: false };
+          if (!statusEntry) return;
+          if (unitType === 'commander') {
+            updatePlayer(target.id, { commanderStats: { ...target.commanderStats, statusEffects: [...(target.commanderStats.statusEffects || []), statusEntry] } });
+          } else {
+            const idx = unitType === 'special' ? 0 : parseInt(unitType.replace('soldier', ''));
+            const newSubs = (target.subUnits || []).map((u, si) => si === idx ? { ...u, statusEffects: [...(u.statusEffects || []), statusEntry] } : u);
+            updatePlayer(target.id, { subUnits: newSubs });
+          }
+          consume();
+          addLog(`${isMirror ? '🪞 Mirror: ' : ''}${item.name} → ${target.playerName}'s ${unitType}`);
+          setEnemyItemModal(null);
+        };
+
+        const applyToNPC = (npcId) => {
+          let statusEntry = null;
+          if (ef.type === 'poisonVial')            statusEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
+          else if (ef.type === 'stunGrenade')       statusEntry = { type: 'stun', duration, permanent: false };
+          else if (ef.type === 'attackDebuffItem')  statusEntry = { type: 'attackDebuff', value: debuffVal, duration, permanent: false };
+          else if (ef.type === 'marked')            statusEntry = { type: 'marked', duration, permanent: false };
+          if (!statusEntry) return;
+          setNpcs(prev => prev.map(n => n.id === npcId ? { ...n, statusEffects: [...(n.statusEffects || []), statusEntry] } : n));
+          const npc = npcs.find(n => n.id === npcId);
+          consume();
+          addLog(`${isMirror ? '🪞 Mirror: ' : ''}${item.name} → NPC "${npc?.name}"`);
+          setEnemyItemModal(null);
+        };
+
+        const icon = ef.type === 'poisonVial' ? '🧪' : ef.type === 'stunGrenade' ? '💣' : ef.type === 'attackDebuffItem' ? '⚔️↓' : '🎯';
+        const accentColor = ef.type === 'marked' ? '#f87171' : ef.type === 'poisonVial' ? '#4ade80' : ef.type === 'stunGrenade' ? '#fbbf24' : '#fca5a5';
+        const accentBg = ef.type === 'marked' ? 'rgba(239,68,68,0.15)' : ef.type === 'poisonVial' ? 'rgba(34,197,94,0.12)' : ef.type === 'stunGrenade' ? 'rgba(251,191,36,0.12)' : 'rgba(239,68,68,0.12)';
+        const accentBorder = ef.type === 'marked' ? 'rgba(239,68,68,0.5)' : ef.type === 'poisonVial' ? 'rgba(34,197,94,0.4)' : ef.type === 'stunGrenade' ? 'rgba(251,191,36,0.4)' : 'rgba(239,68,68,0.4)';
+
+        const enemies = players.filter(p => p.id !== sourcePlayer.id);
+        const availableNPCs = activeNPCs.filter(n => !n.isDead);
+
+        return (
+          <div onClick={() => { setEnemyItemModal(null); setEnemyTargetMode(null); }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3500 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: `2px solid ${accentBorder}`, borderRadius: '12px', padding: '1.5rem', width: '440px', maxWidth: '95%', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.95)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '1.75rem', marginBottom: '0.3rem' }}>{icon}</div>
+                <div style={{ color: accentColor, fontWeight: '900', fontSize: '1rem', fontFamily: '"Cinzel",Georgia,serif' }}>{isMirror ? '🪞 ' : ''}{item.name}</div>
+                <div style={{ color: '#9ca3af', fontSize: '0.72rem', marginTop: '0.25rem' }}>
+                  {ef.type === 'poisonVial' ? `${dmgPerRound}hp/round × ${duration}r` : ef.type === 'stunGrenade' ? `Stun ${duration}r` : ef.type === 'attackDebuffItem' ? `-${debuffVal} Atk × ${duration}r` : `Marked ${duration}r`}
+                </div>
+              </div>
+
+              {/* Step 1 — choose NPC or Player */}
+              {!targetMode && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '1rem' }}>
+                  <button onClick={() => setTargetMode('npc')} style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.12)', border: `1px solid ${accentBorder}`, borderRadius: '8px', cursor: 'pointer', color: accentColor, fontFamily: '"Rajdhani",sans-serif', fontWeight: '800', fontSize: '0.9rem' }}>
+                    👾 Target NPC<br/><span style={{ fontSize: '0.68rem', color: '#9ca3af', fontWeight: '600' }}>{availableNPCs.length} available</span>
+                  </button>
+                  <button onClick={() => setTargetMode('player')} style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.12)', border: `1px solid ${accentBorder}`, borderRadius: '8px', cursor: 'pointer', color: accentColor, fontFamily: '"Rajdhani",sans-serif', fontWeight: '800', fontSize: '0.9rem' }}>
+                    🧑 Target Player<br/><span style={{ fontSize: '0.68rem', color: '#9ca3af', fontWeight: '600' }}>{enemies.length} player{enemies.length !== 1 ? 's' : ''}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Step 2a — NPC list */}
+              {targetMode === 'npc' && (
+                <div>
+                  <button onClick={() => setTargetMode(null)} style={{ color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', marginBottom: '0.5rem', fontFamily: '"Rajdhani",sans-serif' }}>← Back</button>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    {availableNPCs.map(n => (
+                      <div key={n.id} onClick={() => applyToNPC(n.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.85rem', borderRadius: '8px', cursor: 'pointer', background: accentBg, border: `1px solid ${accentBorder}` }}>
+                        <span style={{ flex: 1, color: accentColor, fontWeight: '800', fontSize: '0.85rem' }}>{n.name}</span>
+                        <span style={{ color: '#9ca3af', fontSize: '0.68rem' }}>{n.hp}/{n.maxHp}hp</span>
+                      </div>
+                    ))}
+                    {availableNPCs.length === 0 && <div style={{ color: '#9ca3af', textAlign: 'center', padding: '1rem', fontSize: '0.8rem' }}>No active NPCs</div>}
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2b — Player unit list */}
+              {targetMode === 'player' && (
+                <div>
+                  <button onClick={() => setTargetMode(null)} style={{ color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', marginBottom: '0.5rem', fontFamily: '"Rajdhani",sans-serif' }}>← Back</button>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {enemies.map(enemy => {
+                      const units = [
+                        { unitType: 'commander', label: enemy.commanderStats?.customName || enemy.commander || 'Commander', icon: '⚔️', hp: enemy.commanderStats.hp, maxHp: enemy.commanderStats.maxHp },
+                        ...(enemy.subUnits || []).filter(u => u.hp > 0).map((u, idx) => ({ unitType: idx === 0 ? 'special' : `soldier${idx}`, label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`), icon: idx === 0 ? '⭐' : '🛡️', hp: u.hp, maxHp: u.maxHp })),
+                      ].filter(u => u.hp > 0);
+                      return (
+                        <div key={enemy.id} style={{ marginBottom: '0.75rem' }}>
+                          <div style={{ color: '#9ca3af', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>{enemy.playerName}</div>
+                          {units.map(u => (
+                            <div key={u.unitType} onClick={() => applyToPlayerUnit(enemy.id, u.unitType)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.85rem', borderRadius: '8px', cursor: 'pointer', marginBottom: '0.25rem', background: accentBg, border: `1px solid ${accentBorder}` }}>
+                              <span>{u.icon}</span>
+                              <span style={{ flex: 1, color: accentColor, fontWeight: '800', fontSize: '0.85rem' }}>{u.label}</span>
+                              <span style={{ color: '#9ca3af', fontSize: '0.68rem' }}>{u.hp}/{u.maxHp}hp</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <button onClick={() => { setEnemyItemModal(null); setEnemyTargetMode(null); }} style={{ width: '100%', marginTop: '0.75rem', padding: '0.65rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '8px', color: '#fca5a5', cursor: 'pointer', fontFamily: '"Rajdhani",sans-serif', fontWeight: '800', fontSize: '0.9rem' }}>✕ Cancel</button>
+            </div>
+          </div>
+        );
+      })()}
 
       <TimerExpiredToast notifications={roundTimers.expiredNotifications} />
       <TokenNotificationToast notifications={tokens.tokenNotifications} />

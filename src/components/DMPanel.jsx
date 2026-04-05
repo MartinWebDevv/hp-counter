@@ -40,9 +40,8 @@ const DMPanel = ({
   onIncrementAttack,
   onSpawnAttack,
   getTimersForNPC = () => [],
+  onUpdateNPC = () => {},
   currentRound = 1,
-  onOpenNpcBuff,
-  onUpdateNPC,
 }) => {
   const editingNPC = editingNPCId ? getNPCById(editingNPCId) : null;
   const [squadMode,        setSquadMode]        = React.useState(false);
@@ -279,7 +278,6 @@ const DMPanel = ({
               players={players}
               onDropLoot={onDropLoot}
               getTimersForNPC={getTimersForNPC}
-              onOpenNpcBuff={onOpenNpcBuff}
               onUpdateNPC={onUpdateNPC}
             />
             </div>

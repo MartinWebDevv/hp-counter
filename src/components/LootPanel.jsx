@@ -21,6 +21,19 @@ const EFFECT_TYPES = [
   { value: 'destroyItem',        label: '💥 Destroy Enemy Item' },
   { value: 'diceSwap',           label: '⇅ Swap Dice Rolls' },
   { value: 'closecall',          label: '🛡️ Close Call — Negate All Damage' },
+  // ── New effects ──
+  { value: 'cleanse',            label: '✨ Cleanse — Remove One Status Effect' },
+  { value: 'fullCleanse',        label: '✨✨ Full Cleanse — Remove All Status Effects' },
+  { value: 'poisonVial',         label: '🧪 Poison Vial — Poison One Enemy' },
+  { value: 'stunGrenade',        label: '💣 Stun Grenade — Stun One Enemy (1 round)' },
+  { value: 'shieldWall',         label: '🛡️ Shield Wall — Cannot Be Targeted This Round' },
+  { value: 'attackDebuffItem',   label: '⚔️↓ Attack Debuff — Weaken One Enemy' },
+  { value: 'counterStrike',      label: '⚡ Counter Strike — Reflect Half Damage' },
+  { value: 'npcPlague',           label: '☠️ NPC Plague — Poison All Active NPCs' },
+  { value: 'playerPlague',        label: '☠️ Player Plague — Poison All Enemy Players' },
+  { value: 'crownsFavor',        label: "👑 Crown's Favor — Faction +1 All Rolls This Round" },
+  { value: 'resurrect',          label: '💫 Resurrect — Revive Defeated Unit at 5HP' },
+  { value: 'marked',             label: '🎯 Marked — Enemy Takes Double Damage This Round' },
 ];
 
 const TIER_COLORS = {
@@ -52,7 +65,14 @@ const ItemCreator = ({ onSave, onCancel }) => {
   const needsValue = ['attackBonus', 'defenseBonus', 'heal', 'maxHP'].includes(item.effect.type);
   const isDestroyItem = item.effect.type === 'destroyItem';
   const isExtraSlot = item.effect.type === 'extraSlot';
-  const needsUses  = !['manual', 'extraSlot', 'key', 'destroyItem'].includes(item.effect.type);
+  const noUseTypes  = ['manual','extraSlot','key','destroyItem','cleanse','fullCleanse',
+                        'poisonVial','stunGrenade','shieldWall','attackDebuffItem','defenseDebuffItem',
+                        'counterStrike','npcPlague','playerPlague','crownsFavor','resurrect','marked','nullify','mirror'];
+  const needsUses      = !noUseTypes.includes(item.effect.type);
+  const needsDebuffVal = ['attackDebuffItem','defenseDebuffItem'].includes(item.effect.type);
+  const needsDamage    = ['poisonVial','npcPlague','playerPlague'].includes(item.effect.type);
+  const needsDuration  = ['poisonVial','stunGrenade','shieldWall','attackDebuffItem','defenseDebuffItem',
+                          'counterStrike','npcPlague','playerPlague','crownsFavor','marked'].includes(item.effect.type);
 
   return (
     <div style={{
@@ -140,6 +160,36 @@ const ItemCreator = ({ onSave, onCancel }) => {
               <input style={inputStyle} type="number" min="0" max="99"
                 value={item.effect.uses}
                 onChange={e => setEffect('uses', parseInt(e.target.value) || 0)} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DM config: Damage per Round + Duration */}
+      {(needsDamage || needsDuration || needsDebuffVal) && (
+        <div style={{ display: 'grid', gridTemplateColumns: [needsDamage, needsDuration, needsDebuffVal].filter(Boolean).length > 1 ? '1fr 1fr' : '1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+          {needsDamage && (
+            <div>
+              <label style={labelStyle}>Damage per Round (hp)</label>
+              <input style={inputStyle} type="number" min="1" max="99"
+                value={item.effect.damagePerRound || 2}
+                onChange={e => setEffect('damagePerRound', parseInt(e.target.value) || 1)} />
+            </div>
+          )}
+          {needsDebuffVal && (
+            <div>
+              <label style={labelStyle}>Debuff Amount</label>
+              <input style={inputStyle} type="number" min="1" max="20"
+                value={item.effect.debuffValue || 2}
+                onChange={e => setEffect('debuffValue', parseInt(e.target.value) || 1)} />
+            </div>
+          )}
+          {needsDuration && (
+            <div>
+              <label style={labelStyle}>Duration (rounds)</label>
+              <input style={inputStyle} type="number" min="1" max="20"
+                value={item.effect.duration || 1}
+                onChange={e => setEffect('duration', parseInt(e.target.value) || 1)} />
             </div>
           )}
         </div>

@@ -114,9 +114,11 @@ export const useCampaignTurn = (
 
     // current is a player — normal flow
     const freshOrder = buildTurnOrder();
+    // Include the current player in the acted set (endTurn adds them, but we check first)
+    const playersWhoActedIncludingCurrent = [...playersWhoActedThisRound, current.id];
     const allPlayersActed = freshOrder
       .filter(e => e.type === 'player')
-      .every(e => playersWhoActedThisRound.includes(e.id));
+      .every(e => playersWhoActedIncludingCurrent.includes(e.id));
 
     let nextIndex = (campaignTurnIndex + 1) % Math.max(freshOrder.length, 1);
 
@@ -229,7 +231,15 @@ export const useCampaignTurn = (
       let newReviveQueue = [...(player.reviveQueue || [])];
       let cmdUpdated = false;
 
-      targets.forEach(({ unitType, dmg }) => {
+      targets.forEach(({ unitType, dmg: rawDmg }) => {
+        // Shield Wall — unit takes 0 damage this round
+        const getUnitEffects = (unitType) => {
+          if (unitType === 'commander') return newCmdStats.statusEffects || [];
+          const idx = unitType === 'special' ? 0 : parseInt((unitType||'').replace('soldier',''));
+          return newSubs[idx]?.statusEffects || [];
+        };
+        const hasShield = getUnitEffects(unitType).some(ef => ef.type === 'shieldWall');
+        const dmg = hasShield ? 0 : rawDmg;
         if (unitType === 'commander') {
           cmdUpdated = true;
           const newHp = Math.max(0, newCmdStats.hp - dmg);
@@ -301,6 +311,28 @@ export const useCampaignTurn = (
       const updates = { subUnits: newSubs, reviveQueue: newReviveQueue };
       if (cmdUpdated) updates.commanderStats = newCmdStats;
       updatePlayer(player.id, updates);
+    });
+
+    // CounterStrike — if any targeted unit has counterStrike, reflect half damage to NPC
+    (npcAttackData.targetSquadMembers || []).forEach(target => {
+      const tp = players.find(p => p.id === target.playerId);
+      if (!tp) return;
+      const dmg = dist[`${target.playerId}-${target.unitType}`] || 0;
+      if (dmg <= 0) return;
+      const getEfx = (p, unitType) => {
+        if (unitType === 'commander') return p.commanderStats?.statusEffects || [];
+        const idx = unitType === 'special' ? 0 : parseInt((unitType || '').replace('soldier', ''));
+        return p.subUnits?.[idx]?.statusEffects || [];
+      };
+      const hasCounter = getEfx(tp, target.unitType).some(ef => ef.type === 'counterStrike');
+      if (!hasCounter) return;
+      const reflect = Math.ceil(dmg / 2);
+      const attackingNpc = getNPCById(npcAttackData.npcId);
+      if (attackingNpc) {
+        const newHp = Math.max(0, attackingNpc.hp - reflect);
+        applyDamageToNPC(attackingNpc.id, reflect, tp.playerName, 'Counter Strike', 'Counter');
+        addLog(`⚡ Counter Strike! ${tp.playerName} reflected ${reflect}hp back to "${attackingNpc.name}"`);
+      }
     });
 
     const npc = getNPCById(npcAttackData.npcId);

@@ -47,6 +47,22 @@ const DamageDistribution = ({
 
   const targets = calculatorData.targetSquadMembers || [];
 
+  // Helper — get status effects for a unit
+  const getUnitEffects = (player, unitType) => {
+    if (!player) return [];
+    if (unitType === 'commander') return player.commanderStats?.statusEffects || [];
+    const idx = unitType === 'special' ? 0 : parseInt((unitType||'').replace('soldier',''));
+    return player.subUnits?.[idx]?.statusEffects || [];
+  };
+
+  // Attacker info for counter strike display
+  const attackerPlayer = players.find(p => p.id === calculatorData.attackerId);
+  const atkType = calculatorData.attackingUnitType || 'commander';
+  const attackerUnitName = atkType === 'commander'
+    ? (attackerPlayer?.commanderStats?.customName || attackerPlayer?.commander || 'Commander')
+    : atkType === 'special' ? (attackerPlayer?.subUnits?.[0]?.name?.trim() || 'Special')
+    : (attackerPlayer?.subUnits?.[parseInt(atkType.replace('soldier',''))]?.name?.trim() || 'Soldier ' + atkType.replace('soldier',''));
+
   // Single target: pre-fill the full damage amount (DM still clicks Apply)
   const singleInitDone = React.useRef(false);
   React.useEffect(() => {
@@ -249,38 +265,65 @@ const DamageDistribution = ({
               unitHP = unit?.hp || 0;
             }
 
+            const hasCounterStrike = getUnitEffects(targetPlayer, target.unitType).some(ef => ef.type === 'counterStrike');
+            const reflectDmg = Math.ceil(currentDamage / 2);
+
             return (
-              <div key={key} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                gap: "0.5rem", padding: "0.75rem", marginBottom: "0.5rem",
-                background: currentDamage > 0 ? "#2a1810" : "transparent",
-                border: currentDamage > 0 ? "1px solid " + gold : "1px solid #3a2a1a",
-                borderRadius: "6px",
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: gold, fontSize: "0.875rem", fontWeight: "bold" }}>
-                    {targetPlayer.playerName || "Player"}
+              <React.Fragment key={key}>
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  gap: "0.5rem", padding: "0.75rem", marginBottom: hasCounterStrike && currentDamage > 0 ? "0" : "0.5rem",
+                  background: currentDamage > 0 ? "#2a1810" : "transparent",
+                  border: currentDamage > 0 ? "1px solid " + gold : "1px solid #3a2a1a",
+                  borderRadius: hasCounterStrike && currentDamage > 0 ? "6px 6px 0 0" : "6px",
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: gold, fontSize: "0.875rem", fontWeight: "bold" }}>
+                      {targetPlayer.playerName || "Player"}
+                    </div>
+                    <div style={{ color: "#8b7355", fontSize: "0.75rem" }}>
+                      {target.unitType === "commander" ? "⚔️" : target.unitType === "special" ? "⭐" : "🛡️"}{" "}
+                      {unitName} ({unitHP}hp)
+                    </div>
                   </div>
-                  <div style={{ color: "#8b7355", fontSize: "0.75rem" }}>
-                    {target.unitType === "commander" ? "⚔️" : target.unitType === "special" ? "⭐" : "🛡️"}{" "}
-                    {unitName} ({unitHP}hp)
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <button onClick={() => handleDistributionChange(key, currentDamage - 1)}
+                      disabled={currentDamage === 0} style={distBtn(currentDamage === 0)}>−</button>
+                    <input
+                      type="number" min="0" max={unitHP} value={currentDamage}
+                      onChange={e => handleDistributionChange(key, e.target.value)}
+                      style={distInput}
+                    />
+                    <button onClick={() => handleDistributionChange(key, currentDamage + 1)}
+                      disabled={currentDamage >= unitHP} style={distBtn(currentDamage >= unitHP)}>+</button>
+                    <span style={{ color: "#fecaca", fontSize: "0.875rem", fontWeight: "bold", minWidth: "40px" }}>
+                      {currentDamage}hp
+                    </span>
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <button onClick={() => handleDistributionChange(key, currentDamage - 1)}
-                    disabled={currentDamage === 0} style={distBtn(currentDamage === 0)}>−</button>
-                  <input
-                    type="number" min="0" max={unitHP} value={currentDamage}
-                    onChange={e => handleDistributionChange(key, e.target.value)}
-                    style={distInput}
-                  />
-                  <button onClick={() => handleDistributionChange(key, currentDamage + 1)}
-                    disabled={currentDamage >= unitHP} style={distBtn(currentDamage >= unitHP)}>+</button>
-                  <span style={{ color: "#fecaca", fontSize: "0.875rem", fontWeight: "bold", minWidth: "40px" }}>
-                    {currentDamage}hp
-                  </span>
-                </div>
-              </div>
+
+                {hasCounterStrike && currentDamage > 0 && (
+                  <div style={{
+                    padding: '0.5rem 0.75rem', marginBottom: '0.5rem',
+                    background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.35)',
+                    borderTop: 'none', borderRadius: '0 0 6px 6px',
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  }}>
+                    <span style={{ fontSize: '0.9rem' }}>⚡</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: '#fbbf24', fontSize: '0.72rem', fontWeight: '800', letterSpacing: '0.05em' }}>
+                        COUNTER STRIKE
+                      </div>
+                      <div style={{ color: '#9ca3af', fontSize: '0.68rem', marginTop: '0.1rem' }}>
+                        {attackerPlayer ? attackerPlayer.playerName + "'s " + attackerUnitName : 'Attacker'} takes {reflectDmg}hp reflected
+                      </div>
+                    </div>
+                    <span style={{ color: '#fbbf24', fontWeight: '900', fontSize: '1rem', fontFamily: '"Cinzel",Georgia,serif' }}>
+                      {reflectDmg}hp
+                    </span>
+                  </div>
+                )}
+              </React.Fragment>
             );
           })}
         </div>

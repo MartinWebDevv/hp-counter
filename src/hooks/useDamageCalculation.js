@@ -42,6 +42,11 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     setDamageDistribution({});
   };
 
+  // Closes the roll calculator but keeps distribution state intact for the distribution modal
+  const closeCalculatorKeepDistribution = () => {
+    setShowCalculator(false);
+  };
+
   const updateCalculatorHits = (updates) => {
     setCalculatorData((prev) => ({
       ...prev,
@@ -66,9 +71,8 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     return [...queue, unitIndex];
   };
 
-  const applyDamage = (onPlayersUpdate, distributionOverride) => {
+  const applyDamage = (onPlayersUpdate) => {
     if (!calculatorData) return;
-    const dist = distributionOverride || damageDistribution;
 
     let totalAvailable;
     if (calculatorData.totalDamage !== undefined) {
@@ -81,7 +85,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
       );
     }
 
-    const totalDistributed = Object.values(dist).reduce(
+    const totalDistributed = Object.values(damageDistribution).reduce(
       (sum, val) => sum + val,
       0,
     );
@@ -112,7 +116,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
         if (target.playerId !== player.id) return;
 
         const damageKey = `${target.playerId}-${target.unitType}`;
-        const damageAmount = dist[damageKey] || 0;
+        const damageAmount = damageDistribution[damageKey] || 0;
 
         if (damageAmount > 0) {
           hasChanges = true;
@@ -169,8 +173,50 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
       return hasChanges ? playerUpdates : player;
     });
 
+    // CounterStrike — reflect ceil(dmg/2) back to attacker for any targeted unit with counterStrike
+    let counterStrikeLog = [];
+    const updatedWithCounter = updatedPlayers.map(player => {
+      calculatorData.targetSquadMembers.forEach(target => {
+        if (target.playerId !== player.id) return;
+        const dmg = damageDistribution[`${target.playerId}-${target.unitType}`] || 0;
+        if (dmg <= 0) return;
+
+        const getEffects = (p, unitType) => {
+          if (unitType === 'commander') return p.commanderStats?.statusEffects || [];
+          const idx = unitType === 'special' ? 0 : parseInt((unitType||'').replace('soldier',''));
+          return p.subUnits?.[idx]?.statusEffects || [];
+        };
+        if (!getEffects(player, target.unitType).some(ef => ef.type === 'counterStrike')) return;
+
+        const reflect = Math.ceil(dmg / 2);
+        counterStrikeLog.push({ targetPlayerId: player.id, reflect });
+      });
+
+      return player;
+    });
+
+    // Apply counter strike damage to attacker
+    const attackerPlayer = players.find(p => p.id === calculatorData.attackerId);
+    let finalPlayers = updatedWithCounter;
+    if (counterStrikeLog.length > 0 && attackerPlayer) {
+      const totalReflect = counterStrikeLog.reduce((s, r) => s + r.reflect, 0);
+      const atkType = calculatorData.attackingUnitType;
+      finalPlayers = updatedWithCounter.map(p => {
+        if (p.id !== calculatorData.attackerId) return p;
+        if (atkType === 'commander') {
+          return { ...p, commanderStats: { ...p.commanderStats, hp: Math.max(0, p.commanderStats.hp - totalReflect) } };
+        } else {
+          const idx = atkType === 'special' ? 0 : parseInt(atkType.replace('soldier',''));
+          return { ...p, subUnits: (p.subUnits||[]).map((u, si) => si === idx ? { ...u, hp: Math.max(0, u.hp - totalReflect) } : u) };
+        }
+      });
+      counterStrikeLog.forEach(({ reflect }) => {
+        addLog('⚡ Counter Strike! Reflected ' + reflect + 'hp back to ' + (attackerPlayer.playerName || 'attacker'));
+      });
+    }
+
     if (onPlayersUpdate) {
-      onPlayersUpdate(updatedPlayers);
+      onPlayersUpdate(finalPlayers);
     }
 
     // Log the action
@@ -198,10 +244,10 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
 
     // Player targets
     calculatorData.targetSquadMembers
-      .filter((m) => !m.isNPC && dist[`${m.playerId}-${m.unitType}`] > 0)
+      .filter((m) => !m.isNPC && damageDistribution[`${m.playerId}-${m.unitType}`] > 0)
       .forEach((m) => {
         const target = players.find((p) => p.id === m.playerId);
-        const damage = dist[`${m.playerId}-${m.unitType}`];
+        const damage = damageDistribution[`${m.playerId}-${m.unitType}`];
         let unitName = '';
         if (m.unitType === 'commander') {
           unitName = target?.commanderStats?.customName || target?.commander || 'Commander';
@@ -216,10 +262,10 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
 
     // NPC targets
     calculatorData.targetSquadMembers
-      .filter((m) => m.isNPC && dist[`npc-${m.npcId}`] > 0)
+      .filter((m) => m.isNPC && damageDistribution[`npc-${m.npcId}`] > 0)
       .forEach((m) => {
         const npc = (calculatorData.npcs || []).find(n => n.id === m.npcId);
-        const damage = dist[`npc-${m.npcId}`];
+        const damage = damageDistribution[`npc-${m.npcId}`];
         allTargetDetails.push(`${npc?.name || 'NPC'} for ${damage}hp`);
       });
 
@@ -236,6 +282,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     damageDistribution,
     openCalculator,
     closeCalculator,
+    closeCalculatorKeepDistribution,
     updateCalculatorHits,
     updateDamageDistribution,
     setShowDamageDistribution,

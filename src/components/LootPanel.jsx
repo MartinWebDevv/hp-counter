@@ -33,7 +33,10 @@ const EFFECT_TYPES = [
   { value: 'playerPlague',        label: '☠️ Player Plague — Poison All Enemy Players' },
   { value: 'crownsFavor',        label: "👑 Crown's Favor — Faction +1 All Rolls This Round" },
   { value: 'resurrect',          label: '💫 Resurrect — Revive Defeated Unit at 5HP' },
+  { value: 'defenseDebuffItem',  label: '🛡️↓ Defense Debuff — Weaken One Enemy\'s Defense' },
   { value: 'marked',             label: '🎯 Marked — Enemy Takes Double Damage This Round' },
+  { value: 'nullify',            label: '🚫 Nullify — Remove Last Status Effect On All Own Units' },
+  { value: 'mirror',             label: '🪞 Mirror — Copy Last Item Played' },
 ];
 
 const TIER_COLORS = {

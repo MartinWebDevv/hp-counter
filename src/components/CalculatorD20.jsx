@@ -160,6 +160,12 @@ const CalculatorD20 = ({
   const npcIsStunned  = (currentTargetNPC?.statusEffects || []).some(ef => ef.type === 'stun');
   const isMarked      = targetIsMarked || npcIsMarked;
 
+  // When an NPC is the attacker (attackerIsNPC), read its own attack debuff/buff
+  const attackingNPCId  = calculatorData.attackerIsNPC ? calculatorData.attackerId : null;
+  const attackingNPC    = attackingNPCId ? npcs.find(n => n.id === attackingNPCId) : null;
+  const npcAttackerAtkDebuff = (attackingNPC?.statusEffects || []).filter(ef => ef.type === 'attackDebuff').reduce((s, ef) => s + (ef.value||0), 0);
+  const npcAttackerAtkBuff   = (attackingNPC?.statusEffects || []).filter(ef => ef.type === 'attackBuff').reduce((s, ef) => s + (ef.value||0), 0);
+
   // Show prompt once when first roll is about to happen
   React.useEffect(() => {
     if (bonusPromptShown || attackRolls.length > 0) return;
@@ -289,7 +295,7 @@ const CalculatorD20 = ({
     if (targetHasShield) return 0;
 
     const baseRoll = isSpecialBonus ? atkRoll + 1 : atkRoll;
-    const finalAtkRoll = (firstStrike ? baseRoll + 2 : baseRoll) + activeAttackBonus + netAtkModifier;
+    const finalAtkRoll = (firstStrike ? baseRoll + 2 : baseRoll) + activeAttackBonus + netAtkModifier + npcAttackerAtkBuff - npcAttackerAtkDebuff;
 
     // Apply NPC armor floor + status modifiers
     const firstNPCId = (calculatorData.targetNPCIds?.[0]) || calculatorData.targetNPCId;
@@ -348,6 +354,8 @@ const CalculatorD20 = ({
       isMarked,
       playerAtkBuff: playerAtkBuff || 0,
       playerAtkDebuff: playerAtkDebuff || 0,
+      npcAtkBuff: npcAttackerAtkBuff || 0,
+      npcAtkDebuff: npcAttackerAtkDebuff || 0,
       defModApplied: defModApplied || 0,
     };
     
@@ -561,12 +569,14 @@ const CalculatorD20 = ({
         )}
 
         {/* Other status badges */}
-        {(activeAttackBonus > 0 || activeDefenseBonus > 0 || netAtkModifier !== 0 || isMarked || npcIsStunned || liveNpcDefBonus !== 0 || netDefModifier !== 0) && (
+        {(activeAttackBonus > 0 || activeDefenseBonus > 0 || netAtkModifier !== 0 || isMarked || npcIsStunned || liveNpcDefBonus !== 0 || netDefModifier !== 0 || npcAttackerAtkDebuff > 0 || npcAttackerAtkBuff > 0) && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem', justifyContent: 'center' }}>
             {activeAttackBonus > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '5px', color: '#86efac', fontSize: '0.72rem', fontWeight: '800' }}>⚔️ +{activeAttackBonus} ATK BONUS</span>}
             {activeDefenseBonus > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '5px', color: '#93c5fd', fontSize: '0.72rem', fontWeight: '800' }}>🛡️ +{activeDefenseBonus} DEF BONUS</span>}
             {playerAtkBuff > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '5px', color: '#4ade80', fontSize: '0.72rem', fontWeight: '800' }}>⚔️↑ +{playerAtkBuff} Atk Buff</span>}
             {playerAtkDebuff > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '5px', color: '#f87171', fontSize: '0.72rem', fontWeight: '800' }}>⚔️↓ -{playerAtkDebuff} Atk Debuff</span>}
+            {npcAttackerAtkBuff > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '5px', color: '#4ade80', fontSize: '0.72rem', fontWeight: '800' }}>⚔️↑ +{npcAttackerAtkBuff} NPC Atk Buff</span>}
+            {npcAttackerAtkDebuff > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '5px', color: '#f87171', fontSize: '0.72rem', fontWeight: '800' }}>⚔️↓ -{npcAttackerAtkDebuff} NPC Atk Debuff</span>}
             {isMarked && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(239,68,68,0.18)', border: '1px solid rgba(239,68,68,0.6)', borderRadius: '5px', color: '#fca5a5', fontSize: '0.72rem', fontWeight: '800' }}>🎯 MARKED — x2 Damage</span>}
             {npcIsStunned && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(251,191,36,0.18)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: '5px', color: '#fbbf24', fontSize: '0.72rem', fontWeight: '800' }}>💫 NPC STUNNED</span>}
             {liveNpcDefBonus > 0 && <span style={{ padding: '0.2rem 0.6rem', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '5px', color: '#4ade80', fontSize: '0.72rem', fontWeight: '800' }}>🛡️↑ +{liveNpcDefBonus} NPC Def Buff</span>}
@@ -1342,6 +1352,8 @@ const CalculatorD20 = ({
                     {roll.attackBonusApplied > 0 && <span style={{ color: '#86efac', fontWeight: 'bold' }}>+{roll.attackBonusApplied}</span>}
                     {roll.playerAtkBuff > 0 && <span style={{ color: '#4ade80', fontWeight: 'bold' }}>+{roll.playerAtkBuff}</span>}
                     {roll.playerAtkDebuff > 0 && <span style={{ color: '#f87171', fontWeight: 'bold' }}>-{roll.playerAtkDebuff}</span>}
+                    {roll.npcAtkBuff > 0 && <span style={{ color: '#4ade80', fontWeight: 'bold' }}>+{roll.npcAtkBuff}</span>}
+                    {roll.npcAtkDebuff > 0 && <span style={{ color: '#f87171', fontWeight: 'bold' }}>-{roll.npcAtkDebuff}</span>}
                   </span>
                   <span style={{ color: colors.textFaint, fontSize: '0.72rem' }}>vs</span>
                   <span style={{ color: '#86efac', fontWeight: '700', fontSize: '0.82rem' }}>

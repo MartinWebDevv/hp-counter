@@ -175,25 +175,21 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
 
     // CounterStrike — reflect ceil(dmg/2) back to attacker for any targeted unit with counterStrike
     let counterStrikeLog = [];
-    const updatedWithCounter = updatedPlayers.map(player => {
-      calculatorData.targetSquadMembers.forEach(target => {
-        if (target.playerId !== player.id) return;
-        const dmg = damageDistribution[`${target.playerId}-${target.unitType}`] || 0;
-        if (dmg <= 0) return;
-
-        const getEffects = (p, unitType) => {
-          if (unitType === 'commander') return p.commanderStats?.statusEffects || [];
-          const idx = unitType === 'special' ? 0 : parseInt((unitType||'').replace('soldier',''));
-          return p.subUnits?.[idx]?.statusEffects || [];
-        };
-        if (!getEffects(player, target.unitType).some(ef => ef.type === 'counterStrike')) return;
-
-        const reflect = Math.ceil(dmg / 2);
-        counterStrikeLog.push({ targetPlayerId: player.id, reflect });
-      });
-
-      return player;
+    const getEffects = (p, unitType) => {
+      if (unitType === 'commander') return p.commanderStats?.statusEffects || [];
+      const idx = unitType === 'special' ? 0 : parseInt((unitType||'').replace('soldier',''));
+      return p.subUnits?.[idx]?.statusEffects || [];
+    };
+    calculatorData.targetSquadMembers.forEach(target => {
+      const dmg = damageDistribution[`${target.playerId}-${target.unitType}`] || 0;
+      if (dmg <= 0) return;
+      const targetPlayerUpdated = updatedPlayers.find(p => p.id === target.playerId);
+      if (!targetPlayerUpdated) return;
+      if (!getEffects(targetPlayerUpdated, target.unitType).some(ef => ef.type === 'counterStrike')) return;
+      const reflect = Math.ceil(dmg / 2);
+      counterStrikeLog.push({ reflect });
     });
+    const updatedWithCounter = updatedPlayers;
 
     // Apply counter strike damage to attacker
     const attackerPlayer = players.find(p => p.id === calculatorData.attackerId);

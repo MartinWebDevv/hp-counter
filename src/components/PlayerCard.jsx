@@ -24,6 +24,8 @@ const PlayerCard = ({
   getTimersForPlayerUnit,
   getTokenForPlayer,
   onUseItemOnEnemy,
+  onNullifyLastEffect,
+  onTrackLastItem,
   onUseGlobalItem,
 }) => {
   const [showSquad, setShowSquad] = React.useState(true);
@@ -582,8 +584,8 @@ const PlayerCard = ({
             const isKey = item.effect?.type === 'key';
             const isExtraSlot = item.effect?.type === 'extraSlot';
             const isSelfTarget = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'].includes(item.effect?.type);
-            const isEnemyTarget = ['poisonVial','stunGrenade','attackDebuffItem','marked'].includes(item.effect?.type);
-            const isGlobal = ['plague','crownsFavor'].includes(item.effect?.type);
+            const isEnemyTarget = ['poisonVial','stunGrenade','attackDebuffItem','defenseDebuffItem','marked'].includes(item.effect?.type);
+            const isGlobal = ['npcPlague','playerPlague','crownsFavor','nullify','mirror'].includes(item.effect?.type);
             const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem || isExtraSlot || isSelfTarget || isEnemyTarget || isGlobal);
 
             const handleUseKey = () => {
@@ -614,11 +616,18 @@ const PlayerCard = ({
                 setResurrectItem({ item, itemIndex: i });
                 return;
               } else if (ef?.type === 'shieldWall' || ef?.type === 'counterStrike') {
+                if (onTrackLastItem) onTrackLastItem(player, item);
                 setShieldWallItem({ item, itemIndex: i });
                 return;
-              } else if (ef?.type === 'poisonVial' || ef?.type === 'stunGrenade' || ef?.type === 'attackDebuffItem' || ef?.type === 'marked') {
+              } else if (ef?.type === 'poisonVial' || ef?.type === 'stunGrenade' || ef?.type === 'attackDebuffItem' || ef?.type === 'defenseDebuffItem' || ef?.type === 'marked') {
+                if (onTrackLastItem) onTrackLastItem(player, item);
                 if (onUseItemOnEnemy) { onUseItemOnEnemy(player, item, i); return; }
-              } else if (ef?.type === 'plague' || ef?.type === 'crownsFavor') {
+              } else if (ef?.type === 'nullify') {
+                if (onNullifyLastEffect) { onNullifyLastEffect(player.id); }
+                const newInventory = (player.inventory || []).filter((_, idx) => idx !== i);
+                onUpdate(player.id, { inventory: newInventory });
+                return;
+              } else if (ef?.type === 'npcPlague' || ef?.type === 'playerPlague' || ef?.type === 'crownsFavor' || ef?.type === 'mirror') {
                 if (onUseGlobalItem) { onUseGlobalItem(player, item, i); return; }
               } else if (ef?.type === 'destroyItem') {
                 if (onOpenDestroyModal) onOpenDestroyModal(player);

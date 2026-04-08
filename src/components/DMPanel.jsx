@@ -41,6 +41,7 @@ const DMPanel = ({
   onSpawnAttack,
   getTimersForNPC = () => [],
   onUpdateNPC = () => {},
+  onDuplicateNPC = () => {},
   currentRound = 1,
 }) => {
   const editingNPC = editingNPCId ? getNPCById(editingNPCId) : null;
@@ -49,14 +50,15 @@ const DMPanel = ({
   const [search,           setSearch]           = React.useState('');
   const [filterStatus,     setFilterStatus]     = React.useState('all'); // 'all' | 'active' | 'inactive'
 
-  const orderedNPCs = [...activeNPCs, ...inactiveNPCs];
+  const orderedNPCs = [...activeNPCs, ...inactiveNPCs, ...deadNPCs];
 
   const filteredNPCs = orderedNPCs.filter(npc => {
     const matchesSearch = !search.trim() || npc.name.toLowerCase().includes(search.trim().toLowerCase());
     const matchesStatus = filterStatus === 'all'
-      ? true
+      ? !npc.isDead
       : filterStatus === 'active'   ? npc.active && !npc.isDead
-      : /* inactive */                !npc.active && !npc.isDead;
+      : filterStatus === 'inactive' ? !npc.active && !npc.isDead
+      : /* dead */                    npc.isDead;
     return matchesSearch && matchesStatus;
   });
   const toggleSquadNPC = (npcId) => {
@@ -158,16 +160,20 @@ const DMPanel = ({
             )}
           </div>
           {/* Status filter chips */}
-          {['all', 'active', 'inactive'].map(f => {
-            const labels = { all: '⚡ All', active: '✅ Active', inactive: '😴 Inactive' };
-            const active = filterStatus === f;
+          {['all', 'active', 'inactive', 'dead'].map(f => {
+            const labels = { all: '⚡ All', active: '✅ Active', inactive: '😴 Inactive', dead: '💀 Dead' };
+            const isActive = filterStatus === f;
+            const chipColor = f === 'active'   ? { bg: colors.greenSubtle,          border: colors.greenBorder,          text: colors.green }
+                            : f === 'inactive' ? { bg: 'rgba(99,102,241,0.15)',      border: 'rgba(99,102,241,0.4)',       text: '#a5b4fc' }
+                            : f === 'dead'     ? { bg: 'rgba(127,29,29,0.25)',       border: 'rgba(239,68,68,0.35)',       text: colors.redLight || '#fca5a5' }
+                            :                   { bg: colors.amberSubtle,            border: colors.amberBorder,          text: colors.amber };
             return (
               <button key={f} onClick={() => setFilterStatus(f)} style={{
                 padding: '0.45rem 0.75rem', borderRadius: '8px', cursor: 'pointer',
                 fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem',
-                background: active ? (f === 'active' ? colors.greenSubtle : f === 'inactive' ? 'rgba(99,102,241,0.15)' : colors.amberSubtle) : 'rgba(0,0,0,0.25)',
-                border: `1px solid ${active ? (f === 'active' ? colors.greenBorder : f === 'inactive' ? 'rgba(99,102,241,0.4)' : colors.amberBorder) : 'rgba(255,255,255,0.06)'}`,
-                color: active ? (f === 'active' ? colors.green : f === 'inactive' ? '#a5b4fc' : colors.amber) : colors.textMuted,
+                background: isActive ? chipColor.bg : 'rgba(0,0,0,0.25)',
+                border: `1px solid ${isActive ? chipColor.border : 'rgba(255,255,255,0.06)'}`,
+                color: isActive ? chipColor.text : colors.textMuted,
                 whiteSpace: 'nowrap', transition: 'all 0.15s',
               }}>{labels[f]}</button>
             );
@@ -279,6 +285,7 @@ const DMPanel = ({
               onDropLoot={onDropLoot}
               getTimersForNPC={getTimersForNPC}
               onUpdateNPC={onUpdateNPC}
+              onDuplicate={onDuplicateNPC}
             />
             </div>
           ))}

@@ -21,6 +21,7 @@ const NPCCard = ({
   onDropLoot,
   getTimersForNPC = () => [],
   onUpdateNPC = () => {},
+  onDuplicate = () => {},
 }) => {
   const [manualHP, setManualHP] = React.useState('');
   const [showPhaseMenu, setShowPhaseMenu] = React.useState(false);
@@ -130,6 +131,7 @@ const NPCCard = ({
             )}
           </>
         )}
+        <button onClick={() => onDuplicate(npc.id)} title="Duplicate NPC" style={btn.icon(colors.tealLight)}>⧉</button>
         <button onClick={() => onEdit(npc.id)} title="Edit NPC" style={btn.icon(colors.blue)}>✏️</button>
         <button onClick={() => onRemove(npc.id)} title="Remove NPC" style={btn.icon('#fca5a5')}>✕</button>
       </div>

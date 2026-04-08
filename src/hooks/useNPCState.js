@@ -125,6 +125,31 @@ export const useNPCState = (addLog, onNPCKilled) => {
     if (npc) addLog(`🗑️ NPC "${npc.name}" removed.`);
   };
 
+  const duplicateNPC = (npcId) => {
+    const original = npcs.find(n => n.id === npcId);
+    if (!original) return;
+    const copy = {
+      ...JSON.parse(JSON.stringify(original)),
+      id: generateId(),
+      name: `${original.name} (Copy)`,
+      hp: original.maxHp,
+      active: false,
+      isDead: false,
+      currentPhase: 0,
+      attackCount: 0,
+      phaseJustTriggered: false,
+    };
+    // Give each attack and phase a fresh id so they don't collide
+    copy.attacks = (copy.attacks || []).map(a => ({ ...a, id: generateId() }));
+    copy.phases  = (copy.phases  || []).map(p => ({
+      ...p,
+      id: generateId(),
+      attacks: (p.attacks || []).map(a => ({ ...a, id: generateId() })),
+    }));
+    setNpcs(prev => [...prev, copy]);
+    addLog(`📋 NPC "${original.name}" duplicated.`);
+  };
+
   // ── Activation ───────────────────────────────────────────────────────────
 
   const activateNPC = (npcId) => {
@@ -335,6 +360,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
     closeCreator,
     saveNPC,
     removeNPC,
+    duplicateNPC,
     activateNPC,
     deactivateNPC,
     applyDamageToNPC,

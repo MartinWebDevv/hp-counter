@@ -127,7 +127,7 @@ const HPCounter = () => {
     npcs, activeNPCs, inactiveNPCs, deadNPCs,
     showNPCCreator, editingNPCId,
     blankNPC, blankAttack, blankPhase,
-    openCreator, closeCreator, saveNPC, removeNPC,
+    openCreator, closeCreator, saveNPC, removeNPC, duplicateNPC,
     activateNPC, deactivateNPC,
     applyDamageToNPC, setNPCHP, triggerNextPhase, getNPCById, setNpcs, resetAllNPCs,
   } = useNPCState(addLog, (killedNPC) => {
@@ -828,6 +828,7 @@ const HPCounter = () => {
               lootPool={lootPool}
               getTimersForNPC={roundTimers.getTimersForNPC}
               onUpdateNPC={(npcId, updates) => setNpcs(prev => prev.map(n => n.id === npcId ? { ...n, ...updates } : n))}
+              onDuplicateNPC={duplicateNPC}
             />
           )}
 
@@ -2096,7 +2097,7 @@ const SessionArchiveEntry = ({ session }) => {
 const SpawnModal = ({ attack, parentName, presets, hasPresets, onSpawn, onClose }) => {
 
   const items = hasPresets ? presets : [{ name: attack.name || 'Spawn', hp: 10, armor: 0, attackBonus: 0 }];
-  const [quantities, setQuantities] = React.useState(items.map(() => 1));
+  const [quantities, setQuantities] = React.useState(items.map(() => 0));
 
   const setQty = (i, val) => {
     const v = Math.max(0, parseInt(val) || 0);

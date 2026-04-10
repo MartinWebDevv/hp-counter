@@ -30,7 +30,7 @@ import { useCommanderTokens }  from '../hooks/useCommanderTokens';
 import RoundTimerPanel         from './RoundTimerPanel';
 import CommanderTokenPanel     from './CommanderTokenPanel';
 import useFirestoreSync        from '../hooks/useFirestoreSync';
-import { subscribePendingRequests, resolvePendingRequest } from '../services/gameStateService';
+import { subscribePendingRequests, resolvePendingRequest, writePendingChoice, resolvePendingChoice, subscribePendingChoices } from '../services/gameStateService';
 
 
 
@@ -215,6 +215,213 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const firstRequest = Object.values(pendingRequests).find(r => r?.type === 'attack');
   // First pending item request (shown when no attack request is pending)
   const firstItemRequest = !firstRequest ? Object.values(pendingRequests).find(r => r?.type === 'useItem') : null;
+  // First pending item choice (player made their choice, GM confirms to execute)
+  const firstItemChoice = (!firstRequest && !firstItemRequest)
+    ? Object.values(pendingRequests).find(r => r?.type === 'itemChoice')
+    : null;
+
+  // ── GM: execute an approved item choice from the player ───────────────────
+  const handleExecuteItemChoice = (req) => {
+    resolvePendingRequest(lobbyCode, req.reqId);
+    // Also clear the pending choice that triggered this
+    if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId);
+
+    const player = players.find(p => String(p.id) === String(req.playerId));
+    if (!player) return;
+
+    const item = (player.inventory || [])[req.itemIndex];
+    const effectType = req.itemEffect;
+
+    // ── Own-unit targeting effects ──────────────────────────────────────────
+    if (req.targetType === 'self') {
+      const unitKey = req.targetUnitKey;
+      const isCommander = unitKey === 'commander';
+      const unitIdx = unitKey === 'special' ? 0 : parseInt((unitKey || '').replace('soldier', ''));
+
+      if (effectType === 'heal') {
+        const healAmt = item?.effect?.value || 0;
+        if (isCommander) {
+          const newHp = Math.min(player.commanderStats.hp + healAmt, player.commanderStats.maxHp);
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, hp: newHp } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, hp: Math.min(u.hp + healAmt, u.maxHp) } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`💚 ${player.playerName}'s ${req.targetUnitLabel} healed ${healAmt}hp`);
+      } else if (effectType === 'maxHP') {
+        const boost = item?.effect?.value || 0;
+        if (isCommander) {
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, maxHp: player.commanderStats.maxHp + boost, hp: player.commanderStats.hp + boost } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, maxHp: u.maxHp + boost, hp: u.hp + boost } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`❤️ ${player.playerName}'s ${req.targetUnitLabel} max HP +${boost}`);
+      } else if (effectType === 'attackBonus' || effectType === 'defenseBonus') {
+        const bonus = item?.effect?.value || 1;
+        const effectName = effectType === 'attackBonus' ? 'attackBuff' : 'defenseBuff';
+        const label = effectType === 'attackBonus' ? '⚔️↑' : '🛡️↑';
+        const newEffect = { type: effectName, value: bonus, duration: item?.effect?.duration || 1 };
+        if (isCommander) {
+          const existing = player.commanderStats.statusEffects || [];
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [...existing, newEffect] } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [...(u.statusEffects || []), newEffect] } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`${label} ${player.playerName}'s ${req.targetUnitLabel} +${bonus}`);
+      } else if (effectType === 'shieldWall') {
+        const newEffect = { type: 'shieldWall', duration: 1, shieldedPlayerId: player.id };
+        if (isCommander) {
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [...(player.commanderStats.statusEffects || []), newEffect] } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [...(u.statusEffects || []), newEffect] } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`🛡️ Shield Wall applied to ${player.playerName}'s ${req.targetUnitLabel}`);
+      } else if (effectType === 'counterStrike') {
+        const newEffect = { type: 'counterStrike', duration: item?.effect?.duration || 1 };
+        if (isCommander) {
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [...(player.commanderStats.statusEffects || []), newEffect] } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [...(u.statusEffects || []), newEffect] } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`⚡ Counter Strike applied to ${player.playerName}'s ${req.targetUnitLabel}`);
+      } else if (effectType === 'cleanse') {
+        if (isCommander) {
+          const effects = (player.commanderStats.statusEffects || []);
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: effects.slice(0, -1) } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: (u.statusEffects || []).slice(0, -1) } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`✨ ${player.playerName}'s ${req.targetUnitLabel} cleansed one status effect`);
+      } else if (effectType === 'fullCleanse') {
+        if (isCommander) {
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [] } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [] } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`✨✨ ${player.playerName}'s ${req.targetUnitLabel} fully cleansed`);
+      } else if (effectType === 'resurrect') {
+        const reviveHp = 5;
+        const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, hp: reviveHp, livesRemaining: Math.max(0, (u.livesRemaining ?? 0) - 1) } : u);
+        updatePlayer(player.id, { subUnits: newSubs });
+        addLog(`💫 ${player.playerName}'s ${req.targetUnitLabel} resurrected at ${reviveHp}hp`);
+      } else if (effectType === 'extraSlot') {
+        if (isCommander) {
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, bonusSlots: (player.commanderStats.bonusSlots || 0) + 1 } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, bonusSlots: (u.bonusSlots || 0) + 1 } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`🎒 ${player.playerName}'s ${req.targetUnitLabel} gained an extra item slot`);
+      }
+
+      // Remove item after use (unless uses remaining)
+      if (item) {
+        const uses = item.effect?.uses ?? 1;
+        const usesRemaining = item.effect?.usesRemaining ?? uses;
+        if (uses === 0) {
+          // unlimited — don't remove
+        } else if (usesRemaining <= 1) {
+          updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+        } else {
+          const newInv = (player.inventory || []).map((it, i) => i === req.itemIndex ? { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } } : it);
+          updatePlayer(player.id, { inventory: newInv });
+        }
+      }
+    }
+
+    // ── Enemy targeting effects ─────────────────────────────────────────────
+    if (req.targetType === 'enemy') {
+      const targetPlayerId = req.targetPlayerId;
+      const targetNpcId    = req.targetNpcId;
+      const unitKey        = req.targetUnitKey;
+      const isNPC          = !!targetNpcId;
+
+      if (isNPC) {
+        // Apply to NPC
+        const npc = npcs.find(n => n.id === targetNpcId);
+        if (!npc) return;
+        const dur = item?.effect?.duration || 2;
+        const val = item?.effect?.value || item?.effect?.damagePerRound || 1;
+        if (effectType === 'poisonVial') {
+          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'poison', value: val, duration: dur }]);
+          addLog(`🧪 ${player.playerName} poisoned ${npc.name}`);
+        } else if (effectType === 'stunGrenade') {
+          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'stun', duration: 1 }]);
+          addLog(`💣 ${player.playerName} stunned ${npc.name}`);
+        } else if (effectType === 'attackDebuffItem') {
+          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'attackDebuff', value: item?.effect?.debuffValue || 1, duration: dur }]);
+          addLog(`⚔️↓ ${player.playerName} debuffed ${npc.name}'s attack`);
+        } else if (effectType === 'defenseDebuffItem') {
+          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'defenseDebuff', value: item?.effect?.debuffValue || 1, duration: dur }]);
+          addLog(`🛡️↓ ${player.playerName} debuffed ${npc.name}'s defense`);
+        } else if (effectType === 'marked') {
+          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'marked', duration: 1 }]);
+          addLog(`🎯 ${player.playerName} marked ${npc.name}`);
+        }
+      } else {
+        // Apply to enemy player unit
+        const targetPlayer = players.find(p => p.id === targetPlayerId);
+        if (!targetPlayer) return;
+        const isCommander = unitKey === 'commander';
+        const unitIdx = unitKey === 'special' ? 0 : parseInt((unitKey || '').replace('soldier', ''));
+        const dur = item?.effect?.duration || 2;
+        const val = item?.effect?.value || item?.effect?.damagePerRound || 1;
+        const newEffect = (() => {
+          if (effectType === 'poisonVial')        return { type: 'poison',       value: val,                          duration: dur };
+          if (effectType === 'stunGrenade')        return { type: 'stun',                                              duration: 1   };
+          if (effectType === 'attackDebuffItem')   return { type: 'attackDebuff', value: item?.effect?.debuffValue || 1, duration: dur };
+          if (effectType === 'defenseDebuffItem')  return { type: 'defenseDebuff',value: item?.effect?.debuffValue || 1, duration: dur };
+          if (effectType === 'marked')             return { type: 'marked',                                            duration: 1   };
+          return null;
+        })();
+        if (!newEffect) return;
+        if (isCommander) {
+          updatePlayer(targetPlayerId, { commanderStats: { ...targetPlayer.commanderStats, statusEffects: [...(targetPlayer.commanderStats.statusEffects || []), newEffect] } });
+        } else {
+          const newSubs = (targetPlayer.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [...(u.statusEffects || []), newEffect] } : u);
+          updatePlayer(targetPlayerId, { subUnits: newSubs });
+        }
+        const effectLabels = { poisonVial: '🧪 Poisoned', stunGrenade: '💣 Stunned', attackDebuffItem: '⚔️↓ Attack Debuffed', defenseDebuffItem: '🛡️↓ Defense Debuffed', marked: '🎯 Marked' };
+        addLog(`${effectLabels[effectType] || effectType}: ${player.playerName} → ${targetPlayer.playerName}'s ${req.targetUnitLabel}`);
+      }
+
+      // Remove item after use
+      if (item) {
+        updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+      }
+    }
+
+    // ── Destroy Item ────────────────────────────────────────────────────────
+    if (req.targetType === 'destroyItem') {
+      const targetPlayer = players.find(p => p.id === req.targetPlayerId);
+      if (!targetPlayer) return;
+      const newInv = (targetPlayer.inventory || []).filter(it => it.id !== req.destroyItemId);
+      updatePlayer(req.targetPlayerId, { inventory: newInv });
+
+      // Notify the targeted player
+      const noticeId = `destroyed_${Date.now()}`;
+      writePendingChoice(lobbyCode, noticeId, {
+        choiceId: noticeId,
+        type: 'destroyNotice',
+        targetPlayerUid: targetPlayer.uid,
+        targetPlayerId:  targetPlayer.id,
+        destroyedItemName: req.destroyedItemName,
+        byPlayerName:    player.playerName,
+        timestamp: Date.now(),
+      });
+      setTimeout(() => resolvePendingChoice(lobbyCode, noticeId), 6000);
+
+      // Remove destroyer's item too
+      if (item) updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+      addLog(`💥 ${player.playerName} destroyed ${targetPlayer.playerName}'s "${req.destroyedItemName}"`);
+    }
+  };
 
   const handleApproveRequest = (req) => {
     resolvePendingRequest(lobbyCode, req.reqId);
@@ -306,17 +513,53 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     });
   };
 
+  // Effect types that require the player to make a choice before GM executes
+  const PLAYER_CHOICE_EFFECTS = [
+    // Enemy targeting
+    'poisonVial', 'stunGrenade', 'attackDebuffItem', 'defenseDebuffItem', 'marked', 'destroyItem',
+    // Own unit targeting
+    'heal', 'maxHP', 'attackBonus', 'defenseBonus', 'shieldWall', 'counterStrike',
+    'cleanse', 'fullCleanse', 'resurrect', 'extraSlot',
+  ];
+
   const handleApproveItemRequest = (req) => {
     resolvePendingRequest(lobbyCode, req.reqId);
     const player = players.find(p => String(p.id) === String(req.playerId));
     if (!player) return;
 
-    // Auto-execute simple destructive actions
+    // Auto-execute simple destructive actions — no choice needed
     if (req.action === 'drop' || req.action === 'useKey') {
       const newInventory = (player.inventory || []).filter((_, idx) => idx !== req.itemIndex);
       updatePlayer(player.id, { inventory: newInventory });
+      return;
     }
-    // For 'use' and 'pass' — GM applies the effect manually via the PlayerCard in the GM view
+
+    // For 'use' — check if this effect needs a player-side choice
+    if (req.action === 'use' && PLAYER_CHOICE_EFFECTS.includes(req.itemEffect)) {
+      const choiceId = `choice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      writePendingChoice(lobbyCode, choiceId, {
+        choiceId,
+        targetPlayerUid: player.uid,
+        targetPlayerId:  player.id,
+        playerName:      player.playerName,
+        itemIndex:       req.itemIndex,
+        itemName:        req.itemName,
+        itemEffect:      req.itemEffect,
+        // Pass full game context the player needs to make their choice
+        allPlayers:      players.map(p => ({
+          id: p.id, uid: p.uid, playerName: p.playerName, playerColor: p.playerColor,
+          commanderStats: p.commanderStats,
+          subUnits: p.subUnits,
+          inventory: p.inventory,
+          commander: p.commander,
+        })),
+        npcs: npcs.filter(n => n.active && !n.isDead).map(n => ({ id: n.id, name: n.name, hp: n.hp, maxHp: n.maxHp })),
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // For 'pass' and other non-choice 'use' effects — GM applies manually via PlayerCard
   };
 
   const handleDenyItemRequest = (req) => {
@@ -1459,6 +1702,62 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           </div>
         </div>
       )}
+
+      {/* ── GM: Player Item Choice Confirmation ── */}
+      {isMultiplayer && firstItemChoice && (() => {
+        const req = firstItemChoice;
+        const effectLabels = {
+          heal: '💚 Heal', maxHP: '❤️ Max HP Boost', attackBonus: '⚔️↑ Attack Bonus',
+          defenseBonus: '🛡️↑ Defense Bonus', shieldWall: '🛡️ Shield Wall',
+          counterStrike: '⚡ Counter Strike', cleanse: '✨ Cleanse',
+          fullCleanse: '✨✨ Full Cleanse', resurrect: '💫 Resurrect', extraSlot: '🎒 Extra Item Slot',
+          poisonVial: '🧪 Poison Vial', stunGrenade: '💣 Stun Grenade',
+          attackDebuffItem: '⚔️↓ Attack Debuff', defenseDebuffItem: '🛡️↓ Defense Debuff',
+          marked: '🎯 Marked', destroyItem: '💥 Destroy Item',
+        };
+        const isEnemy  = req.targetType === 'enemy';
+        const isSelf   = req.targetType === 'self';
+        const isDestroy = req.targetType === 'destroyItem';
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1rem' }}>
+            <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '400px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>✦</div>
+                <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
+                  Item Effect — Confirm
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {[
+                  { label: 'Player',  value: req.playerName,      color: colors.gold },
+                  { label: 'Item',    value: req.itemName,         color: colors.textPrimary },
+                  { label: 'Effect',  value: effectLabels[req.itemEffect] || req.itemEffect, color: colors.amber },
+                  isSelf    && { label: 'Target Unit', value: req.targetUnitLabel, color: colors.purpleLight },
+                  isEnemy   && { label: 'Target',      value: req.targetName,      color: '#fecaca' },
+                  isEnemy   && req.targetUnitLabel && { label: 'Unit', value: req.targetUnitLabel, color: '#fecaca' },
+                  isDestroy && { label: 'Destroying',  value: `"${req.destroyedItemName}"`, color: '#f87171' },
+                  isDestroy && { label: 'From',        value: req.targetName,      color: '#fecaca' },
+                ].filter(Boolean).map(({ label, value, color }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+                    <span style={{ color, fontWeight: '700', fontSize: '0.85rem', textAlign: 'right', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                <button
+                  onClick={() => { resolvePendingRequest(lobbyCode, req.reqId); if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId); }}
+                  style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+                >✕ Cancel</button>
+                <button
+                  onClick={() => handleExecuteItemChoice(req)}
+                  style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+                >✓ Execute</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {loot.npcLootClaim   && <NpcLootModal npc={loot.npcLootClaim.npc} player={loot.npcLootClaim.player} players={players} onConfirm={loot.handleConfirmNpcLoot} onClose={() => loot.setNpcLootClaim(null)} />}
       {loot.chestLootClaim && <NpcLootModal npc={{ name:'📦 Chest Loot', lootTable: loot.chestLootClaim.items }} player={loot.chestLootClaim.player} players={players} onConfirm={loot.handleConfirmChestLoot} onClose={() => loot.setChestLootClaim(null)} />}

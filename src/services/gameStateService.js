@@ -133,3 +133,31 @@ export const subscribePendingRequests = (lobbyCode, callback) => {
     }
   });
 };
+
+// ── Pending Choices — GM → Player ─────────────────────────────────────────────
+// Written by GM after approving a choice-required item.
+// Player subscribes and shows the appropriate choice screen.
+// Once player submits their choice it goes back via writePendingRequest.
+
+export const writePendingChoice = async (lobbyCode, choiceId, choice) => {
+  const ref = doc(db, 'campaigns', lobbyCode);
+  await updateDoc(ref, { [`pendingChoices.${choiceId}`]: sanitize(choice) });
+};
+
+export const resolvePendingChoice = async (lobbyCode, choiceId) => {
+  const ref = doc(db, 'campaigns', lobbyCode);
+  await updateDoc(ref, { [`pendingChoices.${choiceId}`]: null });
+};
+
+export const subscribePendingChoices = (lobbyCode, callback) => {
+  const ref = doc(db, 'campaigns', lobbyCode);
+  return onSnapshot(ref, (snap) => {
+    if (snap.exists()) {
+      const choices = snap.data().pendingChoices || {};
+      const active = Object.fromEntries(
+        Object.entries(choices).filter(([, v]) => v !== null)
+      );
+      callback(active);
+    }
+  });
+};

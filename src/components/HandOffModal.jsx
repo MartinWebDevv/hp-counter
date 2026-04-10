@@ -44,7 +44,7 @@ const HandOffModal = ({ sourcePlayer, sourceUnitType, item, players, onConfirm, 
   const [mode, setMode] = useState(null); // 'give' | 'trade'
   const [tradeItem, setTradeItem] = useState(null); // item from target to trade back
 
-  const targetPlayer = players.find(p => p.id === parseInt(selectedPlayerId));
+  const targetPlayer = players.find(p => p.id === selectedPlayerId);
 
   // Get items held by target unit (for trade selection)
   const targetUnitItems = targetPlayer && selectedUnitType
@@ -67,7 +67,7 @@ const HandOffModal = ({ sourcePlayer, sourceUnitType, item, players, onConfirm, 
 
   const handleConfirm = () => {
     if (!canConfirm) return;
-    onConfirm(parseInt(selectedPlayerId), selectedUnitType, mode, tradeItem);
+    onConfirm(selectedPlayerId, selectedUnitType, mode, tradeItem);
   };
 
   const labelStyle = { color: colors.textMuted, fontSize: '0.68rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: '0.35rem' };

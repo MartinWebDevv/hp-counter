@@ -217,7 +217,7 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
   const [rolled, setRolled] = useState(null); // array of dropped items after roll
 
-  const player = players.find(p => p.id === parseInt(selectedPlayerId));
+  const player = players.find(p => p.id === selectedPlayerId);
 
   // Check if player holds the required key
   const playerHasKey = (p) => {
@@ -392,7 +392,7 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
         {/* Confirm / cancel */}
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           {canConfirm && (
-            <button onClick={() => onConfirm(chest.id, parseInt(selectedPlayerId), rolled)} style={{
+            <button onClick={() => onConfirm(chest.id, selectedPlayerId, rolled)} style={{
               flex: 1, padding: '0.75rem',
               background: 'linear-gradient(135deg, #059669, #047857)',
               border: '2px solid #10b981', color: '#d1fae5',

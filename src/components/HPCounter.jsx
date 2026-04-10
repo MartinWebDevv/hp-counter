@@ -29,10 +29,12 @@ import RoomsPanel              from './RoomsPanel';
 import { useCommanderTokens }  from '../hooks/useCommanderTokens';
 import RoundTimerPanel         from './RoundTimerPanel';
 import CommanderTokenPanel     from './CommanderTokenPanel';
+import useFirestoreSync        from '../hooks/useFirestoreSync';
+import { subscribePendingRequests, resolvePendingRequest } from '../services/gameStateService';
 
 
 
-const HPCounter = () => {
+const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, initialGameState = null }) => {
   // ── Round timers (init first so callback is ready for useGameState) ────────
   const roundTimers = useRoundTimers();
   // addLogRef — lets tokens use addLog before it's in scope
@@ -55,6 +57,9 @@ const HPCounter = () => {
   // Keep addLogRef current each render
   addLogRef.current = addLog;
 
+  // ── Multiplayer: initial load ref (effect placed after useNPCState) ────────
+  const initialStateLoaded = React.useRef(false);
+
 
 
 
@@ -73,6 +78,8 @@ const HPCounter = () => {
     useReviveBase(playerId, isSuccessful);
   };
 
+
+  // ── Firestore sync moved below — needs npcs, chests, rooms, tokens, vp ────
 
   // ── Chest state ───────────────────────────────────────────────────────────
   const [chests, setChests] = React.useState(() => {
@@ -169,6 +176,162 @@ const HPCounter = () => {
   const loot = useLootHandlers(players, updatePlayer, addLog, vp.trackVP);
   // Wire the ref so useNPCState callback can reach setNpcLootClaim
   npcLootClaimSetterRef.current = loot.setNpcLootClaim;
+
+  // ── Multiplayer: load initial state (all hooks are ready now) ────────────
+  React.useEffect(() => {
+    if (isMultiplayer && initialGameState && !initialStateLoaded.current) {
+      initialStateLoaded.current = true;
+      loadGameState(initialGameState);
+      if (initialGameState.npcs?.length) setNpcs(initialGameState.npcs);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMultiplayer, initialGameState]);
+
+  // ── Firestore sync — GM writes full state on every change ────────────────
+  useFirestoreSync({
+    lobbyCode,
+    isGM: isMultiplayer,
+    gameState: isMultiplayer ? {
+      players, currentRound, combatLog, gameMode,
+      currentPlayerIndex, gameStarted, lootPool,
+      playersWhoActedThisRound,
+      npcs, chests,
+      rooms:          roomsState.rooms,
+      roundTimers:    roundTimers.timers,
+      commanderTokens: tokens.tokens,
+      vpStats:        vp.vpStats,
+    } : null,
+  });
+
+  // ── GM: subscribe to player attack requests ───────────────────────────────
+  const [pendingRequests, setPendingRequests] = React.useState({});
+  React.useEffect(() => {
+    if (!isMultiplayer || !lobbyCode) return;
+    const unsub = subscribePendingRequests(lobbyCode, setPendingRequests);
+    return () => unsub();
+  }, [isMultiplayer, lobbyCode]);
+
+  // First pending attack request (show one at a time)
+  const firstRequest = Object.values(pendingRequests).find(r => r?.type === 'attack');
+  // First pending item request (shown when no attack request is pending)
+  const firstItemRequest = !firstRequest ? Object.values(pendingRequests).find(r => r?.type === 'useItem') : null;
+
+  const handleApproveRequest = (req) => {
+    resolvePendingRequest(lobbyCode, req.reqId);
+    const attacker = players.find(p => p.id === req.playerId);
+    if (!attacker) return;
+
+    // Build target data from the request
+    const isNPCTarget    = req.targetType === 'npc';
+    const targetNPCId    = isNPCTarget ? req.targetId : null;
+    const targetPlayerId = !isNPCTarget ? req.targetId : null;
+
+    // Build target squad members for DamageDistribution
+    // NPC target: use existing targetNPCIds path
+    // Player target with specific units: build from targetUnitKeys
+    // Player target without units (legacy): target the whole player (commander)
+    let targetSquadMembers = [];
+    if (isNPCTarget) {
+      const targetNPC = npcs.find(n => n.id === req.targetId);
+      if (targetNPC) {
+        targetSquadMembers = [{ isNPC: true, npcId: targetNPC.id, name: targetNPC.name }];
+      }
+    } else if (Array.isArray(req.targetUnitKeys) && req.targetUnitKeys.length > 0) {
+      // New flow: player selected specific units
+      req.targetUnitKeys.forEach((unitKey, i) => {
+        targetSquadMembers.push({
+          isNPC: false,
+          playerId: req.targetId,
+          unitType: unitKey,
+          name: req.targetUnitLabels?.[i] || unitKey,
+        });
+      });
+    } else {
+      // Legacy fallback: just the commander
+      targetSquadMembers = [{
+        isNPC: false,
+        playerId: req.targetId,
+        unitType: 'commander',
+        name: req.targetName,
+      }];
+    }
+    // (calculator counts initiator separately via attackingUnitType)
+    const isSquad = req.isSquadAttack && Array.isArray(req.squadUnits) && req.squadUnits.length > 0;
+    const squadMembers = isSquad
+      ? req.squadUnits.filter(k => k !== req.unitKey)
+      : [];
+    const squadMemberHits = {};
+    if (isSquad) {
+      // Initiator gets a hits entry too
+      squadMemberHits[req.unitKey] = 0;
+      squadMembers.forEach(uKey => { squadMemberHits[uKey] = 0; });
+    }
+
+    // openCalculator sets showCalculator + seeds basic data, then we override with full pre-fill
+    openCalculator(req.playerId, req.action, req.unitKey);
+    // Override with fully pre-filled data (target, squad) — runs synchronously after openCalculator
+    setCalculatorData({
+      attackerId:           req.playerId,
+      attackerName:         attacker.playerName,
+      attackingUnitType:    req.unitKey,
+      attackerIsSquad:      isSquad,
+      attackerSquadMembers: squadMembers,
+      squadMemberHits,
+      action:               req.action,
+      // Pre-fill NPC target
+      targetNPCId,
+      targetNPCIds:         targetNPCId ? [targetNPCId] : [],
+      // Pre-fill player target
+      targetId:             targetPlayerId ? { playerId: targetPlayerId } : null,
+      targetIsSquad:        targetSquadMembers.length > 1,
+      targetSquadMembers,
+      soloHits:             0,
+      npcs,
+    });
+  };
+
+  const handleDenyRequest = (req) => {
+    resolvePendingRequest(lobbyCode, req.reqId);
+    // Write a brief "denied" notice the player can detect
+    import('../services/gameStateService').then(({ writePendingRequest }) => {
+      const noticeId = `deny_${req.reqId}`;
+      writePendingRequest(lobbyCode, noticeId, {
+        type: 'denied',
+        reqId: noticeId,
+        targetPlayerId: req.playerId,
+        timestamp: Date.now(),
+      });
+      // Auto-clear after 4 seconds
+      setTimeout(() => resolvePendingRequest(lobbyCode, noticeId), 4000);
+    });
+  };
+
+  const handleApproveItemRequest = (req) => {
+    resolvePendingRequest(lobbyCode, req.reqId);
+    const player = players.find(p => String(p.id) === String(req.playerId));
+    if (!player) return;
+
+    // Auto-execute simple destructive actions
+    if (req.action === 'drop' || req.action === 'useKey') {
+      const newInventory = (player.inventory || []).filter((_, idx) => idx !== req.itemIndex);
+      updatePlayer(player.id, { inventory: newInventory });
+    }
+    // For 'use' and 'pass' — GM applies the effect manually via the PlayerCard in the GM view
+  };
+
+  const handleDenyItemRequest = (req) => {
+    resolvePendingRequest(lobbyCode, req.reqId);
+    import('../services/gameStateService').then(({ writePendingRequest }) => {
+      const noticeId = `deny_${req.reqId}`;
+      writePendingRequest(lobbyCode, noticeId, {
+        type: 'denied',
+        reqId: noticeId,
+        targetPlayerId: req.playerId,
+        timestamp: Date.now(),
+      });
+      setTimeout(() => resolvePendingRequest(lobbyCode, noticeId), 4000);
+    });
+  };
 
   // ── Campaign turn management ───────────────────────────────────────────────
   // ── Status effect tick (fires every round advance) ────────────────────────
@@ -1174,6 +1337,129 @@ const HPCounter = () => {
         </div>
       )}
 
+      {/* ── GM: Player Attack Approval Modal ── */}
+      {isMultiplayer && firstRequest && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1rem' }}>
+          <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '400px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>
+                {firstRequest.action === 'shoot' ? '🎯' : firstRequest.action === 'melee' ? '⚔️' : '⚡'}
+              </div>
+              <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
+                Attack Request
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Player</span>
+                <span style={{ color: colors.gold, fontWeight: '700', fontSize: '0.85rem' }}>{firstRequest.playerName}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Unit</span>
+                <span style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>{firstRequest.unitLabel}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Action</span>
+                <span style={{ color: colors.amber, fontWeight: '700', fontSize: '0.85rem', textTransform: 'capitalize' }}>{firstRequest.action}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Target</span>
+                <span style={{ color: firstRequest.targetType === 'npc' ? '#fecaca' : colors.blueLight, fontWeight: '700', fontSize: '0.85rem' }}>{firstRequest.targetName}</span>
+              </div>
+              {firstRequest.targetType === 'player' && firstRequest.targetUnitLabels?.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+                  <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>Units</span>
+                  <span style={{ color: colors.purpleLight, fontWeight: '700', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '220px', textAlign: 'right' }}>
+                    {firstRequest.targetUnitLabels.join(', ')}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+              <button
+                onClick={() => handleDenyRequest(firstRequest)}
+                style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >
+                ✕ Deny
+              </button>
+              <button
+                onClick={() => handleApproveRequest(firstRequest)}
+                style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >
+                ✓ Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GM: Player Item Request Modal ── */}
+      {isMultiplayer && firstItemRequest && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1rem' }}>
+          <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '400px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>
+                {firstItemRequest.action === 'drop' ? '🗑️' : firstItemRequest.action === 'useKey' ? '🔑' : firstItemRequest.action === 'pass' ? '🤝' : '✦'}
+              </div>
+              <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
+                Item Request
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Player</span>
+                <span style={{ color: colors.gold, fontWeight: '700', fontSize: '0.85rem' }}>{firstItemRequest.playerName}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</span>
+                <span style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>{firstItemRequest.itemName}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Action</span>
+                <span style={{ color: colors.amber, fontWeight: '700', fontSize: '0.85rem', textTransform: 'capitalize' }}>
+                  {firstItemRequest.action === 'useKey' ? 'Use Key' : firstItemRequest.action}
+                </span>
+              </div>
+              {firstItemRequest.itemEffect && firstItemRequest.itemEffect !== 'none' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Effect</span>
+                  <span style={{ color: colors.textMuted, fontWeight: '700', fontSize: '0.85rem' }}>{firstItemRequest.itemEffect}</span>
+                </div>
+              )}
+            </div>
+
+            {firstItemRequest.action === 'use' && (
+              <div style={{ background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: colors.textFaint, fontSize: '0.72rem' }}>
+                ℹ️ After approving, apply the effect in the player's card on the GM side.
+              </div>
+            )}
+            {firstItemRequest.action === 'pass' && (
+              <div style={{ background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: colors.textFaint, fontSize: '0.72rem' }}>
+                ℹ️ After approving, use the 🤝 PASS button on the player's card to complete the hand-off.
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+              <button
+                onClick={() => handleDenyItemRequest(firstItemRequest)}
+                style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >
+                ✕ Deny
+              </button>
+              <button
+                onClick={() => handleApproveItemRequest(firstItemRequest)}
+                style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >
+                ✓ Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loot.npcLootClaim   && <NpcLootModal npc={loot.npcLootClaim.npc} player={loot.npcLootClaim.player} players={players} onConfirm={loot.handleConfirmNpcLoot} onClose={() => loot.setNpcLootClaim(null)} />}
       {loot.chestLootClaim && <NpcLootModal npc={{ name:'📦 Chest Loot', lootTable: loot.chestLootClaim.items }} player={loot.chestLootClaim.player} players={players} onConfirm={loot.handleConfirmChestLoot} onClose={() => loot.setChestLootClaim(null)} />}
       {loot.stealModal     && <StealLootModal {...loot.stealModal} onConfirm={loot.handleConfirmSteal} onClose={() => loot.setStealModal(null)} />}
@@ -1566,7 +1852,7 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
   const itemPlayers = targetedPlayerIds.length > 0
     ? players.filter(p => targetedPlayerIds.includes(p.id))
     : selectedTargetPlayerId
-      ? players.filter(p => p.id === parseInt(selectedTargetPlayerId))
+      ? players.filter(p => p.id === selectedTargetPlayerId)
       : [];
   const allCalcItems = (() => {
     const raw = itemPlayers.flatMap(p =>

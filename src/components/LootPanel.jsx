@@ -256,7 +256,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
   const [selectedUnitType, setSelectedUnitType] = useState('');
 
-  const player = players.find(p => p.id === parseInt(selectedPlayerId));
+  const player = players.find(p => String(p.id) === String(selectedPlayerId));
   const canConfirm = selectedPlayerId && selectedUnitType;
 
   return (
@@ -341,7 +341,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button disabled={!canConfirm} onClick={() => {
             if (!canConfirm) return;
-            const pid = parseInt(selectedPlayerId);
+            const pid = selectedPlayerId;
             const isSwap = !item.isQuestItem && unitIsFull(player, selectedUnitType);
             const droppedItem = isSwap
               ? (player.inventory || []).find(it => it.heldBy === selectedUnitType && !it.isQuestItem)
@@ -454,7 +454,7 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
         <GiveModal
           item={item}
           players={players}
-          onConfirm={(playerId, unitType) => { onGive(item, playerId, unitType); setShowGive(false); }}
+          onConfirm={(playerId, unitType, droppedItem) => { onGive(item, playerId, unitType, droppedItem); setShowGive(false); }}
           onClose={() => setShowGive(false)}
         />
       )}

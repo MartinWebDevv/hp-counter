@@ -23,7 +23,8 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
       description: item.description || '',
       tier: item.tier || 'Common',
       isQuestItem: item.isQuestItem || false,
-      effect: { ...effect, usesRemaining: effect.uses === 0 ? Infinity : (effect.usesRemaining ?? effect.uses ?? 1) },
+      // uses === 0 means unlimited; store 0 (not Infinity) so Firestore can serialize it
+      effect: { ...effect, usesRemaining: effect.uses === 0 ? 0 : (effect.usesRemaining ?? effect.uses ?? 1) },
       heldBy: item.heldBy || null,
     };
   };

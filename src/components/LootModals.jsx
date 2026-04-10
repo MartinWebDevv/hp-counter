@@ -60,7 +60,7 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
   const [expandedItem, setExpandedItem] = useState(null);
   const [assignments, setAssignments] = useState(() => lootTable.map(() => null));
 
-  const player = initPlayer || (players || []).find(p => p.id === parseInt(selectedPlayerId));
+  const player = initPlayer || (players || []).find(p => p.id === selectedPlayerId);
   const allAssigned = assignments.every(a => a !== null);
   const isSkipped  = (a) => a === 'skip';
   const getUnitType = (a) => (typeof a === 'object' && a !== null) ? a.unitType : a;
@@ -338,7 +338,7 @@ export const DestroyItemModal = ({ attackerPlayer, targetPlayer: initTarget, tar
   const [targetUnitType, setTargetUnitType] = useState(initUnit || '');
 
   const otherPlayers = (allPlayers || []).filter(p => p.id !== attackerPlayer?.id);
-  const targetPlayer = initTarget || otherPlayers.find(p => p.id === parseInt(targetPlayerId));
+  const targetPlayer = initTarget || otherPlayers.find(p => p.id === targetPlayerId);
 
   const availableUnits = targetPlayer ? getAllUnits(targetPlayer).filter(u => {
     if (u.isDead) return false;

@@ -1,761 +1,210 @@
-import React from "react";
+import React, { useState } from 'react';
 import { colors, surfaces, borders, fonts, btn, tierColors, inputStyle as themeInput } from '../theme';
-import { getUnitStats, getUnitName } from "../utils/statsUtils";
-
-const Calculator = ({
-  data,
-  players,
-  onClose,
-  onProceedToDistribution,
-  gameMode = "classic", // TODO: Mode-aware for future d20/d10 implementation
-}) => {
-  const [calculatorData, setCalculatorData] = React.useState(data);
-
-  if (!calculatorData) return null;
-
-  const attacker = players.find((p) => p.id === calculatorData.attackerId);
-  if (!attacker) return null;
+import { unitIsFull, getHeldCount } from './lootUtils';
 
 
-  // Helper to get damage per hit for a unit
-  const getDamagePerHit = (unitStats) => {
-    if (calculatorData.action === "shoot") return unitStats.shootDamage || 1;
-    if (calculatorData.action === "melee") return unitStats.meleeDamage || 1;
-    if (calculatorData.action === "special")
-      return unitStats.specialDamage || 2;
-    return 0;
-  };
 
-  // Calculate total damage
-  const calculateTotalDamage = () => {
-    if (calculatorData.attackerIsSquad) {
-      let total = 0;
-      Object.entries(calculatorData.squadMemberHits || {}).forEach(
-        ([unitType, hits]) => {
-          const memberStats = getUnitStats(attacker, unitType);
-          if (memberStats && hits > 0) {
-            total += hits * getDamagePerHit(memberStats);
-          }
-        },
-      );
-      return total;
-    } else {
-      const attackingUnitStats = getUnitStats(
-        attacker,
-        calculatorData.attackingUnitType,
-      );
-      if (!attackingUnitStats) return 0;
-      return (
-        (calculatorData.soloHits || 0) * getDamagePerHit(attackingUnitStats)
-      );
-    }
-  };
-
-  const totalDamage = calculateTotalDamage();
-
-  const handleProceed = () => {
-    if (!calculatorData.targetId) return;
-
-    // Prepare target squad members array
-    let targetMembers = [];
-
-    if (
-      calculatorData.targetIsSquad &&
-      calculatorData.targetSquadMembers?.length > 0
-    ) {
-      // Multiple targets selected
-      targetMembers = calculatorData.targetSquadMembers;
-    } else {
-      // Single target - create array with one target
-      targetMembers = [
-        {
-          playerId: calculatorData.targetId.playerId,
-          unitType: calculatorData.targetId.unitType,
-        },
-      ];
-    }
-
-    // Pass updated data with targetSquadMembers populated
-    onProceedToDistribution({
-      ...calculatorData,
-      targetSquadMembers: targetMembers,
+const getAllUnits = (player) => {
+  const units = [
+    {
+      unitType: 'commander',
+      label: player.commanderStats?.customName || player.commander || 'Commander',
+      hp: player.commanderStats?.hp || 0,
+      maxHp: player.commanderStats?.maxHp || 1,
+      isDead: (player.commanderStats?.hp || 0) === 0,
+    },
+  ];
+  (player.subUnits || []).forEach((u, idx) => {
+    units.push({
+      unitType: idx === 0 ? 'special' : `soldier${idx}`,
+      label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`),
+      hp: u.hp,
+      maxHp: u.maxHp,
+      isDead: u.hp === 0,
     });
+  });
+  return units;
+};
+
+/**
+ * HandOffModal
+ * Allows any unit to give or trade an item with any other unit.
+ *
+ * Props:
+ *   sourcePlayer    — player who owns the item being handed off
+ *   sourceUnitType  — unit type holding the item
+ *   item            — the item being handed off
+ *   players         — all players
+ *   onConfirm(targetPlayerId, targetUnitType, mode, targetDroppedItem)
+ *   onClose
+ */
+const HandOffModal = ({ sourcePlayer, sourceUnitType, item, players, onConfirm, onClose }) => {
+  const [selectedPlayerId, setSelectedPlayerId] = useState('');
+  const [selectedUnitType, setSelectedUnitType] = useState('');
+  const [mode, setMode] = useState(null); // 'give' | 'trade'
+  const [tradeItem, setTradeItem] = useState(null); // item from target to trade back
+
+  const targetPlayer = players.find(p => p.id === selectedPlayerId);
+
+  // Get items held by target unit (for trade selection)
+  const targetUnitItems = targetPlayer && selectedUnitType
+    ? (targetPlayer.inventory || []).filter(it => it.heldBy === selectedUnitType && !it.isQuestItem)
+    : [];
+
+  const targetIsFull = targetPlayer && selectedUnitType
+    ? unitIsFull(targetPlayer, selectedUnitType)
+    : false;
+
+  const canTrade = targetUnitItems.length > 0;
+  const canConfirm = selectedPlayerId && selectedUnitType && mode &&
+    (mode === 'give' || (mode === 'trade' && tradeItem));
+
+  const handleSelectUnit = (unitType) => {
+    setSelectedUnitType(unitType);
+    setMode(null);
+    setTradeItem(null);
   };
 
-  const canProceed = calculatorData.targetId && totalDamage > 0;
+  const handleConfirm = () => {
+    if (!canConfirm) return;
+    onConfirm(selectedPlayerId, selectedUnitType, mode, tradeItem);
+  };
+
+  const labelStyle = { color: colors.textMuted, fontSize: '0.68rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: '0.35rem' };
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "rgba(0,0,0,0.8)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "surfaces.elevated",
-          border: `2px solid ${colors.gold}`,
-          borderRadius: "12px",
-          padding: "2rem",
-          maxWidth: "500px",
-          width: "90%",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.9)",
-        }}
-      >
-        {/* Title */}
-        <h3
-          style={{
-            color: colors.gold,
-            fontSize: "1.5rem",
-            marginBottom: "1rem",
-            textAlign: "center",
-            fontFamily: fonts.display,
-            textShadow: "2px 2px 4px rgba(0,0,0,1)",
-          }}
-        >
-          {calculatorData.action === "special"
-            ? "⚡ Special Weapon"
-            : calculatorData.action === "melee"
-              ? "⚔️ Melee Attack"
-              : "🎯 Ranged Attack"}
-        </h3>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg, #1a0f0a, #0f0805)', border: `3px solid ${colors.gold}`, borderRadius: '12px', padding: '1.5rem', width: '460px', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.95)' }}>
 
-        {/* Attacker Info */}
-        <div
-          style={{ marginBottom: "1rem", color: colors.gold, fontSize: "0.875rem" }}
-        >
-          <strong>Attacker:</strong> {calculatorData.attackerName} -{" "}
-          {calculatorData.attackingUnitType === "commander"
-            ? "⚔️ Commander"
-            : calculatorData.attackingUnitType === "special"
-              ? "⭐ Special"
-              : `🛡️ ${calculatorData.attackingUnitType.replace("soldier", "Soldier ")}`}
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>🤝</div>
+          <div style={{ color: colors.gold, fontWeight: '900', fontSize: '1rem', fontFamily: fonts.display }}>HAND OFF ITEM</div>
+          <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.2rem' }}>
+            Giving: <span style={{ color: '#fbbf24', fontWeight: '800' }}>{item.name}</span>
+            {' '}from <span style={{ color: colors.textSecondary }}>{sourcePlayer.playerName}</span>
+          </div>
         </div>
 
-        {/* Attacker Squad Checkbox - Only for squad members, not commander */}
-        {calculatorData.attackingUnitType !== "commander" && (
-          <div
-            style={{
-              background: "#0a0503",
-              padding: "0.75rem",
-              borderRadius: "6px",
-              border: "2px solid " + colors.gold,
-              marginBottom: "1rem",
-            }}
+        {/* Target player picker */}
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={labelStyle}>Receiving Player</label>
+          <select
+            value={selectedPlayerId}
+            onChange={e => { setSelectedPlayerId(e.target.value); setSelectedUnitType(''); setMode(null); setTradeItem(null); }}
+            style={{ width: '100%', background: '#0a0503', color: colors.gold, padding: '0.6rem 0.75rem', borderRadius: '6px', border: borders.warm, fontFamily: fonts.body, fontSize: '0.875rem' }}
           >
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                color: colors.gold,
-                fontSize: "0.875rem",
-                cursor: "pointer",
-                marginBottom: calculatorData.attackerIsSquad ? "0.75rem" : "0",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={!!calculatorData.attackerIsSquad}
-                onChange={(e) => {
-                  setCalculatorData({
-                    ...calculatorData,
-                    attackerIsSquad: e.target.checked,
-                    attackerSquadMembers: e.target.checked
-                      ? [calculatorData.attackingUnitType]
-                      : [],
-                  });
-                }}
-                style={{ width: "16px", height: "16px", cursor: "pointer" }}
-              />
-              <strong>
-                Form Attacker Squad? (up to 3 units attack together)
-              </strong>
-            </label>
-
-            {/* Attacker Squad Member Selection */}
-            {calculatorData.attackerIsSquad && (
-              <div>
-                <div
-                  style={{
-                    color: "#8b7355",
-                    fontSize: "0.7rem",
-                    marginBottom: "0.5rem",
-                    paddingLeft: "1.5rem",
-                  }}
-                >
-                  Select squad members (max 3):
-                </div>
-                {attacker.subUnits.map((unit, idx) => {
-                  if (unit.hp === 0) return null;
-                  const unitType = idx === 0 ? "special" : `soldier${idx}`;
-                  const isSelected =
-                    calculatorData.attackerSquadMembers?.includes(unitType);
-                  const canSelect =
-                    isSelected ||
-                    (calculatorData.attackerSquadMembers?.length || 0) < 3;
-
-                  return (
-                    <label
-                      key={idx}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        padding: "0.5rem",
-                        marginBottom: "0.25rem",
-                        marginLeft: "1.5rem",
-                        background: isSelected ? "#2a1810" : "transparent",
-                        border: isSelected
-                          ? "1px solid " + colors.gold
-                          : "1px solid transparent",
-                        borderRadius: "4px",
-                        color: isSelected ? colors.gold : "#8b7355",
-                        fontSize: "0.75rem",
-                        cursor: canSelect ? "pointer" : "not-allowed",
-                        opacity: canSelect ? 1 : 0.5,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={!canSelect}
-                        onChange={(e) => {
-                          let newMembers = [
-                            ...(calculatorData.attackerSquadMembers || []),
-                          ];
-                          if (e.target.checked) {
-                            newMembers.push(unitType);
-                          } else {
-                            newMembers = newMembers.filter(
-                              (m) => m !== unitType,
-                            );
-                          }
-                          setCalculatorData({
-                            ...calculatorData,
-                            attackerSquadMembers: newMembers,
-                          });
-                        }}
-                        style={{ width: "14px", height: "14px" }}
-                      />
-                      {unit.name || (idx === 0 ? "⭐ Special" : `🛡️ Soldier ${idx}`)} (
-                      {unit.hp}hp)
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Target Squad Checkbox */}
-        <div style={{ marginBottom: "1rem" }}>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              color: colors.gold,
-              fontSize: "0.875rem",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={!!calculatorData.targetIsSquad}
-              onChange={(e) => {
-                setCalculatorData({
-                  ...calculatorData,
-                  targetIsSquad: e.target.checked,
-                  targetSquadMembers: [],
-                  targetId: null,
-                });
-              }}
-              style={{ width: "16px", height: "16px", cursor: "pointer" }}
-            />
-            <strong>Target Squad?</strong>
-          </label>
+            <option value=''>Select player...</option>
+            {players.map(p => (
+              <option key={p.id} value={p.id}>{p.playerName}{p.id === sourcePlayer.id ? ' (self)' : ''}</option>
+            ))}
+          </select>
         </div>
 
-        {/* Target Selection */}
-        {!calculatorData.targetIsSquad ? (
-          // Single Target
-          <div style={{ marginBottom: "1rem" }}>
-            <label
-              style={{
-                color: colors.gold,
-                fontSize: "0.875rem",
-                display: "block",
-                marginBottom: "0.5rem",
-              }}
-            >
-              <strong>Select Target:</strong>
-            </label>
-            <select
-              value={
-                calculatorData.targetId
-                  ? `${calculatorData.targetId.playerId}-${calculatorData.targetId.unitType}`
-                  : ""
-              }
-              onChange={(e) => {
-                const [playerId, unitType] = e.target.value.split("-");
-                setCalculatorData({
-                  ...calculatorData,
-                  targetId: playerId
-                    ? { playerId: parseInt(playerId), unitType }
-                    : null,
-                });
-              }}
-              style={{
-                width: "100%",
-                background: "#0a0503",
-                color: colors.gold,
-                padding: "0.75rem",
-                borderRadius: "6px",
-                border: "2px solid #5a4a3a",
-                fontFamily: fonts.display,
-                fontSize: "0.875rem",
-                cursor: "pointer",
-              }}
-            >
-              <option value="">Select Target...</option>
-              {players
-                .filter((p) => p.id !== calculatorData.attackerId)
-                .map((p) => (
-                  <optgroup key={p.id} label={p.playerName || "Player"}>
-                    <option value={`${p.id}-commander`}>
-                      ⚔️ {p.commander} ({p.commanderStats.hp}hp)
-                    </option>
-                    {p.subUnits.map((unit, idx) => (
-                      <option
-                        key={idx}
-                        value={`${p.id}-${idx === 0 ? "special" : `soldier${idx}`}`}
-                      >
-                        {idx === 0 ? "⭐" : "🛡️"}{" "}
-                        {unit.name || (idx === 0 ? "Special" : `Soldier ${idx + 1}`)} (
-                        {unit.hp}hp)
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-            </select>
-          </div>
-        ) : (
-          // Squad Target Selection
-          <div style={{ marginBottom: "1rem" }}>
-            <label
-              style={{
-                color: colors.gold,
-                fontSize: "0.875rem",
-                display: "block",
-                marginBottom: "0.5rem",
-              }}
-            >
-              <strong>Select Target Player:</strong>
-            </label>
-            <select
-              value={calculatorData.targetId?.playerId || ""}
-              onChange={(e) => {
-                setCalculatorData({
-                  ...calculatorData,
-                  targetId: e.target.value
-                    ? { playerId: parseInt(e.target.value) }
-                    : null,
-                  targetSquadMembers: [],
-                });
-              }}
-              style={{
-                width: "100%",
-                background: "#0a0503",
-                color: colors.gold,
-                padding: "0.75rem",
-                borderRadius: "6px",
-                border: "2px solid #5a4a3a",
-                fontFamily: fonts.display,
-                fontSize: "0.875rem",
-                cursor: "pointer",
-                marginBottom: "0.75rem",
-              }}
-            >
-              <option value="">Select Player...</option>
-              {players
-                .filter((p) => p.id !== calculatorData.attackerId)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.playerName || "Player"}
-                  </option>
-                ))}
-            </select>
-
-            {/* Squad Member Selection */}
-            {calculatorData.targetId?.playerId &&
-              (() => {
-                const targetPlayer = players.find(
-                  (p) => p.id === calculatorData.targetId.playerId,
-                );
-                if (!targetPlayer) return null;
-
+        {/* Target unit picker */}
+        {targetPlayer && (
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={labelStyle}>Receiving Unit</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              {getAllUnits(targetPlayer).map(u => {
+                const isFull = !item.isQuestItem && unitIsFull(targetPlayer, u.unitType);
+                const selected = selectedUnitType === u.unitType;
+                const isSelf = targetPlayer.id === sourcePlayer.id && u.unitType === sourceUnitType;
                 return (
-                  <div
-                    style={{
-                      background: "#0a0503",
-                      padding: "0.75rem",
-                      borderRadius: "6px",
-                      border: "1px solid #5a4a3a",
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: colors.gold,
-                        fontSize: "0.75rem",
-                        marginBottom: "0.5rem",
-                      }}
-                    >
-                      Select squad members (1-3):
+                  <div key={u.unitType} onClick={() => !u.isDead && !isSelf && handleSelectUnit(u.unitType)} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    padding: '0.55rem 0.85rem',
+                    background: selected ? 'rgba(201,169,97,0.12)' : 'rgba(0,0,0,0.35)',
+                    border: `2px solid ${selected ? colors.gold : isFull ? 'rgba(249,115,22,0.3)' : 'rgba(90,74,58,0.3)'}`,
+                    borderRadius: '7px', cursor: (u.isDead || isSelf) ? 'not-allowed' : 'pointer',
+                    opacity: (u.isDead || isSelf) ? 0.4 : 1,
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ color: selected ? colors.gold : colors.textSecondary, fontWeight: '800', fontSize: '0.82rem' }}>{u.label}</span>
+                      {isSelf && <span style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '700', marginLeft: '0.4rem' }}>SOURCE</span>}
                     </div>
-                    {targetPlayer.subUnits.map((unit, idx) => {
-                      if (unit.hp === 0) return null;
-                      const unitType = idx === 0 ? "special" : `soldier${idx}`;
-                      const isSelected =
-                        calculatorData.targetSquadMembers?.some(
-                          (m) => m.unitType === unitType,
-                        );
-                      const canSelect =
-                        isSelected ||
-                        (calculatorData.targetSquadMembers?.length || 0) < 3;
-
-                      return (
-                        <label
-                          key={idx}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                            padding: "0.5rem",
-                            marginBottom: "0.25rem",
-                            background: isSelected ? "#2a1810" : "transparent",
-                            border: isSelected
-                              ? "1px solid " + colors.gold
-                              : "1px solid transparent",
-                            borderRadius: "4px",
-                            color: "#8b7355",
-                            fontSize: "0.75rem",
-                            cursor: canSelect ? "pointer" : "not-allowed",
-                            opacity: canSelect ? 1 : 0.5,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            disabled={!canSelect}
-                            onChange={(e) => {
-                              let newTargets = [
-                                ...(calculatorData.targetSquadMembers || []),
-                              ];
-                              if (e.target.checked) {
-                                newTargets.push({
-                                  playerId: calculatorData.targetId.playerId,
-                                  unitType,
-                                  unitIndex: idx,
-                                });
-                              } else {
-                                newTargets = newTargets.filter(
-                                  (m) => m.unitType !== unitType,
-                                );
-                              }
-                              setCalculatorData({
-                                ...calculatorData,
-                                targetSquadMembers: newTargets,
-                              });
-                            }}
-                            style={{ width: "14px", height: "14px" }}
-                          />
-                          {unit.name || (idx === 0 ? "⭐ Special" : `🛡️ Soldier ${idx + 1}`)} (
-                          {unit.hp}hp)
-                        </label>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-          </div>
-        )}
-
-        {/* Hit Input */}
-        {calculatorData.attackerIsSquad ? (
-          // Squad Hit Input (for selected attacking squad members)
-          <div style={{ marginBottom: "1rem" }}>
-            <label
-              style={{
-                color: colors.gold,
-                fontSize: "0.875rem",
-                display: "block",
-                marginBottom: "0.5rem",
-              }}
-            >
-              <strong>Enter hits for each attacking squad member:</strong>
-            </label>
-            <div
-              style={{
-                background: "#0a0503",
-                padding: "0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #5a4a3a",
-              }}
-            >
-              {(calculatorData.attackerSquadMembers || []).map((unitType) => {
-                const idx =
-                  unitType === "special"
-                    ? 0
-                    : parseInt(unitType.replace("soldier", ""));
-                const unit = attacker.subUnits[idx];
-                const memberStats = getUnitStats(attacker, unitType);
-                const maxHits = memberStats?.attacksPerHit || 1;
-                const damagePerHit = memberStats
-                  ? getDamagePerHit(memberStats)
-                  : 0;
-                const currentHits =
-                  (calculatorData.squadMemberHits || {})[unitType] || 0;
-
-                return (
-                  <div
-                    key={unitType}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "0.5rem",
-                      padding: "0.5rem",
-                      marginBottom: "0.25rem",
-                      background: currentHits > 0 ? "#2a1810" : "transparent",
-                      border:
-                        currentHits > 0
-                          ? "1px solid " + colors.gold
-                          : "1px solid transparent",
-                      borderRadius: "4px",
-                      fontSize: "0.75rem",
-                    }}
-                  >
-                    <div style={{ flex: 1, color: colors.gold }}>
-                      {unitType === "special"
-                        ? "⭐ Special"
-                        : `🛡️ ${unitType.replace("soldier", "Soldier ")}`}
-                      <span style={{ color: "#8b7355", marginLeft: "0.5rem" }}>
-                        ({damagePerHit}hp per hit, max {maxHits})
-                      </span>
+                    <div style={{ width: '50px', height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${u.maxHp > 0 ? (u.hp / u.maxHp) * 100 : 0}%`, height: '100%', background: u.isDead ? colors.textDisabled : '#22c55e' }} />
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                      }}
-                    >
-                      <span style={{ color: "#8b7355" }}>Hits:</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max={maxHits}
-                        value={currentHits}
-                        onChange={(e) => {
-                          const newHits = Math.min(
-                            maxHits,
-                            Math.max(0, parseInt(e.target.value) || 0),
-                          );
-                          setCalculatorData({
-                            ...calculatorData,
-                            squadMemberHits: {
-                              ...(calculatorData.squadMemberHits || {}),
-                              [unitType]: newHits,
-                            },
-                          });
-                        }}
-                        style={{
-                          width: "50px",
-                          background: "#1a0f0a",
-                          color: colors.gold,
-                          padding: "0.25rem",
-                          borderRadius: "4px",
-                          border: "1px solid #5a4a3a",
-                          textAlign: "center",
-                          fontSize: "0.75rem",
-                        }}
-                      />
-                      <span
-                        style={{
-                          color: "#fecaca",
-                          fontSize: "0.75rem",
-                          minWidth: "40px",
-                        }}
-                      >
-                        = {currentHits * damagePerHit}hp
-                      </span>
-                    </div>
+                    <span style={{ color: colors.textMuted, fontSize: '0.62rem', minWidth: '32px' }}>{u.hp}/{u.maxHp}</span>
+                    {isFull && !selected && <span style={{ color: '#f97316', fontSize: '0.58rem', fontWeight: '800' }}>FULL</span>}
+                    {u.isDead && <span style={{ color: colors.textMuted, fontSize: '0.58rem', fontWeight: '800' }}>DEAD</span>}
                   </div>
                 );
               })}
             </div>
           </div>
-        ) : (
-          // Solo Hit Input (single unit attacking)
-          (() => {
-            const attackingUnitStats = getUnitStats(
-              attacker,
-              calculatorData.attackingUnitType,
-            );
-            if (!attackingUnitStats) return null;
+        )}
 
-            return (
-              <div style={{ marginBottom: "1rem" }}>
-                <label
-                  style={{
-                    color: colors.gold,
-                    fontSize: "0.875rem",
-                    display: "block",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  <strong>Number of Successful Hits:</strong>
-                </label>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <input
-                    type="number"
-                    min="0"
-                    max={attackingUnitStats.attacksPerHit}
-                    value={calculatorData.soloHits || 0}
-                    onChange={(e) => {
-                      const newHits = Math.min(
-                        attackingUnitStats.attacksPerHit,
-                        Math.max(0, parseInt(e.target.value) || 0),
-                      );
-                      setCalculatorData({
-                        ...calculatorData,
-                        soloHits: newHits,
-                        stats: attackingUnitStats, // Store stats for later use
-                      });
-                    }}
-                    style={{
-                      width: "80px",
-                      background: "#0a0503",
-                      color: colors.gold,
-                      padding: "0.5rem",
-                      borderRadius: "6px",
-                      border: "2px solid #5a4a3a",
-                      textAlign: "center",
-                      fontSize: "1rem",
-                      fontFamily: fonts.display,
-                    }}
-                  />
-                  <span style={{ color: "#8b7355", fontSize: "0.875rem" }}>
-                    (out of {attackingUnitStats.attacksPerHit} possible)
-                  </span>
+        {/* Mode picker — Give or Trade */}
+        {selectedUnitType && (
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={labelStyle}>Transfer Mode</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <button onClick={() => { setMode('give'); setTradeItem(null); }} style={{
+                padding: '0.65rem', borderRadius: '8px', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.82rem', cursor: 'pointer',
+                background: mode === 'give' ? 'linear-gradient(135deg, #059669, #047857)' : 'rgba(0,0,0,0.35)',
+                border: `2px solid ${mode === 'give' ? '#10b981' : 'rgba(90,74,58,0.3)'}`,
+                color: mode === 'give' ? '#d1fae5' : colors.textSecondary,
+              }}>🎁 Give</button>
+              <button
+                onClick={() => canTrade && setMode('trade')}
+                disabled={!canTrade}
+                title={!canTrade ? 'Target unit holds no items to trade' : ''}
+                style={{
+                  padding: '0.65rem', borderRadius: '8px', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.82rem',
+                  cursor: canTrade ? 'pointer' : 'not-allowed',
+                  background: mode === 'trade' ? 'linear-gradient(135deg, #7c3aed, #6d28d9)' : 'rgba(0,0,0,0.35)',
+                  border: `2px solid ${mode === 'trade' ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
+                  color: mode === 'trade' ? '#e9d5ff' : canTrade ? colors.textSecondary : colors.textDisabled,
+                  opacity: canTrade ? 1 : 0.4,
+                }}>⇄ Trade</button>
+            </div>
+          </div>
+        )}
+
+        {/* Trade item picker */}
+        {mode === 'trade' && targetUnitItems.length > 0 && (
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={labelStyle}>They give in return</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              {targetUnitItems.map(it => (
+                <div key={it.id} onClick={() => setTradeItem(it)} style={{
+                  padding: '0.55rem 0.85rem', borderRadius: '7px', cursor: 'pointer',
+                  background: tradeItem?.id === it.id ? 'rgba(167,139,250,0.12)' : 'rgba(0,0,0,0.35)',
+                  border: `2px solid ${tradeItem?.id === it.id ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
+                }}>
+                  <span style={{ color: tradeItem?.id === it.id ? '#e9d5ff' : colors.textSecondary, fontWeight: '800', fontSize: '0.82rem' }}>{it.name}</span>
+                  <span style={{ color: colors.textMuted, fontSize: '0.65rem', marginLeft: '0.5rem' }}>{it.tier}</span>
                 </div>
-              </div>
-            );
-          })()
-        )}
-
-        {/* Total Damage Display */}
-        {totalDamage >= 0 && (
-          <div
-            style={{
-              background: "#0a0503",
-              padding: "1rem",
-              borderRadius: "6px",
-              border: "2px solid " + colors.gold,
-              marginBottom: "1rem",
-              textAlign: "center",
-            }}
-          >
-            <div
-              style={{
-                color: colors.gold,
-                fontSize: "0.875rem",
-                marginBottom: "0.5rem",
-              }}
-            >
-              Total Damage
-            </div>
-            <div
-              style={{
-                color: "#fecaca",
-                fontSize: "2rem",
-                fontWeight: "bold",
-                fontFamily: fonts.display,
-              }}
-            >
-              {totalDamage}hp
+              ))}
             </div>
           </div>
         )}
 
-        {/* TODO: Mode indicator for future d20/d10 implementation */}
-        {/* {gameMode !== 'classic' && (
-          <div style={{ marginBottom: '1rem', color: colors.textMuted, fontSize: '0.75rem', textAlign: 'center' }}>
-            Mode: {gameMode}
+        {/* Give swap warning */}
+        {mode === 'give' && targetIsFull && (
+          <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '0.75rem' }}>
+            <div style={{ color: '#f97316', fontSize: '0.68rem', fontWeight: '900', marginBottom: '0.2rem' }}>⚠️ Unit is full</div>
+            <div style={{ color: colors.textSecondary, fontSize: '0.68rem' }}>
+              The receiving unit will need to drop their current item to accept this one. Consider using Trade instead.
+            </div>
           </div>
-        )} */}
+        )}
 
-        {/* Buttons */}
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <button
-            onClick={handleProceed}
-            disabled={!canProceed}
-            style={{
-              flex: 1,
-              background: canProceed
-                ? "linear-gradient(to bottom, #15803d, #14532d)"
-                : "#1a0f0a",
-              color: canProceed ? "#86efac" : "#4a3322",
-              padding: "0.75rem",
-              borderRadius: "6px",
-              border: "2px solid",
-              borderColor: canProceed ? "#16a34a" : "#4a3322",
-              cursor: canProceed ? "pointer" : "not-allowed",
-              fontFamily: fonts.display,
-              fontWeight: "bold",
-              fontSize: "1rem",
-            }}
-          >
-            ✓ Proceed
-          </button>
-          <button
-            onClick={onClose}
-            style={{
-              flex: 1,
-              background: "linear-gradient(to bottom, #7f1d1d, #5f1a1a)",
-              color: "#fecaca",
-              padding: "0.75rem",
-              borderRadius: "6px",
-              border: "2px solid #991b1b",
-              cursor: "pointer",
-              fontFamily: fonts.display,
-              fontWeight: "bold",
-              fontSize: "1rem",
-            }}
-          >
-            ✕ Cancel
-          </button>
+        {/* Confirm / Cancel */}
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button disabled={!canConfirm} onClick={handleConfirm} style={{
+            flex: 1, padding: '0.75rem', borderRadius: '8px', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem', cursor: canConfirm ? 'pointer' : 'not-allowed',
+            background: canConfirm ? 'linear-gradient(135deg, #059669, #047857)' : surfaces.elevated,
+            border: `2px solid ${canConfirm ? '#10b981' : colors.textDisabled}`,
+            color: canConfirm ? '#d1fae5' : '#4a3322',
+          }}>✓ Confirm</button>
+          <button onClick={onClose} style={{ flex: 1, padding: '0.75rem', background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d', color: '#fca5a5', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.9rem' }}>✕ Cancel</button>
         </div>
       </div>
     </div>
   );
 };
 
-export default Calculator;
+export default HandOffModal;

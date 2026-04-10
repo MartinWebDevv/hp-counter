@@ -223,7 +223,7 @@ export const useCampaignTurn = (
     });
 
     Object.entries(targetsByPlayer).forEach(([playerIdStr, targets]) => {
-      const player = players.find(p => p.id === parseInt(playerIdStr));
+      const player = players.find(p => String(p.id) === playerIdStr);
       if (!player) return;
 
       let newCmdStats = { ...player.commanderStats };
@@ -300,7 +300,7 @@ export const useCampaignTurn = (
             if (lives > 0 && !newReviveQueue.includes(idx)) newReviveQueue = [...newReviveQueue, idx];
           }
         }
-        trackVP(parseInt(playerIdStr), 'damageTaken', dmg);
+        trackVP(playerIdStr, 'damageTaken', dmg);
       });
 
       const allDead = newSubs.every(u => u.hp === 0);

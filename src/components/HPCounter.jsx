@@ -489,8 +489,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       targetNPCId,
       targetNPCIds:         targetNPCId ? [targetNPCId] : [],
       // Pre-fill player target
-      targetId:             targetPlayerId ? { playerId: targetPlayerId } : null,
-      targetIsSquad:        targetSquadMembers.length > 1,
+      // Always use the targetSquadMembers path for player targets —
+      // setting targetId with no unitType causes a crash in CalculatorD20
+      targetId:             null,
+      targetIsSquad:        targetSquadMembers.length > 0,
       targetSquadMembers,
       soloHits:             0,
       npcs,

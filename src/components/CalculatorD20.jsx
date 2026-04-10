@@ -1399,16 +1399,16 @@ const CalculatorD20 = ({
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button
             onClick={handleProceed}
-            disabled={!allRollsComplete || (!calculatorData.targetId && !(calculatorData.targetNPCIds?.length > 0) && !calculatorData.targetNPCId)}
+            disabled={!allRollsComplete || (!calculatorData.targetId && !(calculatorData.targetNPCIds?.length > 0) && !calculatorData.targetNPCId && !(calculatorData.targetSquadMembers?.length > 0))}
             style={{
               flex: 1,
-              background: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCIds?.length > 0 || calculatorData.targetNPCId)) ? 'linear-gradient(to bottom, #15803d, #14532d)' : '#1a0f0a',
-              color: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? '#86efac' : '#4a3322',
+              background: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCIds?.length > 0 || calculatorData.targetNPCId || calculatorData.targetSquadMembers?.length > 0)) ? 'linear-gradient(to bottom, #15803d, #14532d)' : '#1a0f0a',
+              color: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId || calculatorData.targetSquadMembers?.length > 0)) ? '#86efac' : '#4a3322',
               padding: '0.75rem',
               borderRadius: '6px',
               border: '2px solid',
-              borderColor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? '#16a34a' : '#4a3322',
-              cursor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId)) ? 'pointer' : 'not-allowed',
+              borderColor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId || calculatorData.targetSquadMembers?.length > 0)) ? '#16a34a' : '#4a3322',
+              cursor: (allRollsComplete && (calculatorData.targetId || calculatorData.targetNPCId || calculatorData.targetSquadMembers?.length > 0)) ? 'pointer' : 'not-allowed',
               fontFamily: fonts.display,
               fontWeight: 'bold',
               fontSize: '1rem',

@@ -247,7 +247,7 @@ const DamageDistribution = ({
 
             // ── Player target ────────────────────────────────────────────────
             const targetPlayer = players.find(p => p.id === target.playerId);
-            if (!targetPlayer) return null;
+            if (!targetPlayer || targetPlayer.isAbsent) return null;
 
             const key = `${target.playerId}-${target.unitType}`;
             const currentDamage = damageDistribution[key] || 0;

@@ -6,7 +6,7 @@ import { fonts, colors } from '../theme';
  * The landing page everyone sees first.
  * Three paths: Create (become GM), Join (enter lobby code), Play Offline (existing solo app).
  */
-const HomeScreen = ({ onCreateLobby, onJoinLobby, onPlayOffline, joinError = '', joining = false }) => {
+const HomeScreen = ({ onCreateLobby, onJoinLobby, onLoadGame, onPlayOffline, joinError = '', joining = false }) => {
   const [joinMode, setJoinMode]   = React.useState(false);
   const [lobbyCode, setLobbyCode] = React.useState('');
   const [error, setError]         = React.useState('');
@@ -107,6 +107,29 @@ const HomeScreen = ({ onCreateLobby, onJoinLobby, onPlayOffline, joinError = '',
               🎮 Join Lobby
               <div style={{ fontSize: '0.65rem', fontWeight: '600', opacity: 0.7, marginTop: '0.2rem', textTransform: 'none', letterSpacing: '0.03em' }}>
                 Enter a lobby code from your Game Master
+              </div>
+            </button>
+
+            {/* Load Game */}
+            <button
+              onClick={onLoadGame}
+              style={{
+                width: '100%', padding: '1.1rem',
+                background: 'linear-gradient(135deg, #1a2e1a, #142614)',
+                border: '2px solid #4ade80',
+                color: '#bbf7d0',
+                borderRadius: '10px', cursor: 'pointer',
+                fontFamily: fonts.body, fontWeight: '800',
+                fontSize: '1rem', letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                boxShadow: '0 6px 20px rgba(74,222,128,0.15)',
+                marginBottom: '0.85rem',
+                transition: 'all 0.2s',
+              }}
+            >
+              📂 Load Game
+              <div style={{ fontSize: '0.65rem', fontWeight: '600', opacity: 0.7, marginTop: '0.2rem', textTransform: 'none', letterSpacing: '0.03em' }}>
+                Continue a campaign from a save file
               </div>
             </button>
 

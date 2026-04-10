@@ -6,6 +6,8 @@ import { useNPCState }          from '../hooks/useNPCState';
 import { useVPState }           from '../hooks/useVPState';
 import { useLootHandlers }      from '../hooks/useLootHandlers';
 import { useCampaignTurn }      from '../hooks/useCampaignTurn';
+import { doc, updateDoc }       from 'firebase/firestore';
+import { db }                   from '../firebase';
 
 import PlayerCard          from './PlayerCard';
 import Calculator          from './Calculator';
@@ -188,6 +190,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   }, [isMultiplayer, initialGameState]);
 
   // ── Firestore sync — GM writes full state on every change ────────────────
+  // Use a ref so campaign turn data can be included without hoisting issues
+  const campaignPlayerIdRef = React.useRef(null);
   useFirestoreSync({
     lobbyCode,
     isGM: isMultiplayer,
@@ -195,6 +199,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       players, currentRound, combatLog, gameMode,
       currentPlayerIndex, gameStarted, lootPool,
       playersWhoActedThisRound,
+      currentCampaignPlayerId: campaignPlayerIdRef.current,
       npcs, chests,
       rooms:          roomsState.rooms,
       roundTimers:    roundTimers.timers,
@@ -784,11 +789,20 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const currentCampaignPlayerId = currentCampaignTurn?.type === 'player' ? currentCampaignTurn.id : null;
   const currentCampaignNPCId    = null; // NPCs are visual-only in turn order — they never hold the active turn
 
+  // Keep ref in sync so the main useFirestoreSync always has the latest value
+  campaignPlayerIdRef.current = currentCampaignPlayerId;
+
   const currentModeConfig = getModeConfig(gameMode);
   const currentPlayer     = isCampaign
     ? players.find(p => p.id === currentCampaignPlayerId)
     : players[currentPlayerIndex];
-  const displayedPlayers  = viewMode === 'current' && currentPlayer ? [currentPlayer] : players;
+  // Absent players pushed to the bottom of the GM view
+  const displayedPlayers = (viewMode === 'current' && currentPlayer ? [currentPlayer] : players)
+    .slice()
+    .sort((a, b) => {
+      if (a.isAbsent === b.isAbsent) return 0;
+      return a.isAbsent ? 1 : -1;
+    });
   const activeTurnLabel   = isCampaign && currentCampaignNPCId
     ? `👾 ${getNPCById(currentCampaignNPCId)?.name || 'NPC'}'s Turn`
     : currentPlayer ? currentPlayer.playerName : null;
@@ -1373,6 +1387,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
             players.forEach(origP => {
               if (origP.id === attackerId) return;
+              if (origP.isAbsent) return;
               const dmgKey = (unitType) => damageDistribution[`${origP.id}-${unitType}`] || 0;
 
               // Commander

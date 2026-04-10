@@ -70,9 +70,12 @@ export const useCampaignTurn = (
   // ── Turn order ────────────────────────────────────────────────────────────
 
   const buildTurnOrder = () => {
-    // Players always in order
+    // Players always in order — skip absent players
     const order = [];
-    players.forEach(p => order.push({ type: 'player', id: p.id }));
+    players.forEach(p => {
+      if (p.isAbsent) return;
+      order.push({ type: 'player', id: p.id });
+    });
 
     // Only include NPCs that have been aggroed — insert after their last aggressor
     activeNPCs.forEach(npc => {

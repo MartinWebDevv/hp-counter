@@ -364,6 +364,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
   };
 
   const isPlayerFullyDead = (player) => {
+    if (player.isAbsent) return true;
     const commanderDead = player.commanderStats.hp === 0 && 
                          (player.commanderStats.revives || 0) === 0;
     

@@ -127,7 +127,21 @@ const PlayerCard = ({
   const pColor   = player.playerColor || colors.blue;
 
   return (
-    <div style={cardShell(isCurrentTurn, pColor, hasActedThisRound)}>
+    <div style={{ ...cardShell(isCurrentTurn, pColor, hasActedThisRound), opacity: player.isAbsent ? 0.45 : 1, filter: player.isAbsent ? 'grayscale(0.7)' : 'none', pointerEvents: player.isAbsent ? 'none' : 'auto', position: 'relative' }}>
+
+      {/* Absent overlay badge */}
+      {player.isAbsent && (
+        <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(107,114,128,0.9)', border: '1px solid rgba(107,114,128,0.5)', borderRadius: '6px', padding: '0.2rem 0.55rem', color: '#d1d5db', fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', zIndex: 10 }}>
+          😴 Absent
+        </div>
+      )}
+
+      {/* Manual badge — GM controlled, fully interactive */}
+      {player.isManual && !player.isAbsent && (
+        <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '6px', padding: '0.2rem 0.55rem', color: '#fbbf24', fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', zIndex: 10 }}>
+          🎮 Manual
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div style={{

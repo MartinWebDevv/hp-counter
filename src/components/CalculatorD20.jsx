@@ -821,6 +821,7 @@ const CalculatorD20 = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.5rem' }}>
               {players
                 .filter(p => p.id !== calculatorData.attackerId)
+                .filter(p => !p.isAbsent)
                 .filter(p => p.commanderStats.hp > 0 || p.subUnits.some(u => u.hp > 0))
                 .map(p => {
                   const isExpanded = !!expandedPlayers[p.id];
@@ -950,6 +951,7 @@ const CalculatorD20 = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.5rem' }}>
               {players
                 .filter(p => p.id !== calculatorData.attackerId)
+                .filter(p => !p.isAbsent)
                 .filter(p => p.commanderStats.hp > 0 || p.subUnits.some(u => u.hp > 0))
                 .map(p => {
                   const isExpanded = !!expandedPlayers[`squad-${p.id}`];

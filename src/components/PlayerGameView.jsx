@@ -2,6 +2,8 @@ import React from 'react';
 import { colors, borders, fonts, hpBarColor, text, btn, tierColors, cardShell, insetSection, pill } from '../theme';
 import { subscribeGameState, writePendingRequest, subscribePendingRequests, subscribePendingChoices, resolvePendingChoice } from '../services/gameStateService';
 import { getSlotCount, getHeldCount } from './lootUtils';
+import { COMMANDER_STATS } from '../data/commanderStats';
+import { FACTION_STATS } from '../data/factionStats';
 
 /**
  * PlayerGameView
@@ -86,11 +88,30 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
   const vpStats     = gameState.vpStats     || {};
   const currentRound = gameState.currentRound || 1;
 
-  // Find this player's own entry by uid
+  // Find this player's own entry by uid (must be before turn derivation)
   const myPlayer = players.find(p => p.uid === playerData?.uid) || players[0];
 
+  // Derive whose turn it is
+  // Standard mode: currentPlayerIndex is an index into the full players array
+  // Campaign mode: currentCampaignPlayerId is the exact player id whose turn it is
+  const currentPlayerIndex     = gameState.currentPlayerIndex     ?? 0;
+  const currentCampaignPlayerId = gameState.currentCampaignPlayerId ?? null;
+  const isCampaignMode          = gameState.gameMode === 'campaign';
+
+  const activeTurnPlayer = isCampaignMode
+    ? (currentCampaignPlayerId ? players.find(p => p.id === currentCampaignPlayerId) || null : null)
+    : (players[currentPlayerIndex] || null);
+
+  const isMyTurn = !!(activeTurnPlayer && (
+    activeTurnPlayer.uid === playerData?.uid ||
+    activeTurnPlayer.id  === myPlayer?.id
+  ));
+
+  // Filter out absent players for the Players tab carousel
+  const visiblePlayers = players.filter(p => !p.isAbsent);
+
   // Clamp playerIdx for carousel
-  const safeIdx = Math.min(playerIdx, Math.max(0, players.length - 1));
+  const safeIdx = Math.min(playerIdx, Math.max(0, visiblePlayers.length - 1));
 
   const tabs = [
     { id: 'mine',    label: '⚔️ Mine'    },
@@ -140,19 +161,63 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
         ))}
       </div>
 
+      {/* Turn indicator — always rendered, shows last known turn player to prevent flicker */}
+      {(() => {
+        const turnPlayer = activeTurnPlayer;
+        const pColor = turnPlayer?.playerColor || colors.gold;
+        return (
+          <div style={{
+            padding: '0.5rem 1rem',
+            background: isMyTurn
+              ? `linear-gradient(90deg, ${pColor}18, transparent)`
+              : 'rgba(0,0,0,0.3)',
+            borderBottom: `1px solid ${isMyTurn ? pColor + '40' : 'rgba(255,255,255,0.04)'}`,
+            display: 'flex', alignItems: 'center', gap: '0.6rem',
+            minHeight: '36px',
+          }}>
+            <div style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: pColor,
+              boxShadow: turnPlayer ? `0 0 8px ${pColor}` : 'none',
+              flexShrink: 0,
+              animation: turnPlayer ? 'turnPulse 1.5s ease-in-out infinite' : 'none',
+            }} />
+            <div style={{ flex: 1 }}>
+              <span style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: '0.4rem' }}>
+                {isMyTurn ? 'YOUR TURN' : 'ACTIVE TURN'}
+              </span>
+              <span style={{
+                color: isMyTurn ? pColor : colors.textPrimary,
+                fontWeight: '800', fontSize: '0.82rem',
+              }}>
+                {isMyTurn ? "It's your turn!" : (turnPlayer?.playerName || '—')}
+              </span>
+            </div>
+            {isMyTurn && (
+              <span style={{ color: pColor, fontSize: '0.7rem', fontWeight: '800', animation: 'turnPulse 1.5s ease-in-out infinite' }}>⚔️</span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Content */}
       <div style={{ padding: '1rem', maxWidth: '700px', margin: '0 auto' }}>
 
         {/* ── My Character ─────────────────────────────────────────────── */}
         {activeTab === 'mine' && (
           myPlayer
-            ? <ReadOnlyPlayerCard player={myPlayer} highlight isOwnCard lobbyCode={lobbyCode} npcs={npcs} allPlayers={players} />
+            ? (
+              <>
+                <ReadOnlyPlayerCard player={myPlayer} highlight isOwnCard lobbyCode={lobbyCode} npcs={npcs} allPlayers={players} />
+                <PlayerStatsPanel player={myPlayer} />
+              </>
+            )
             : <EmptyState icon="👤" text="Your character hasn't been added to the game yet." />
         )}
 
         {/* ── Players carousel ─────────────────────────────────────────── */}
         {activeTab === 'players' && (
-          players.length === 0
+          visiblePlayers.length === 0
             ? <EmptyState icon="👥" text="No players in the session yet." />
             : (
               <div>
@@ -165,11 +230,11 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
                   >←</button>
                   <div style={{ flex: 1, textAlign: 'center' }}>
                     <div style={{ color: colors.textMuted, fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                      Player {safeIdx + 1} of {players.length}
+                      Player {safeIdx + 1} of {visiblePlayers.length}
                     </div>
                     {/* Player selector dots */}
                     <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginTop: '0.3rem' }}>
-                      {players.map((p, i) => (
+                      {visiblePlayers.map((p, i) => (
                         <div
                           key={p.id}
                           onClick={() => setPlayerIdx(i)}
@@ -186,12 +251,12 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
                     </div>
                   </div>
                   <button
-                    onClick={() => setPlayerIdx(i => Math.min(players.length - 1, i + 1))}
-                    disabled={safeIdx === players.length - 1}
-                    style={navBtn(safeIdx === players.length - 1)}
+                    onClick={() => setPlayerIdx(i => Math.min(visiblePlayers.length - 1, i + 1))}
+                    disabled={safeIdx === visiblePlayers.length - 1}
+                    style={navBtn(safeIdx === visiblePlayers.length - 1)}
                   >→</button>
                 </div>
-                <ReadOnlyPlayerCard player={players[safeIdx]} />
+                <ReadOnlyPlayerCard player={visiblePlayers[safeIdx]} />
               </div>
             )
         )}
@@ -366,7 +431,7 @@ const ItemChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, npcs, onSub
   };
 
   // ── Enemy player list (for destroy item) ─────────────────────────────────
-  const enemyPlayers = (allPlayers || []).filter(p => p.id !== myPlayer?.id && !p.commanderStats?.isDead);
+  const enemyPlayers = (allPlayers || []).filter(p => p.id !== myPlayer?.id && !p.commanderStats?.isDead && !p.isAbsent);
 
   const canSubmit = selectedTarget && (!IS_DESTROY || selectedDestroyItem);
 
@@ -975,11 +1040,11 @@ const ReadOnlyPlayerCard = ({
           )}
 
           {/* Player targets */}
-          {allPlayers.filter(p => p.id !== player.id && !p.commanderStats?.isDead).length > 0 && (
+          {allPlayers.filter(p => p.id !== player.id && !p.commanderStats?.isDead && !p.isAbsent).length > 0 && (
             <>
               <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Players</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-                {allPlayers.filter(p => p.id !== player.id && !p.commanderStats?.isDead).map(enemyPlayer => {
+                {allPlayers.filter(p => p.id !== player.id && !p.commanderStats?.isDead && !p.isAbsent).map(enemyPlayer => {
                   const isExpanded = expandedTargetId === enemyPlayer.id;
                   const pColor = enemyPlayer.playerColor || colors.blue;
 
@@ -1083,6 +1148,52 @@ const ReadOnlyPlayerCard = ({
   );
 };
 
+// ── Player Stats Panel ────────────────────────────────────────────────────────
+const PlayerStatsPanel = ({ player }) => {
+  const cmdStats = COMMANDER_STATS[player.commander] || {};
+  const facStats = FACTION_STATS[player.faction]    || {};
+
+  const statRow = (label, cmdVal, facVal) => (
+    <div key={label} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.25rem', padding: '0.3rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '700' }}>{label}</span>
+      <span style={{ color: colors.gold, fontWeight: '800', fontSize: '0.72rem', textAlign: 'center' }}>{cmdVal ?? '—'}</span>
+      <span style={{ color: colors.purpleLight, fontWeight: '800', fontSize: '0.72rem', textAlign: 'center' }}>{facVal ?? '—'}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', overflow: 'hidden', marginTop: '0.75rem' }}>
+      {/* Header */}
+      <div style={{ padding: '0.6rem 0.85rem', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.3)' }}>
+        <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+          📊 Stats Reference
+        </div>
+      </div>
+
+      {/* Column headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.25rem', padding: '0.4rem 0.85rem 0.3rem', background: 'rgba(0,0,0,0.2)' }}>
+        <span style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Stat</span>
+        <span style={{ color: colors.gold, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>
+          👑 {player.commanderStats?.customName || player.commander || 'Commander'}
+        </span>
+        <span style={{ color: colors.purpleLight, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>
+          🛡️ {player.faction || 'Faction'}
+        </span>
+      </div>
+
+      {/* Stat rows */}
+      <div style={{ padding: '0.25rem 0.85rem 0.75rem' }}>
+        {statRow('Walk',         cmdStats.walk,          facStats.walk)}
+        {statRow('Run',          cmdStats.run,           facStats.run)}
+        {statRow('Shoot Range',  cmdStats.shootRange,    facStats.shootRange)}
+        {statRow('Sp. Range',    cmdStats.specialRange ? `${cmdStats.specialRange}"` : null, facStats.specialRange ? `${facStats.specialRange}"` : null)}
+        {statRow('Attacks/Hit',  cmdStats.attacksPerHit, facStats.attacksPerHit)}
+        {statRow('Roll to Heal', cmdStats.rollToHeal ? `${cmdStats.rollToHeal}+` : null, facStats.rollToHeal ? `${facStats.rollToHeal}+` : null)}
+      </div>
+    </div>
+  );
+};
+
 // ── Read-only NPC Card ────────────────────────────────────────────────────────
 const ReadOnlyNPCCard = ({ npc }) => {
   const pct    = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
@@ -1154,5 +1265,18 @@ const centeredPage = {
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'center',
 };
+
+// Inject turnPulse animation once
+if (typeof document !== 'undefined' && !document.getElementById('turnPulseStyle')) {
+  const style = document.createElement('style');
+  style.id = 'turnPulseStyle';
+  style.textContent = `
+    @keyframes turnPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.85); }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 export default PlayerGameView;

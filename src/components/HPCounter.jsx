@@ -33,10 +33,11 @@ import RoundTimerPanel         from './RoundTimerPanel';
 import CommanderTokenPanel     from './CommanderTokenPanel';
 import useFirestoreSync        from '../hooks/useFirestoreSync';
 import { subscribePendingRequests, resolvePendingRequest, writePendingChoice, resolvePendingChoice, subscribePendingChoices } from '../services/gameStateService';
+import { subscribePlayerLeft, subscribePlayerRejoin } from '../services/lobbyService';
 
 
 
-const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, initialGameState = null }) => {
+const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, initialGameState = null, onEndGame = null }) => {
   // ── Round timers (init first so callback is ready for useGameState) ────────
   const roundTimers = useRoundTimers();
   // addLogRef — lets tokens use addLog before it's in scope
@@ -213,6 +214,53 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   React.useEffect(() => {
     if (!isMultiplayer || !lobbyCode) return;
     const unsub = subscribePendingRequests(lobbyCode, setPendingRequests);
+    return () => unsub();
+  }, [isMultiplayer, lobbyCode]);
+
+  // ── GM: player-left toast ─────────────────────────────────────────────────
+  const [leftToasts,     setLeftToasts]     = React.useState([]);
+  const seenLeftNotices = React.useRef(new Set());
+  React.useEffect(() => {
+    if (!isMultiplayer || !lobbyCode) return;
+    const unsub = subscribePlayerLeft(lobbyCode, (notices) => {
+      Object.values(notices).forEach(n => {
+        if (!n || seenLeftNotices.current.has(n.timestamp)) return;
+        seenLeftNotices.current.add(n.timestamp);
+        const id = n.timestamp;
+        setLeftToasts(prev => [...prev, { id, playerName: n.playerName }]);
+        // Mark the player as left in game state
+        setPlayers(prev => prev.map(p =>
+          p.uid === n.uid ? { ...p, isLeft: true, isAbsent: true } : p
+        ));
+        addLog(`🚪 ${n.playerName} has left the game`);
+        // Auto-dismiss toast after 5s
+        setTimeout(() => setLeftToasts(prev => prev.filter(t => t.id !== id)), 5000);
+      });
+    });
+    return () => unsub();
+  }, [isMultiplayer, lobbyCode]);
+
+  // ── GM: player-rejoin toast ───────────────────────────────────────────────
+  const [rejoinToasts,     setRejoinToasts]     = React.useState([]);
+  const seenRejoinNotices = React.useRef(new Set());
+  React.useEffect(() => {
+    if (!isMultiplayer || !lobbyCode) return;
+    const unsub = subscribePlayerRejoin(lobbyCode, (notices) => {
+      Object.values(notices).forEach(n => {
+        if (!n || seenRejoinNotices.current.has(n.timestamp)) return;
+        seenRejoinNotices.current.add(n.timestamp);
+        const id = n.timestamp;
+        setRejoinToasts(prev => [...prev, { id, playerName: n.playerName }]);
+        // Update local GM state by playerId (uid was null for absent players)
+        setPlayers(prev => prev.map(p =>
+          String(p.id) === String(n.playerId)
+            ? { ...p, uid: n.uid, isAbsent: false, isManual: false, isLeft: false }
+            : p
+        ));
+        addLog(`🔄 ${n.playerName} has rejoined the game`);
+        setTimeout(() => setRejoinToasts(prev => prev.filter(t => t.id !== id)), 5000);
+      });
+    });
     return () => unsub();
   }, [isMultiplayer, lobbyCode]);
 
@@ -945,8 +993,20 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem' }}>
         <div style={{ flex: 1 }}><LogPanel battleLog={combatLog} onClearLog={clearLog} /></div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {isMultiplayer && lobbyCode && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.35rem 0.75rem', background: 'rgba(201,169,97,0.08)', border: '1px solid rgba(201,169,97,0.25)', borderRadius: '8px', flexShrink: 0 }}>
+              <span style={{ color: colors.textFaint, fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Lobby</span>
+              <span style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.82rem', letterSpacing: '0.1em' }}>{lobbyCode}</span>
+            </div>
+          )}
           <button onClick={() => vp.setEndSessionModal(true)} style={{ ...styles.resetCombatBtn, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24' }}>🏆 End Session</button>
           <button onClick={handleNewSession}  style={styles.resetCombatBtn}>🔄 New Session</button>
+          {isMultiplayer && onEndGame && (
+            <button
+              onClick={() => { if (window.confirm('End Game for all players? Everyone will be returned to the home screen.')) onEndGame(); }}
+              style={{ ...styles.resetCombatBtn, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5' }}
+            >🚪 End Game</button>
+          )}
           <button onClick={saveGameToFile}    style={styles.saveBtn}>💾 SAVE</button>
           <button onClick={loadGameFromFile}  style={styles.loadBtn}>📂 LOAD</button>
         </div>
@@ -2068,13 +2128,42 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           onFinish={()  => vp.setAwardShowcase(null)}
         />
       )}
+      {/* ── Player left toasts ── */}
+      {isMultiplayer && leftToasts.length > 0 && (
+        <div style={{ position: 'fixed', top: '1rem', right: '1rem', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '0.5rem', pointerEvents: 'none' }}>
+          {leftToasts.map(t => (
+            <div key={t.id} style={{ background: 'linear-gradient(135deg,#1a0f0a,#0f0805)', border: '2px solid rgba(239,68,68,0.5)', borderRadius: '10px', padding: '0.75rem 1.1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', minWidth: '200px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.1rem' }}>🚪</span>
+                <div>
+                  <div style={{ color: '#fca5a5', fontWeight: '900', fontSize: '0.8rem', letterSpacing: '0.05em' }}>LEFT THE GAME</div>
+                  <div style={{ color: '#e8dcc4', fontWeight: '700', fontSize: '0.82rem' }}>{t.playerName}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Player rejoin toasts ── */}
+      {isMultiplayer && rejoinToasts.length > 0 && (
+        <div style={{ position: 'fixed', top: leftToasts.length > 0 ? '5rem' : '1rem', right: '1rem', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '0.5rem', pointerEvents: 'none' }}>
+          {rejoinToasts.map(t => (
+            <div key={t.id} style={{ background: 'linear-gradient(135deg,#0a1a0f,#050f08)', border: '2px solid rgba(34,197,94,0.5)', borderRadius: '10px', padding: '0.75rem 1.1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.8)', minWidth: '200px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.1rem' }}>🔄</span>
+                <div>
+                  <div style={{ color: '#86efac', fontWeight: '900', fontSize: '0.8rem', letterSpacing: '0.05em' }}>REJOINED</div>
+                  <div style={{ color: '#e8dcc4', fontWeight: '700', fontSize: '0.82rem' }}>{t.playerName}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
-
-// ── NPCCalculator (inline) ────────────────────────────────────────────────────
-
-// ── NPCCalculator (inline) ────────────────────────────────────────────────────
 
 const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, onUpdatePlayer = () => {}, onAddLog = () => {}, onCreateTimer = null }) => {
   const isSquad   = !!npcAttackData.isSquad;

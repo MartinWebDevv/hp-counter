@@ -1,7 +1,7 @@
 import React from 'react';
 import { fonts, colors, tierColors } from '../theme';
 import { subscribeLobby } from '../services/lobbyService';
-import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { COMMANDER_STATS } from '../data/commanderStats';
 import { FACTION_STATS } from '../data/factionStats';
@@ -38,14 +38,37 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
     if (!selected || claiming) return;
     setClaiming(true);
     try {
-      const ref = doc(db, 'campaigns', lobbyCode);
-      await updateDoc(ref, {
+      const ref  = doc(db, 'campaigns', lobbyCode);
+      const snap = await getDoc(ref);
+      const data = snap.exists() ? snap.data() : {};
+      const gameAlreadyStarted = data.gameStarted || false;
+
+      // Always claim the save slot and clear left flag
+      const updates = {
         [`saveSlots.${selected.playerId}.claimedByUid`]: myUid,
-      });
-      onClaimCharacter({
-        ...selected.slot.playerData,
-        uid: myUid,
-      });
+        [`saveSlots.${selected.playerId}.isLeft`]:        false,
+      };
+
+      // If game already running, patch the live player record and write a rejoin notice
+      if (gameAlreadyStarted && data.gameState?.players) {
+        const updatedPlayers = data.gameState.players.map(p =>
+          String(p.id) === String(selected.playerId)
+            ? { ...p, uid: myUid, isAbsent: false, isManual: false, isLeft: false }
+            : p
+        );
+        updates['gameState.players'] = updatedPlayers;
+
+        const noticeId = `rejoin_${myUid}_${Date.now()}`;
+        updates[`playerRejoin.${noticeId}`] = {
+          uid:        myUid,
+          playerId:   String(selected.playerId),
+          playerName: selected.slot.playerData.playerName,
+          timestamp:  Date.now(),
+        };
+      }
+
+      await updateDoc(ref, updates);
+      onClaimCharacter({ ...selected.slot.playerData, uid: myUid, id: String(selected.playerId) });
     } catch (err) {
       console.error('Claim failed:', err);
       setClaiming(false);
@@ -101,7 +124,10 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
                   const isManual = slot.isManual || false;
                   const claimed  = !!slot.claimedByUid;
                   const isMine   = slot.claimedByUid === myUid;
-                  const disabled = isAbsent || isManual || (claimed && !isMine);
+                  // Absent slots ARE claimable — player joining mid-session takes over
+                  // Manual means GM is actively playing them — not claimable
+                  // Claimed by someone else — not claimable
+                  const disabled = isManual || (claimed && !isMine);
 
                   return (
                     <button
@@ -115,8 +141,8 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
                       style={{
                         display: 'flex', alignItems: 'center', gap: '0.65rem',
                         padding: '0.75rem 0.9rem',
-                        background: disabled ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.3)',
-                        border: `1px solid ${isAbsent ? 'rgba(107,114,128,0.2)' : isManual ? 'rgba(245,158,11,0.25)' : claimed ? 'rgba(34,197,94,0.25)' : `${p.playerColor || colors.blue}30`}`,
+                        background: disabled ? 'rgba(0,0,0,0.2)' : isAbsent ? 'rgba(107,114,128,0.06)' : 'rgba(0,0,0,0.3)',
+                        border: `1px solid ${isManual ? 'rgba(245,158,11,0.25)' : isAbsent ? 'rgba(107,114,128,0.3)' : claimed ? 'rgba(34,197,94,0.25)' : `${p.playerColor || colors.blue}30`}`,
                         borderRadius: '10px', cursor: disabled ? 'not-allowed' : 'pointer',
                         fontFamily: fonts.body, textAlign: 'left',
                         opacity: disabled ? 0.5 : 1,
@@ -125,7 +151,7 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
                     >
                       <div style={{ width: '11px', height: '11px', borderRadius: '50%', background: isAbsent ? '#6b7280' : isManual ? '#f59e0b' : p.playerColor || colors.blue, flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: disabled ? colors.textMuted : colors.textPrimary, fontWeight: '700', fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ color: disabled ? colors.textMuted : isAbsent ? colors.textMuted : colors.textPrimary, fontWeight: '700', fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {p.playerName}
                         </div>
                         <div style={{ color: colors.textFaint, fontSize: '0.63rem', marginTop: '0.08rem' }}>
@@ -133,10 +159,10 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        {isAbsent
-                          ? <span style={{ color: '#6b7280', fontSize: '0.65rem', fontWeight: '800' }}>ABSENT</span>
-                          : isManual
-                            ? <span style={{ color: '#fbbf24', fontSize: '0.65rem', fontWeight: '800' }}>🎮 GM</span>
+                        {isManual
+                          ? <span style={{ color: '#fbbf24', fontSize: '0.65rem', fontWeight: '800' }}>🎮 GM</span>
+                          : isAbsent
+                            ? <span style={{ color: '#9ca3af', fontSize: '0.65rem', fontWeight: '800' }}>😴 Claim</span>
                             : claimed
                               ? <span style={{ color: '#4ade80', fontSize: '0.65rem', fontWeight: '800' }}>TAKEN</span>
                               : <span style={{ color: colors.textFaint, fontSize: '0.65rem' }}>▸ Select</span>

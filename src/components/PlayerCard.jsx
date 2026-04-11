@@ -662,7 +662,11 @@ const PlayerCard = ({
                 <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: tc.text, fontWeight: '800', fontSize: '0.82rem', marginBottom: '0.08rem' }}>{item.name}</div>
-                  {item.description && <div style={{ color: colors.textMuted, fontSize: '0.68rem' }}>{item.description}</div>}
+                  {item.description && (
+                    <div style={{ color: colors.textMuted, fontSize: '0.65rem', lineHeight: '1.3', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', marginBottom: '0.06rem' }}>
+                      {item.description}
+                    </div>
+                  )}
                   <div style={{ color: colors.textFaint, fontSize: '0.6rem', marginTop: '0.08rem' }}>
                     held by {item.heldBy === 'commander'
                       ? (player.commanderStats?.customName || player.commander || 'Commander')

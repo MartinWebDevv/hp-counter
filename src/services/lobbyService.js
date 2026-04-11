@@ -104,3 +104,62 @@ export const updateLobbyMeta = async (lobbyCode, updates) => {
   const campaignRef = doc(db, 'campaigns', lobbyCode);
   await updateDoc(campaignRef, updates);
 };
+
+// ── End Game — sets gameEnded flag, all clients redirect to home ──────────────
+export const endGame = async (lobbyCode) => {
+  const campaignRef = doc(db, 'campaigns', lobbyCode);
+  await updateDoc(campaignRef, { gameEnded: true });
+};
+
+// ── Subscribe to gameEnded flag ───────────────────────────────────────────────
+export const subscribeGameEnded = (lobbyCode, callback) => {
+  const campaignRef = doc(db, 'campaigns', lobbyCode);
+  return onSnapshot(campaignRef, (snap) => {
+    if (snap.exists() && snap.data().gameEnded === true) {
+      callback();
+    }
+  });
+};
+
+// ── Mark a player as left for this session ────────────────────────────────────
+export const markPlayerLeft = async (lobbyCode, uid, playerName) => {
+  const campaignRef = doc(db, 'campaigns', lobbyCode);
+  const timestamp = Date.now();
+  const noticeId = `left_${uid}_${timestamp}`;
+  // Find and clear the save slot claim so the player can rejoin
+  const snap = await getDoc(campaignRef);
+  const updates = {
+    [`playerLeft.${noticeId}`]: { uid, playerName, timestamp },
+  };
+  if (snap.exists()) {
+    const saveSlots = snap.data().saveSlots || {};
+    Object.entries(saveSlots).forEach(([playerId, slot]) => {
+      if (slot.claimedByUid === uid) {
+        updates[`saveSlots.${playerId}.claimedByUid`] = null;
+        updates[`saveSlots.${playerId}.isLeft`] = true;
+      }
+    });
+  }
+  await updateDoc(campaignRef, updates);
+};
+
+// ── Subscribe to playerLeft notices ──────────────────────────────────────────
+export const subscribePlayerLeft = (lobbyCode, callback) => {
+  const campaignRef = doc(db, 'campaigns', lobbyCode);
+  return onSnapshot(campaignRef, (snap) => {
+    if (snap.exists()) {
+      const notices = snap.data().playerLeft || {};
+      callback(notices);
+    }
+  });
+};
+// ── Subscribe to player rejoin notices ────────────────────────────────────────
+export const subscribePlayerRejoin = (lobbyCode, callback) => {
+  const campaignRef = doc(db, 'campaigns', lobbyCode);
+  return onSnapshot(campaignRef, (snap) => {
+    if (snap.exists()) {
+      const notices = snap.data().playerRejoin || {};
+      callback(notices);
+    }
+  });
+};

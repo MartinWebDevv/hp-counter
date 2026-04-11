@@ -1,6 +1,7 @@
 import React from 'react';
 import { colors, borders, fonts, hpBarColor, text, btn, tierColors, cardShell, insetSection, pill } from '../theme';
 import { subscribeGameState, writePendingRequest, subscribePendingRequests, subscribePendingChoices, resolvePendingChoice } from '../services/gameStateService';
+import { markPlayerLeft, subscribeGameEnded } from '../services/lobbyService';
 import { getSlotCount, getHeldCount } from './lootUtils';
 import { COMMANDER_STATS } from '../data/commanderStats';
 import { FACTION_STATS } from '../data/factionStats';
@@ -11,13 +12,15 @@ import { FACTION_STATS } from '../data/factionStats';
  * Read-only live view of the game state, synced from Firestore.
  * Tabs: My Character | Players | NPCs | Victory
  */
-const PlayerGameView = ({ lobbyCode, playerData }) => {
+const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   const [gameState,   setGameState]   = React.useState(null);
   const [activeTab,     setActiveTab]     = React.useState('mine');
   const [playerIdx,     setPlayerIdx]     = React.useState(0);
   const [deniedToast,   setDeniedToast]   = React.useState(false);
-  const [pendingChoice, setPendingChoice] = React.useState(null); // active choice screen
-  const [destroyNotice, setDestroyNotice] = React.useState(null); // item-destroyed notification
+  const [pendingChoice, setPendingChoice] = React.useState(null);
+  const [destroyNotice, setDestroyNotice] = React.useState(null);
+  const [npcFilter,     setNpcFilter]     = React.useState('All');
+  const [movesetNpc,    setMovesetNpc]    = React.useState(null);
   const seenDenials = React.useRef(new Set());
   const seenChoices = React.useRef(new Set());
 
@@ -73,6 +76,13 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
     return () => unsub();
   }, [lobbyCode, playerData?.uid]);
 
+  // ── Watch for GM ending the game — redirect all players to home ───────────
+  React.useEffect(() => {
+    if (!lobbyCode || !onLeaveGame) return;
+    const unsub = subscribeGameEnded(lobbyCode, () => { onLeaveGame(); });
+    return () => unsub();
+  }, [lobbyCode, onLeaveGame]);
+
   if (!gameState) {
     return (
       <div style={centeredPage}>
@@ -89,7 +99,10 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
   const currentRound = gameState.currentRound || 1;
 
   // Find this player's own entry by uid (must be before turn derivation)
-  const myPlayer = players.find(p => p.uid === playerData?.uid) || players[0];
+  // Use id as fallback for mid-session joiners whose uid may not have synced yet
+  const myPlayer = players.find(p => p.uid === playerData?.uid)
+    || players.find(p => String(p.id) === String(playerData?.id))
+    || null;
 
   // Derive whose turn it is
   // Standard mode: currentPlayerIndex is an index into the full players array
@@ -145,6 +158,18 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
           <div style={{ color: colors.textFaint, fontSize: '0.55rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Round</div>
           <div style={{ color: colors.gold, fontWeight: '900', fontSize: '1.1rem', lineHeight: 1 }}>{currentRound}</div>
         </div>
+        {onLeaveGame && (
+          <button
+            onClick={async () => {
+              if (!window.confirm('Leave this game? The GM will take control of your character.')) return;
+              try {
+                await markPlayerLeft(lobbyCode, playerData?.uid, playerData?.playerName || 'Player');
+              } catch {}
+              onLeaveGame();
+            }}
+            style={{ padding: '0.4rem 0.7rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.65rem', letterSpacing: '0.05em', flexShrink: 0 }}
+          >🚪 Leave</button>
+        )}
       </div>
 
       {/* Tab bar */}
@@ -262,15 +287,62 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
         )}
 
         {/* ── NPCs ─────────────────────────────────────────────────────── */}
-        {activeTab === 'npcs' && (
-          allNpcs.length === 0
-            ? <EmptyState icon="👾" text="No enemies have been staged yet." />
-            : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {allNpcs.map(npc => <ReadOnlyNPCCard key={npc.id} npc={npc} />)}
+        {activeTab === 'npcs' && (() => {
+          const allGameNpcs = gameState.npcs || [];
+          const filteredNpcs = npcFilter === 'All'
+            ? allGameNpcs
+            : npcFilter === 'Active'
+              ? allGameNpcs.filter(n => n.active && !n.isDead)
+              : npcFilter === 'Inactive'
+                ? allGameNpcs.filter(n => !n.active && !n.isDead)
+                : allGameNpcs.filter(n => n.isDead);
+
+          return (
+            <>
+              {/* Filter pills */}
+              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
+                {['All', 'Active', 'Inactive', 'Dead'].map(f => (
+                  <button key={f} onClick={() => setNpcFilter(f)} style={{
+                    padding: '0.3rem 0.75rem', borderRadius: '20px', cursor: 'pointer',
+                    fontFamily: fonts.body, fontWeight: '800', fontSize: '0.68rem', letterSpacing: '0.05em',
+                    border: `1px solid ${npcFilter === f
+                      ? f === 'Active' ? 'rgba(239,68,68,0.6)'
+                        : f === 'Dead' ? 'rgba(107,114,128,0.6)'
+                        : f === 'Inactive' ? 'rgba(201,169,97,0.4)'
+                        : 'rgba(255,255,255,0.2)'
+                      : 'rgba(255,255,255,0.08)'}`,
+                    background: npcFilter === f
+                      ? f === 'Active' ? 'rgba(239,68,68,0.12)'
+                        : f === 'Dead' ? 'rgba(107,114,128,0.12)'
+                        : f === 'Inactive' ? 'rgba(201,169,97,0.08)'
+                        : 'rgba(255,255,255,0.06)'
+                      : 'transparent',
+                    color: npcFilter === f
+                      ? f === 'Active' ? '#fca5a5'
+                        : f === 'Dead' ? '#9ca3af'
+                        : f === 'Inactive' ? colors.gold
+                        : colors.textPrimary
+                      : colors.textFaint,
+                  }}>{f} {f !== 'All' && `(${
+                    f === 'Active' ? allGameNpcs.filter(n => n.active && !n.isDead).length
+                    : f === 'Inactive' ? allGameNpcs.filter(n => !n.active && !n.isDead).length
+                    : allGameNpcs.filter(n => n.isDead).length
+                  })`}</button>
+                ))}
               </div>
-            )
-        )}
+              {filteredNpcs.length === 0
+                ? <EmptyState icon="👾" text={`No ${npcFilter.toLowerCase()} enemies.`} />
+                : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {filteredNpcs.map(npc => (
+                      <ReadOnlyNPCCard key={npc.id} npc={npc} onShowMoveset={setMovesetNpc} />
+                    ))}
+                  </div>
+                )
+              }
+            </>
+          );
+        })()}
 
         {/* ── Victory ───────────────────────────────────────────────────── */}
         {activeTab === 'victory' && (
@@ -317,12 +389,15 @@ const PlayerGameView = ({ lobbyCode, playerData }) => {
         <ItemChoiceScreen
           choice={pendingChoice}
           lobbyCode={lobbyCode}
-          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.[0]}
+          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.find(p => String(p.id) === String(playerData?.id)) || null}
           allPlayers={gameState?.players || []}
           npcs={(gameState?.npcs || []).filter(n => n.active && !n.isDead)}
           onSubmit={() => setPendingChoice(null)}
         />
       )}
+
+      {/* ── NPC Moveset Modal ── */}
+      {movesetNpc && <NPCMovesetModal npc={movesetNpc} onClose={() => setMovesetNpc(null)} />}
 
       {/* ── Destroy Notice — shown to player whose item was destroyed ── */}
       {destroyNotice && (
@@ -925,7 +1000,11 @@ const ReadOnlyPlayerCard = ({
                 <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: tc.text, fontWeight: '700', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                  {item.effect?.description && <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.08rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.effect.description}</div>}
+                  {item.description && (
+                    <div style={{ color: colors.textFaint, fontSize: '0.65rem', lineHeight: '1.3', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', marginBottom: '0.04rem' }}>
+                      {item.description}
+                    </div>
+                  )}
                   <div style={{ color: colors.textFaint, fontSize: '0.6rem', marginTop: '0.04rem' }}>
                     {heldByLabel}
                     {item.effect?.uses !== 0 && usesLeft !== 999 && ` · ${usesLeft} use${usesLeft !== 1 ? 's' : ''} left`}
@@ -1195,27 +1274,35 @@ const PlayerStatsPanel = ({ player }) => {
 };
 
 // ── Read-only NPC Card ────────────────────────────────────────────────────────
-const ReadOnlyNPCCard = ({ npc }) => {
+const ReadOnlyNPCCard = ({ npc, onShowMoveset }) => {
   const pct    = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
-  const active = npc.active;
-  const dotColor   = active ? '#ef4444' : '#6b7280';
-  const borderColor = active ? 'rgba(239,68,68,0.3)' : 'rgba(107,114,128,0.2)';
+  const active = npc.active && !npc.isDead;
+  const dead   = npc.isDead;
+  const dotColor    = dead ? '#4b5563' : active ? '#ef4444' : '#6b7280';
+  const borderColor = dead ? 'rgba(75,85,99,0.2)' : active ? 'rgba(239,68,68,0.3)' : 'rgba(107,114,128,0.2)';
+  const hasMoveset  = active && ((npc.attacks || []).length > 0);
   return (
-    <div style={{
-      background: 'linear-gradient(145deg,#160e0e,#0e0808)',
-      border: `1px solid ${borderColor}`,
-      borderRadius: '12px', padding: '1rem',
-      opacity: active ? 1 : 0.65,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
+    <div
+      onClick={() => hasMoveset && onShowMoveset?.(npc)}
+      style={{
+        background: 'linear-gradient(145deg,#160e0e,#0e0808)',
+        border: `1px solid ${borderColor}`,
+        borderRadius: '12px', padding: '1rem',
+        opacity: dead ? 0.4 : active ? 1 : 0.65,
+        cursor: hasMoveset ? 'pointer' : 'default',
+        transition: 'border-color 0.15s',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: active ? '0.75rem' : 0 }}>
         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: dotColor, boxShadow: active ? `0 0 6px ${dotColor}` : 'none', flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
-          <div style={{ color: active ? '#fecaca' : colors.textMuted, fontWeight: '800', fontSize: '0.95rem' }}>{npc.name || 'Unknown'}</div>
+          <div style={{ color: dead ? '#6b7280' : active ? '#fecaca' : colors.textMuted, fontWeight: '800', fontSize: '0.95rem' }}>{npc.name || 'Unknown'}</div>
           <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.1rem' }}>
-            {active ? '⚔️ In Battle' : '⏳ Staging'}
+            {dead ? '💀 Defeated' : active ? '⚔️ In Battle' : '⏳ Staging'}
           </div>
         </div>
         {active && <div style={{ color: colors.amber, fontWeight: '700', fontSize: '0.82rem' }}>{npc.hp} / {npc.maxHp}</div>}
+        {hasMoveset && <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>⚔️ Moves ▸</div>}
       </div>
       {active && (
         <>
@@ -1236,6 +1323,111 @@ const ReadOnlyNPCCard = ({ npc }) => {
           </div>
         </>
       )}
+    </div>
+  );
+};
+
+// ── NPC Moveset Modal ─────────────────────────────────────────────────────────
+const NPCMovesetModal = ({ npc, onClose }) => {
+  // Determine which attacks to show based on currentPhase
+  // currentPhase 0 = Phase 1 (npc.attacks), 1+ = npc.phases[currentPhase-1].attacks
+  const phase = npc.currentPhase || 0;
+  let attacks = npc.attacks || [];
+  let phaseLabel = null;
+  if (npc.hasPhases && npc.phases?.length > 0 && phase > 0) {
+    const phaseData = npc.phases[phase - 1];
+    if (phaseData) {
+      attacks = phaseData.attacks || [];
+      phaseLabel = phaseData.label ? `Phase ${phaseData.phaseNumber}: ${phaseData.label}` : `Phase ${phaseData.phaseNumber}`;
+    }
+  } else if (npc.hasPhases && npc.phases?.length > 0) {
+    phaseLabel = 'Phase 1';
+  }
+
+  const typeIcon = (type) => {
+    if (type === 'buff')  return '✨';
+    if (type === 'spawn') return '🐾';
+    return '⚔️';
+  };
+  const typeColor = (type) => {
+    if (type === 'buff')  return '#a78bfa';
+    if (type === 'spawn') return '#fbbf24';
+    return '#fecaca';
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000, padding: '1rem' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '420px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+
+        {/* Header */}
+        <div style={{ marginBottom: '1.1rem' }}>
+          <div style={{ color: '#fecaca', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.05rem', letterSpacing: '0.06em', marginBottom: '0.25rem' }}>
+            {npc.name}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {phaseLabel && (
+              <span style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '20px', padding: '0.2rem 0.65rem', color: '#fca5a5', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.06em' }}>
+                🔥 {phaseLabel}
+              </span>
+            )}
+            <span style={{ color: colors.textFaint, fontSize: '0.65rem' }}>
+              {npc.hp}/{npc.maxHp} HP · 🛡️{npc.armor}+ · Atk +{npc.attackBonus}
+            </span>
+          </div>
+        </div>
+
+        {/* Moves */}
+        <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.6rem' }}>
+          Moveset ({attacks.length})
+        </div>
+        {attacks.length === 0 && (
+          <div style={{ color: colors.textFaint, fontSize: '0.8rem', textAlign: 'center', padding: '1rem 0' }}>No moves defined</div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.1rem' }}>
+          {attacks.map((atk, i) => (
+            <div key={atk.id || i} style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid rgba(239,68,68,0.12)`, borderLeft: `3px solid ${typeColor(atk.attackType)}`, borderRadius: '8px', padding: '0.65rem 0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: atk.range || atk.description ? '0.3rem' : 0 }}>
+                <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>{typeIcon(atk.attackType)}</span>
+                <span style={{ flex: 1, color: typeColor(atk.attackType), fontWeight: '800', fontSize: '0.85rem' }}>{atk.name}</span>
+                {atk.numRolls > 0 && (
+                  <span style={{ color: colors.amber, fontWeight: '800', fontSize: '0.75rem', flexShrink: 0 }}>
+                    {atk.numRolls}{atk.dieType}
+                  </span>
+                )}
+                {atk.attackType === 'spawn' && atk.spawnNumRolls > 0 && (
+                  <span style={{ color: '#fbbf24', fontWeight: '800', fontSize: '0.75rem', flexShrink: 0 }}>
+                    {atk.spawnNumRolls}{atk.spawnDieType}
+                  </span>
+                )}
+                {atk.buffEffect && (
+                  <span style={{ color: '#a78bfa', fontWeight: '800', fontSize: '0.72rem', flexShrink: 0 }}>
+                    +{atk.buffEffect.value} {atk.buffEffect.stat}
+                  </span>
+                )}
+              </div>
+              {atk.range && (
+                <div style={{ color: colors.textMuted, fontSize: '0.65rem', paddingLeft: '1.35rem', marginBottom: atk.description ? '0.15rem' : 0 }}>
+                  📍 {atk.range}
+                </div>
+              )}
+              {atk.description && (
+                <div style={{ color: colors.textFaint, fontSize: '0.63rem', paddingLeft: '1.35rem', fontStyle: 'italic' }}>
+                  {atk.description}
+                </div>
+              )}
+              {atk.attackType === 'spawn' && atk.spawnPresets?.length > 0 && (
+                <div style={{ color: '#fbbf24', fontSize: '0.62rem', paddingLeft: '1.35rem', marginTop: '0.15rem' }}>
+                  Spawns from: {atk.spawnPresets.map(s => s.name).join(', ')}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <button onClick={onClose} style={{ width: '100%', padding: '0.7rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontSize: '0.82rem' }}>
+          Close
+        </button>
+      </div>
     </div>
   );
 };

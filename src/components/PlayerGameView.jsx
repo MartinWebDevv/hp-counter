@@ -895,6 +895,12 @@ const ReadOnlyPlayerCard = ({
                   <span style={{ flex: 1, color: colors.purpleLight, fontWeight: '700', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {index === 0 ? '⭐ ' : '🛡️ '}{unitLabel}
                   </span>
+                  {/* Uncivilized subtype badge */}
+                  {unit.unitSubType && (
+                    <span style={{ fontSize: '0.6rem', fontWeight: '800', flexShrink: 0, color: unit.unitSubType === 'dinosaur' ? '#6ee7b7' : '#fbbf24' }}>
+                      {unit.unitSubType === 'dinosaur' ? '🦕' : '🪨'}
+                    </span>
+                  )}
                   {/* Lives pips */}
                   <div style={{ display: 'flex', gap: '0.2rem' }}>
                     {[...Array(2)].map((_, i) => (
@@ -1229,8 +1235,15 @@ const ReadOnlyPlayerCard = ({
 
 // ── Player Stats Panel ────────────────────────────────────────────────────────
 const PlayerStatsPanel = ({ player }) => {
-  const cmdStats = COMMANDER_STATS[player.commander] || {};
-  const facStats = FACTION_STATS[player.faction]    || {};
+  const isUncivilized = player.faction === 'Uncivilized';
+  const [subtypeView, setSubtypeView] = React.useState('caveman');
+
+  const cmdStats = COMMANDER_STATS[player.faction] || COMMANDER_STATS[player.commander] || {};
+  const rawFacStats = FACTION_STATS[player.faction] || {};
+  // For Uncivilized pick the right subtype stats; for others use directly
+  const facStats = isUncivilized
+    ? (rawFacStats[subtypeView] || {})
+    : rawFacStats;
 
   const statRow = (label, cmdVal, facVal) => (
     <div key={label} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.25rem', padding: '0.3rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -1243,10 +1256,23 @@ const PlayerStatsPanel = ({ player }) => {
   return (
     <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', overflow: 'hidden', marginTop: '0.75rem' }}>
       {/* Header */}
-      <div style={{ padding: '0.6rem 0.85rem', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.3)' }}>
+      <div style={{ padding: '0.6rem 0.85rem', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
           📊 Stats Reference
         </div>
+        {/* Uncivilized subtype toggle */}
+        {isUncivilized && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <button
+              onClick={() => setSubtypeView('caveman')}
+              style={{ padding: '0.15rem 0.5rem', borderRadius: '20px', border: `1px solid ${subtypeView === 'caveman' ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.08)'}`, background: subtypeView === 'caveman' ? 'rgba(251,191,36,0.1)' : 'transparent', color: subtypeView === 'caveman' ? '#fbbf24' : colors.textFaint, fontFamily: fonts.body, fontSize: '0.62rem', fontWeight: '800', cursor: 'pointer' }}
+            >🪨 Caveman</button>
+            <button
+              onClick={() => setSubtypeView('dinosaur')}
+              style={{ padding: '0.15rem 0.5rem', borderRadius: '20px', border: `1px solid ${subtypeView === 'dinosaur' ? 'rgba(52,211,153,0.5)' : 'rgba(255,255,255,0.08)'}`, background: subtypeView === 'dinosaur' ? 'rgba(52,211,153,0.1)' : 'transparent', color: subtypeView === 'dinosaur' ? '#6ee7b7' : colors.textFaint, fontFamily: fonts.body, fontSize: '0.62rem', fontWeight: '800', cursor: 'pointer' }}
+            >🦕 Dinosaur</button>
+          </div>
+        )}
       </div>
 
       {/* Column headers */}
@@ -1256,7 +1282,7 @@ const PlayerStatsPanel = ({ player }) => {
           👑 {player.commanderStats?.customName || player.commander || 'Commander'}
         </span>
         <span style={{ color: colors.purpleLight, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>
-          🛡️ {player.faction || 'Faction'}
+          {isUncivilized ? (subtypeView === 'dinosaur' ? '🦕 Dinosaur' : '🪨 Caveman') : `🛡️ ${player.faction || 'Faction'}`}
         </span>
       </div>
 

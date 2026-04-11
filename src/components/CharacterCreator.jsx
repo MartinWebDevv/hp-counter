@@ -23,6 +23,7 @@ const CharacterCreator = ({ onComplete, lobbyCode }) => {
   const [playerName,        setPlayerName]        = React.useState('');
   const [commanderName,     setCommanderName]     = React.useState('');
   const [squadNames,        setSquadNames]        = React.useState(['', '', '', '', '']);
+  const [squadSubTypes,     setSquadSubTypes]     = React.useState(['caveman', 'caveman', 'caveman', 'caveman', 'caveman']);
   const [playerColor,       setPlayerColor]       = React.useState(PLAYER_COLORS[0]);
 
   const factionList    = Object.keys(FACTIONS);
@@ -55,6 +56,7 @@ const CharacterCreator = ({ onComplete, lobbyCode }) => {
       playerName:    finalPlayerName,
       commanderName: finalCommanderName,
       squadNames:    finalSquadNames,
+      squadSubTypes: selectedFaction === 'Uncivilized' ? squadSubTypes : squadSubTypes.map(() => null),
       playerColor,
     });
   };
@@ -192,18 +194,40 @@ const CharacterCreator = ({ onComplete, lobbyCode }) => {
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={sectionLabel}>Unit Names</div>
           {squadNames.map((name, i) => (
-            <input
-              key={i}
-              value={name}
-              onChange={e => {
-                const next = [...squadNames];
-                next[i] = e.target.value;
-                setSquadNames(next);
-              }}
-              placeholder={DEFAULT_SQUAD_NAMES[i]}
-              maxLength={24}
-              style={{ ...inputStyle, marginBottom: i < 4 ? '0.45rem' : 0 }}
-            />
+            <div key={i} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginBottom: i < 4 ? '0.45rem' : 0 }}>
+              <input
+                value={name}
+                onChange={e => {
+                  const next = [...squadNames];
+                  next[i] = e.target.value;
+                  setSquadNames(next);
+                }}
+                placeholder={DEFAULT_SQUAD_NAMES[i]}
+                maxLength={24}
+                style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+              />
+              {selectedFaction === 'Uncivilized' && (
+                <select
+                  value={squadSubTypes[i]}
+                  onChange={e => {
+                    const next = [...squadSubTypes];
+                    next[i] = e.target.value;
+                    setSquadSubTypes(next);
+                  }}
+                  style={{
+                    background: 'rgba(0,0,0,0.4)',
+                    border: `1px solid ${squadSubTypes[i] === 'dinosaur' ? 'rgba(52,211,153,0.4)' : 'rgba(251,191,36,0.4)'}`,
+                    borderRadius: '7px', padding: '0.38rem 0.45rem',
+                    color: squadSubTypes[i] === 'dinosaur' ? '#6ee7b7' : '#fbbf24',
+                    fontFamily: fonts.body, fontSize: '0.7rem', fontWeight: '800',
+                    cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  <option value="caveman">🪨 Caveman</option>
+                  <option value="dinosaur">🦕 Dinosaur</option>
+                </select>
+              )}
+            </div>
           ))}
         </div>
 

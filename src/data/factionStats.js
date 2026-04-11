@@ -92,9 +92,9 @@ export const FACTION_STATS = {
       specialRange: 6,
       specialDamage: 2
     },
-    gladiator: {
-      walk: '6"',
-      run: '12"',
+    dinosaur: {
+      walk: '8"',
+      run: '16"',
       rollToHit: 3,
       rollToBlock: 3,
       rollToHeal: 5,

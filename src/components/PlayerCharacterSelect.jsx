@@ -304,6 +304,11 @@ const CharacterCard = ({ player: p, showFull = false }) => {
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.25rem 0', opacity: u.hp <= 0 ? 0.35 : 1 }}>
                   <span style={{ fontSize: '0.7rem' }}>{i === 0 ? '⭐' : '🛡️'}</span>
                   <span style={{ color: colors.purpleLight, fontSize: '0.75rem', fontWeight: '600', flex: 1 }}>{u.name?.trim() || (i === 0 ? 'Special' : `Soldier ${i}`)}</span>
+                  {u.unitSubType && (
+                    <span style={{ fontSize: '0.65rem', fontWeight: '800', color: u.unitSubType === 'dinosaur' ? '#6ee7b7' : '#fbbf24' }}>
+                      {u.unitSubType === 'dinosaur' ? '🦕' : '🪨'}
+                    </span>
+                  )}
                   <span style={{ color: colors.textFaint, fontSize: '0.65rem' }}>{u.hp}/{u.maxHp}</span>
                 </div>
               ))}

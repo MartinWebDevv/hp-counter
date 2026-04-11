@@ -30,6 +30,9 @@ export const lobbyPlayerToGamePlayer = (lobbyPlayer, gameMode = 'campaign') => {
       baseMaxHp:      config.squadHP,
       name:           (lobbyPlayer.squadNames || [])[i] || '',
       unitType:       i === 0 ? 'special' : 'soldier',
+      unitSubType:    lobbyPlayer.faction === 'Uncivilized'
+                        ? ((lobbyPlayer.squadSubTypes || [])[i] || 'caveman')
+                        : null,
       revives:        config.squadRevives,
       livesRemaining: soldierLives,
     })),

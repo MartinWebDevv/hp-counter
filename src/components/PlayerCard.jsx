@@ -416,6 +416,29 @@ const PlayerCard = ({
                       outline: 'none',
                     }}
                   />
+                  {/* Uncivilized subtype dropdown */}
+                  {player.faction === 'Uncivilized' && (
+                    <select
+                      value={unit.unitSubType || 'caveman'}
+                      onChange={e => {
+                        const newSubs = player.subUnits.map((u, si) =>
+                          si === index ? { ...u, unitSubType: e.target.value } : u
+                        );
+                        onUpdate(player.id, { subUnits: newSubs });
+                      }}
+                      style={{
+                        background: 'rgba(0,0,0,0.4)',
+                        border: `1px solid ${unit.unitSubType === 'dinosaur' ? 'rgba(52,211,153,0.4)' : 'rgba(251,191,36,0.4)'}`,
+                        borderRadius: '5px', padding: '0.2rem 0.3rem',
+                        color: unit.unitSubType === 'dinosaur' ? '#6ee7b7' : '#fbbf24',
+                        fontFamily: fonts.body, fontSize: '0.65rem', fontWeight: '800',
+                        cursor: 'pointer', flexShrink: 0,
+                      }}
+                    >
+                      <option value="caveman">🪨</option>
+                      <option value="dinosaur">🦕</option>
+                    </select>
+                  )}
                   {/* Lives pips */}
                   <div style={{ display: 'flex', gap: '0.2rem' }}>
                     {[...Array(2)].map((_, i) => (

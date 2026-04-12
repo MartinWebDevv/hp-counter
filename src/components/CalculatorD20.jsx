@@ -34,7 +34,7 @@ const CalculatorD20 = ({
   // Refund all consumed items then close
   const onClose = () => {
     consumedItems.forEach(({ owner, originalItem }) => {
-      const currentPlayer = players.find(p => p.id === owner.id);
+      const currentPlayer = players.find(p => String(p.id) === String(owner.id));
       if (!currentPlayer) return;
       const alreadyHas = (currentPlayer.inventory || []).find(it => it.id === originalItem.id);
       if (alreadyHas) {
@@ -50,7 +50,7 @@ const CalculatorD20 = ({
 
   if (!calculatorData) return null;
 
-  const attacker = players.find(p => p.id === calculatorData.attackerId);
+  const attacker = players.find(p => String(p.id) === String(calculatorData.attackerId));
   if (!attacker) return null;
 
   
@@ -62,7 +62,7 @@ const CalculatorD20 = ({
     ?? calculatorData.targetId
     ?? calculatorData.targetSquadMembers?.[0]?.playerId
     ?? null;
-  const defender = defenderPlayerId ? players.find(p => p.id === defenderPlayerId) : null;
+  const defender = defenderPlayerId ? players.find(p => String(p.id) === String(defenderPlayerId)) : null;
 
   // Helper: scan a player's full inventory for a given effect type
   const scanInventory = (player, effectType) => {
@@ -137,7 +137,7 @@ const CalculatorD20 = ({
   const singleTarget = targetId
     ? { playerId: targetId.playerId, unitType: targetId.unitType }
     : calculatorData.targetSquadMembers?.[0];
-  const targetPlayer = singleTarget ? players.find(p => p.id === singleTarget.playerId) : null;
+  const targetPlayer = singleTarget ? players.find(p => String(p.id) === String(singleTarget.playerId)) : null;
   const targetUnitEffects = (() => {
     if (!targetPlayer || !singleTarget) return [];
     if (singleTarget.unitType === 'commander') return targetPlayer.commanderStats?.statusEffects || [];
@@ -426,7 +426,7 @@ const CalculatorD20 = ({
   // Consume one use of a reroll item and clear the appropriate roll input
   const consumeRerollItem = (item, owner, clearRoll) => {
     if (!owner) return;
-    const livePlayer = players.find(p => p.id === owner.id) || owner;
+    const livePlayer = players.find(p => String(p.id) === String(owner.id)) || owner;
     const originalItem = (livePlayer.inventory || []).find(it => it.id === item.id);
     if (!originalItem) return;
     const newUsesRemaining = originalItem.effect.uses === 0 ? Infinity : ((originalItem.effect.usesRemaining ?? originalItem.effect.uses ?? 1) - 1);
@@ -441,7 +441,7 @@ const CalculatorD20 = ({
   // Consume a diceSwap item and swap the two current roll inputs
   const consumeDiceSwap = (item, owner) => {
     if (!attackerRoll || !defenderRoll) return;
-    const livePlayer = players.find(p => p.id === owner.id) || owner;
+    const livePlayer = players.find(p => String(p.id) === String(owner.id)) || owner;
     const liveItem = (livePlayer.inventory || []).find(it => it.id === item.id);
     if (!liveItem) return;
     const newUsesRemaining = liveItem.effect.uses === 0 ? Infinity : ((liveItem.effect.usesRemaining ?? liveItem.effect.uses ?? 1) - 1);
@@ -458,7 +458,7 @@ const CalculatorD20 = ({
   // Consume an attackBonus or defenseBonus item — bonus applies to NEXT roll only, then clears
   const consumeBonusItem = (item, owner, bonusType) => {
     if (!owner) return;
-    const livePlayer = players.find(p => p.id === owner.id) || owner;
+    const livePlayer = players.find(p => String(p.id) === String(owner.id)) || owner;
     const liveItem = (livePlayer.inventory || []).find(it => it.id === item.id);
     if (!liveItem) return;
     const newUsesRemaining = liveItem.effect.uses === 0 ? Infinity : ((liveItem.effect.usesRemaining ?? liveItem.effect.uses ?? 1) - 1);
@@ -476,7 +476,7 @@ const CalculatorD20 = ({
   const consumeClosecall = (item) => {
     const ownerSnap = item.closecallOwner || defender;
     if (!ownerSnap) return;
-    const livePlayer = players.find(p => p.id === ownerSnap.id) || ownerSnap;
+    const livePlayer = players.find(p => String(p.id) === String(ownerSnap.id)) || ownerSnap;
     const liveItem = (livePlayer.inventory || []).find(it => it.id === item.id);
     if (!liveItem) return;
     const newUsesRemaining = liveItem.effect.uses === 0 ? Infinity : ((liveItem.effect.usesRemaining ?? liveItem.effect.uses ?? 1) - 1);

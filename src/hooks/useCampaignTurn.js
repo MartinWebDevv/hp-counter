@@ -318,7 +318,7 @@ export const useCampaignTurn = (
 
     // CounterStrike — if any targeted unit has counterStrike, reflect half damage to NPC
     (npcAttackData.targetSquadMembers || []).forEach(target => {
-      const tp = players.find(p => p.id === target.playerId);
+      const tp = players.find(p => String(p.id) === String(target.playerId));
       if (!tp) return;
       const dmg = dist[`${target.playerId}-${target.unitType}`] || 0;
       if (dmg <= 0) return;
@@ -342,7 +342,7 @@ export const useCampaignTurn = (
     const targets = (npcAttackData.targetSquadMembers || [])
       .filter(t => dist[`${t.playerId}-${t.unitType}`] > 0)
       .map(t => {
-        const tp = players.find(p => p.id === t.playerId);
+        const tp = players.find(p => String(p.id) === String(t.playerId));
         const dmg = dist[`${t.playerId}-${t.unitType}`];
         return `${tp?.playerName || 'Unknown'}'s ${unitNameByType(tp, t.unitType)} for ${dmg}hp`;
       }).join(', ');
@@ -432,7 +432,7 @@ export const useCampaignTurn = (
     if (awardFirstStrike && firstStrikeSelected.length > 0) {
       firstStrikeSelected.forEach(playerId => updatePlayer(playerId, { firstStrike: true }));
       const names = firstStrikeSelected
-        .map(id => players.find(p => p.id === id)?.playerName || 'Unknown')
+        .map(id => players.find(p => String(p.id) === String(id))?.playerName || 'Unknown')
         .join(', ');
       addLog(`⚡ First Strike awarded to: ${names}!`);
     }
@@ -441,7 +441,7 @@ export const useCampaignTurn = (
   };
 
   const handlePlayerAttackNPC = (attackData) => {
-    const attacker = players.find(p => p.id === attackData?.attackerId);
+    const attacker = players.find(p => String(p.id) === String(attackData?.attackerId));
     const targetsNPC = attackData?.targetSquadMembers?.some(t => t.isNPC);
     if (attacker?.firstStrike && targetsNPC) {
       updatePlayer(attacker.id, { firstStrike: false });

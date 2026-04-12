@@ -76,7 +76,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
   // Wrap useRevive to handle token return on revive
   const useRevive = (playerId, isSuccessful) => {
-    const player = players.find(p => p.id === playerId);
+    const player = players.find(p => String(p.id) === String(playerId));
     if (player && isSuccessful) tokens.onCommanderRevived(playerId);
     useReviveBase(playerId, isSuccessful);
   };
@@ -141,7 +141,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     activateNPC, deactivateNPC,
     applyDamageToNPC, setNPCHP, triggerNextPhase, getNPCById, setNpcs, resetAllNPCs,
   } = useNPCState(addLog, (killedNPC) => {
-    const attackingPlayer = players.find(p => p.id === lastAttackerIdRef.current) || null;
+    const attackingPlayer = players.find(p => String(p.id) === String(lastAttackerIdRef.current)) || null;
     const hasLoot = killedNPC.lootMode === 'weighted'
       ? (killedNPC.lootItemCount || 1) > 0
       : (killedNPC.lootTable?.length > 0);
@@ -419,7 +419,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         }
       } else {
         // Apply to enemy player unit
-        const targetPlayer = players.find(p => p.id === targetPlayerId);
+        const targetPlayer = players.find(p => String(p.id) === String(targetPlayerId));
         if (!targetPlayer) return;
         const isCommander = unitKey === 'commander';
         const unitIdx = unitKey === 'special' ? 0 : parseInt((unitKey || '').replace('soldier', ''));
@@ -452,7 +452,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
     // ── Destroy Item ────────────────────────────────────────────────────────
     if (req.targetType === 'destroyItem') {
-      const targetPlayer = players.find(p => p.id === req.targetPlayerId);
+      const targetPlayer = players.find(p => String(p.id) === String(req.targetPlayerId));
       if (!targetPlayer) return;
       const newInv = (targetPlayer.inventory || []).filter(it => it.id !== req.destroyItemId);
       updatePlayer(req.targetPlayerId, { inventory: newInv });
@@ -478,7 +478,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
   const handleApproveRequest = (req) => {
     resolvePendingRequest(lobbyCode, req.reqId);
-    const attacker = players.find(p => p.id === req.playerId);
+    const attacker = players.find(p => String(p.id) === String(req.playerId));
     if (!attacker) return;
 
     // Build target data from the request
@@ -637,7 +637,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   // Uses a ref so it always captures the latest players/updatePlayer/addLog
   const tickStatusForPlayerRef = React.useRef(null);
   tickStatusForPlayerRef.current = (playerId) => {
-    const player = players.find(p => p.id === playerId);
+    const player = players.find(p => String(p.id) === String(playerId));
     if (!player) return;
 
     let changed = false;
@@ -815,7 +815,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   setDeathLootModalRef.current = setDeathLootModal;
   const setPvpDeathModalRef = React.useRef(null);
   setPvpDeathModalRef.current = setPvpDeathModal;
-  const squadRevivePlayer = squadRevivePlayerId ? players.find(p => p.id === squadRevivePlayerId) : null;
+  const squadRevivePlayer = squadRevivePlayerId ? players.find(p => String(p.id) === String(squadRevivePlayerId)) : null;
   const handleSquadRevive = (playerId, isSuccessful) => {
     processSquadRevive(playerId, isSuccessful);
     vp.trackVP(playerId, 'revivesUsed', 1);
@@ -842,7 +842,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
   const currentModeConfig = getModeConfig(gameMode);
   const currentPlayer     = isCampaign
-    ? players.find(p => p.id === currentCampaignPlayerId)
+    ? players.find(p => String(p.id) === String(currentCampaignPlayerId))
     : players[currentPlayerIndex];
   // Absent players pushed to the bottom of the GM view
   const displayedPlayers = (viewMode === 'current' && currentPlayer ? [currentPlayer] : players)
@@ -1108,9 +1108,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                 </div>
               )}
               {displayedPlayers.map(player => {
-                const actualIndex    = players.findIndex(p => p.id === player.id);
+                const actualIndex    = players.findIndex(p => String(p.id) === String(player.id));
                 const isBeingDragged = draggedIndex === actualIndex;
-                const isThisTurn     = isCampaign ? player.id === currentCampaignPlayerId : actualIndex === currentPlayerIndex;
+                const isThisTurn     = isCampaign ? String(player.id) === String(currentCampaignPlayerId) : actualIndex === currentPlayerIndex;
                 return (
                   <div key={player.id} draggable={viewMode==='all'} onDragStart={e => viewMode==='all'&&handleDragStart(e,actualIndex)} onDragOver={viewMode==='all'?handleDragOver:undefined} onDrop={e => viewMode==='all'&&handleDrop(e,actualIndex)} onDragEnd={viewMode==='all'?handleDragEnd:undefined} style={{ opacity: isBeingDragged?0.5:1, cursor: viewMode==='all'?'grab':'default', transition: 'opacity 0.2s' }}>
                     <PlayerCard
@@ -1136,7 +1136,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                       onUseItemOnEnemy={(srcPlayer, item, itemIndex) => { setEnemyItemModal({ sourcePlayer: srcPlayer, item, itemIndex }); setEnemyTargetMode(null); }}
                       onTrackLastItem={(srcPlayer, item) => setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id })}
                       onNullifyLastEffect={(playerId) => {
-                        const p = players.find(pl => pl.id === playerId);
+                        const p = players.find(pl => String(pl.id) === String(playerId));
                         if (!p) return;
                         // Find the effect type from the last item played
                         const lastEf = lastItemPlayed?.item?.effect;
@@ -1184,7 +1184,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                           // Poison all enemy players' units
                           const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
                           players.forEach(p => {
-                            if (p.id === srcPlayer.id) return;
+                            if (String(p.id) === String(srcPlayer.id)) return;
                             const newCmdStats = { ...p.commanderStats, statusEffects: [...(p.commanderStats.statusEffects || []), poisonEntry] };
                             const newSubs = (p.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), poisonEntry] } : u);
                             updatePlayer(p.id, { commanderStats: newCmdStats, subUnits: newSubs });
@@ -1194,7 +1194,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                         } else if (ef?.type === 'crownsFavor') {
                           const buffDuration = ef.duration || 1;
                           const buffEntry = { type: 'attackBuff', value: 1, duration: buffDuration, permanent: false };
-                          const freshSrc = players.find(p => p.id === srcPlayer.id);
+                          const freshSrc = players.find(p => String(p.id) === String(srcPlayer.id));
                           if (freshSrc) {
                             const newCmdStats = { ...freshSrc.commanderStats, statusEffects: [...(freshSrc.commanderStats.statusEffects || []), buffEntry] };
                             const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), buffEntry] } : u);
@@ -1231,7 +1231,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                               addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — all active NPCs poisoned (${mDmgPerRound}hp×${mDuration}r)!`);
                             } else if (mef.type === 'playerPlague') {
                               players.forEach(p => {
-                                if (p.id === srcPlayer.id) return;
+                                if (String(p.id) === String(srcPlayer.id)) return;
                                 const newCmdStats = { ...p.commanderStats, statusEffects: [...(p.commanderStats.statusEffects || []), poisonEntry] };
                                 const newSubs = (p.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), poisonEntry] } : u);
                                 updatePlayer(p.id, { commanderStats: newCmdStats, subUnits: newSubs });
@@ -1240,7 +1240,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                             } else if (mef.type === 'crownsFavor') {
                               const mBufDur = mef.duration || 1;
                               const buffEntry = { type: 'attackBuff', value: 1, duration: mBufDur, permanent: false };
-                              const freshSrc = players.find(p => p.id === srcPlayer.id);
+                              const freshSrc = players.find(p => String(p.id) === String(srcPlayer.id));
                               if (freshSrc) {
                                 const newCmd = { ...freshSrc.commanderStats, statusEffects: [...(freshSrc.commanderStats.statusEffects || []), buffEntry] };
                                 const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), buffEntry] } : u);
@@ -1251,7 +1251,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                             consume();
                           } else if (selfTypes.includes(mef?.type)) {
                             // Self-targeted items — apply to the mirror user's own units
-                            const freshSrc = players.find(p => p.id === srcPlayer.id);
+                            const freshSrc = players.find(p => String(p.id) === String(srcPlayer.id));
                             if (freshSrc) {
                               const mDuration2 = mef.duration || 1;
                               const addEffect = (effects, entry) => [...(effects || []), entry];
@@ -1956,7 +1956,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           onConfirm={(takenItems, droppedItems) => {
             const { items, playerId, attackerPlayer, unitLabel, playerName } = pvpDeathModal;
             const allIds = new Set(items.map(it => it.id));
-            const victim = players.find(p => p.id === playerId);
+            const victim = players.find(p => String(p.id) === String(playerId));
             if (victim) updatePlayer(victim.id, { inventory: (victim.inventory||[]).filter(it => !allIds.has(it.id)) });
             if (takenItems.length > 0) {
               const freshAtk = players.find(p => p.id === attackerPlayer?.id);
@@ -1999,7 +1999,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         const setTargetMode = setEnemyTargetMode;
 
         const applyToPlayerUnit = (targetPlayerId, unitType) => {
-          const target = players.find(p => p.id === targetPlayerId);
+          const target = players.find(p => String(p.id) === String(targetPlayerId));
           if (!target) return;
           let statusEntry = null;
           if (ef.type === 'poisonVial')             statusEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };

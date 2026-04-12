@@ -119,7 +119,7 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
   // ── Chest loot ────────────────────────────────────────────────────────────
 
   const handleChestLoot = (item, playerId, requiredKeyName) => {
-    const player = players.find(p => p.id === playerId);
+    const player = players.find(p => String(p.id) === String(playerId));
     if (!player) return;
     setChestLootClaim(prev => {
       const existingItems = prev?.player?.id === playerId ? (prev.items || []) : [];
@@ -165,7 +165,7 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
   // ── DM manual drop ────────────────────────────────────────────────────────
 
   const handleDropLoot = (item, playerId, unitType, droppedItem = null) => {
-    const player = players.find(p => p.id === playerId);
+    const player = players.find(p => String(p.id) === String(playerId));
     if (!player) return;
     const lootItem = {
       id: `loot_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
@@ -199,11 +199,11 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
     const { sourcePlayer, sourceUnitType, item } = handOffModal;
 
     // Always use fresh player data from the players array
-    const freshSource = players.find(p => p.id === sourcePlayer.id);
-    const freshTarget = players.find(p => p.id === targetPlayerId);
+    const freshSource = players.find(p => String(p.id) === String(sourcePlayer.id));
+    const freshTarget = players.find(p => String(p.id) === String(targetPlayerId));
     if (!freshSource || !freshTarget) return;
 
-    const isSamePlayer = freshSource.id === freshTarget.id;
+    const isSamePlayer = String(freshSource.id) === String(freshTarget.id);
     const sourceUnitLabel = unitNameByType(freshSource, sourceUnitType);
     const targetUnitLabel = unitNameByType(freshTarget, targetUnitType);
 
@@ -223,7 +223,7 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
         let newTargetInv = (freshTarget.inventory || []);
         if (targetDroppedItem) newTargetInv = newTargetInv.filter(it => it.id !== targetDroppedItem.id);
         newTargetInv = [...newTargetInv, { ...item, heldBy: targetUnitType }];
-        updatePlayer(targetPlayerId, { inventory: newTargetInv });
+        updatePlayer(String(targetPlayerId), { inventory: newTargetInv });
 
         addLog(`🎁 ${freshSource.playerName}'s ${sourceUnitLabel} gave "${item.name}" to ${freshTarget.playerName}'s ${targetUnitLabel}`);
       }
@@ -252,7 +252,7 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
         const newTargetInv = (freshTarget.inventory || [])
           .filter(it => it.id !== tradedItem.id)
           .concat({ ...item, heldBy: targetUnitType });
-        updatePlayer(targetPlayerId, { inventory: newTargetInv });
+        updatePlayer(String(targetPlayerId), { inventory: newTargetInv });
 
         addLog(`⇄ ${freshSource.playerName}'s ${sourceUnitLabel} traded "${item.name}" with ${freshTarget.playerName}'s ${targetUnitLabel} for "${tradedItem.name}"`);
       }

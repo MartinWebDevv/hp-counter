@@ -20,7 +20,7 @@ const DamageDistribution = ({
         if (calculatorData.attackerIsSquad) {
           let total = 0;
           Object.entries(calculatorData.squadMemberHits || {}).forEach(([unitType, hits]) => {
-            const attacker = players.find(p => p.id === calculatorData.attackerId);
+            const attacker = players.find(p => String(p.id) === String(calculatorData.attackerId));
             if (!attacker) return;
             const memberStats = getUnitStats(attacker, unitType);
             if (!memberStats) return;
@@ -31,7 +31,7 @@ const DamageDistribution = ({
           });
           return total;
         } else {
-          const attacker = players.find(p => p.id === calculatorData.attackerId);
+          const attacker = players.find(p => String(p.id) === String(calculatorData.attackerId));
           if (!attacker) return 0;
           const stats = getUnitStats(attacker, calculatorData.attackingUnitType);
           if (!stats) return 0;
@@ -56,7 +56,7 @@ const DamageDistribution = ({
   };
 
   // Attacker info for counter strike display
-  const attackerPlayer = players.find(p => p.id === calculatorData.attackerId);
+  const attackerPlayer = players.find(p => String(p.id) === String(calculatorData.attackerId));
   const atkType = calculatorData.attackingUnitType || 'commander';
   const attackerUnitName = atkType === 'commander'
     ? (attackerPlayer?.commanderStats?.customName || attackerPlayer?.commander || 'Commander')
@@ -246,7 +246,7 @@ const DamageDistribution = ({
             }
 
             // ── Player target ────────────────────────────────────────────────
-            const targetPlayer = players.find(p => p.id === target.playerId);
+            const targetPlayer = players.find(p => String(p.id) === String(target.playerId));
             if (!targetPlayer || targetPlayer.isAbsent) return null;
 
             const key = `${target.playerId}-${target.unitType}`;

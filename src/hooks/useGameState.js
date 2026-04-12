@@ -149,7 +149,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     }].slice(-10));
     
     setPlayers(prev => prev.map(player => 
-      player.id === playerId ? { ...player, ...updates } : player
+      String(player.id) === String(playerId) ? { ...player, ...updates } : player
     ));
   };
 
@@ -170,7 +170,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
 
   const toggleSquad = (playerId) => {
     setPlayers(prev => prev.map(player => {
-      if (player.id !== playerId) return player;
+      if (String(player.id) !== String(playerId)) return player;
       
       if (!player.isSquad) {
         return {
@@ -195,7 +195,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
 
   const useRevive = (playerId, isSuccessful = true) => {
     setPlayers(prev => prev.map(player => {
-      if (player.id !== playerId) return player;
+      if (String(player.id) !== String(playerId)) return player;
       
       if (player.commanderStats.revives <= 0 || player.commanderStats.hp > 0) {
         return player;
@@ -230,7 +230,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
       }
     }));
     
-    const player = players.find(p => p.id === playerId);
+    const player = players.find(p => String(p.id) === String(playerId));
     if (player) {
       if (isSuccessful) {
         const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
@@ -269,7 +269,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
    */
   const processSquadRevive = (playerId, isSuccessful) => {
     setPlayers(prev => prev.map(player => {
-      if (player.id !== playerId) return player;
+      if (String(player.id) !== String(playerId)) return player;
 
       const queue = player.reviveQueue || [];
       if (queue.length === 0) return player;

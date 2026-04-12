@@ -15,7 +15,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     action,
     attackingUnitType = "commander",
   ) => {
-    const attacker = players.find((p) => p.id === attackerId);
+    const attacker = players.find((p) => String(p.id) === String(attackerId));
     if (!attacker) return;
 
     setCalculatorData({
@@ -101,7 +101,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
       let hasChanges = false;
 
       // Set cooldown if attacker used special
-      if (player.id === calculatorData.attackerId && 
+      if (String(player.id) === String(calculatorData.attackerId) && 
           calculatorData.action === 'special' && 
           calculatorData.attackingUnitType === 'commander') {
         hasChanges = true;
@@ -183,7 +183,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     calculatorData.targetSquadMembers.forEach(target => {
       const dmg = damageDistribution[`${target.playerId}-${target.unitType}`] || 0;
       if (dmg <= 0) return;
-      const targetPlayerUpdated = updatedPlayers.find(p => p.id === target.playerId);
+      const targetPlayerUpdated = updatedPlayers.find(p => String(p.id) === String(target.playerId));
       if (!targetPlayerUpdated) return;
       if (!getEffects(targetPlayerUpdated, target.unitType).some(ef => ef.type === 'counterStrike')) return;
       const reflect = Math.ceil(dmg / 2);
@@ -192,7 +192,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     const updatedWithCounter = updatedPlayers;
 
     // Apply counter strike damage to attacker
-    const attackerPlayer = players.find(p => p.id === calculatorData.attackerId);
+    const attackerPlayer = players.find(p => String(p.id) === String(calculatorData.attackerId));
     let finalPlayers = updatedWithCounter;
     if (counterStrikeLog.length > 0 && attackerPlayer) {
       const totalReflect = counterStrikeLog.reduce((s, r) => s + r.reflect, 0);
@@ -216,7 +216,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     }
 
     // Log the action
-    const attacker = players.find(p => p.id === calculatorData.attackerId);
+    const attacker = players.find(p => String(p.id) === String(calculatorData.attackerId));
     
     let attackerName = '';
     if (calculatorData.attackingUnitType === 'commander') {
@@ -242,7 +242,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     calculatorData.targetSquadMembers
       .filter((m) => !m.isNPC && damageDistribution[`${m.playerId}-${m.unitType}`] > 0)
       .forEach((m) => {
-        const target = players.find((p) => p.id === m.playerId);
+        const target = players.find((p) => String(p.id) === String(m.playerId));
         const damage = damageDistribution[`${m.playerId}-${m.unitType}`];
         let unitName = '';
         if (m.unitType === 'commander') {

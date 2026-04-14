@@ -45,6 +45,9 @@ export const useVPState = (players, addLog) => {
   // ── Stat tracking ──────────────────────────────────────────────────────────
 
   const trackVP = (playerId, statKey, delta) => {
+    // Don't award VP to absent players
+    const player = players.find(p => String(p.id) === String(playerId));
+    if (player?.isAbsent) return;
     setVpStats(prev => {
       const next = {
         ...prev,

@@ -11,6 +11,7 @@ const PlayerCard = ({
   player,
   onUpdate,
   onRemove,
+  onKick,
   onToggleSquad,
   onOpenCalculator,
   onUseRevive,
@@ -30,6 +31,7 @@ const PlayerCard = ({
 }) => {
   const [showSquad, setShowSquad] = React.useState(true);
   const [showSetup, setShowSetup] = React.useState(false);
+  const [showKickModal, setShowKickModal] = React.useState(false);
   const [showReviveModal, setShowReviveModal] = React.useState(false);
   const [healTargetItem, setHealTargetItem] = React.useState(null);
   const [maxHpTargetItem, setMaxHpTargetItem] = React.useState(null);
@@ -173,8 +175,41 @@ const PlayerCard = ({
             background: showSetup ? colors.purpleSubtle : 'rgba(0,0,0,0.3)',
           }}
         >⚙️</button>
+        {onKick && (
+          <button onClick={() => setShowKickModal(true)} style={btn.icon('#fb923c')} title="Kick player">👢</button>
+        )}
         <button onClick={() => onRemove(player.id)} style={btn.icon('#fca5a5')} title="Remove">✕</button>
       </div>
+
+      {/* ── Kick Modal ── */}
+      {showKickModal && (
+        <div onClick={() => setShowKickModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: '2px solid rgba(251,146,60,0.5)', borderRadius: '14px', padding: '1.5rem', width: '320px', maxWidth: '95%', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.1rem' }}>
+              <div style={{ fontSize: '1.8rem', marginBottom: '0.4rem' }}>👢</div>
+              <div style={{ color: '#fb923c', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.06em', marginBottom: '0.25rem' }}>Kick Player</div>
+              <div style={{ color: colors.textMuted, fontSize: '0.78rem' }}>What should happen to <span style={{ color: pColor, fontWeight: '800' }}>{player.playerName}</span>?</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.9rem' }}>
+              <button
+                onClick={() => { onKick(player.id, 'absent'); setShowKickModal(false); }}
+                style={{ padding: '0.75rem', background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.4)', borderRadius: '8px', color: '#d1d5db', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.85rem', textAlign: 'left' }}
+              >
+                <div>😴 Mark as Absent</div>
+                <div style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '600', marginTop: '0.2rem' }}>GM takes control. Slot locked — player cannot rejoin.</div>
+              </button>
+              <button
+                onClick={() => { onKick(player.id, 'left'); setShowKickModal(false); }}
+                style={{ padding: '0.75rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '8px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.85rem', textAlign: 'left' }}
+              >
+                <div>🚪 Mark as Left</div>
+                <div style={{ color: colors.textFaint, fontSize: '0.68rem', fontWeight: '600', marginTop: '0.2rem' }}>GM takes control. Slot reopens — player can rejoin.</div>
+              </button>
+            </div>
+            <button onClick={() => setShowKickModal(false)} style={{ width: '100%', padding: '0.6rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontSize: '0.8rem' }}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Setup: Faction + Commander ── */}
       {showSetup && (

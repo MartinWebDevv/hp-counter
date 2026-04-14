@@ -33,7 +33,11 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
       const savedPlayerIndex = localStorage.getItem('hpCounterCurrentPlayerIndex');
       const savedGameStarted = localStorage.getItem('hpCounterGameStarted');
       
-      if (savedPlayers) setPlayers(JSON.parse(savedPlayers));
+      if (savedPlayers) {
+        const parsed = JSON.parse(savedPlayers);
+        // Always clear session-specific flags on localStorage restore — these only apply in live multiplayer
+        setPlayers(parsed.map(p => ({ ...p, isAbsent: false, isManual: false, isLeft: false })));
+      }
       if (savedRound) setCurrentRound(parseInt(savedRound));
       if (savedLog) setCombatLog(JSON.parse(savedLog));
       if (savedMode) setGameMode(savedMode);

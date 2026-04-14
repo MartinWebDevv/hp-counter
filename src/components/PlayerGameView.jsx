@@ -29,9 +29,19 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
     if (!lobbyCode) return;
     const unsub = subscribeGameState(lobbyCode, (state) => {
       setGameState(state);
+      // Detect if this player was kicked — their record will have isAbsent: true
+      if (playerData?.uid || playerData?.id) {
+        const myRecord = (state.players || []).find(p =>
+          (playerData.uid && p.uid === playerData.uid) ||
+          (playerData.id && String(p.id) === String(playerData.id))
+        );
+        if (myRecord?.isAbsent) {
+          if (onLeaveGame) onLeaveGame();
+        }
+      }
     });
     return () => unsub();
-  }, [lobbyCode]);
+  }, [lobbyCode, playerData?.uid, playerData?.id, onLeaveGame]);
 
   // ── Watch for GM denial notices ───────────────────────────────────────────
   React.useEffect(() => {
@@ -134,7 +144,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   ];
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', background: 'linear-gradient(145deg,#0a0505,#100808)', fontFamily: fonts.body, paddingBottom: '5rem' }}>
+    <div className="pv-root" style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden', background: 'linear-gradient(145deg,#0a0505,#100808)', fontFamily: fonts.body, paddingBottom: '5rem', width: '100%', boxSizing: 'border-box' }}>
 
       {/* Denied toast */}
       {deniedToast && (
@@ -145,16 +155,16 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
       )}
 
       {/* Top bar */}
-      <div style={{ background: 'rgba(0,0,0,0.6)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem', letterSpacing: '0.1em' }}>
+      <div style={{ background: 'rgba(0,0,0,0.6)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem', letterSpacing: '0.1em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {playerData?.playerName || playerData?.commanderName || 'Player'}
           </div>
-          <div style={{ color: colors.textFaint, fontSize: '0.62rem', letterSpacing: '0.08em' }}>
+          <div style={{ color: colors.textFaint, fontSize: '0.62rem', letterSpacing: '0.08em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {playerData?.faction} · Lobby: {lobbyCode}
           </div>
         </div>
-        <div style={{ background: 'rgba(201,169,97,0.1)', border: '1px solid rgba(201,169,97,0.25)', borderRadius: '8px', padding: '0.35rem 0.75rem', textAlign: 'center' }}>
+        <div style={{ background: 'rgba(201,169,97,0.1)', border: '1px solid rgba(201,169,97,0.25)', borderRadius: '8px', padding: '0.35rem 0.75rem', textAlign: 'center', flexShrink: 0 }}>
           <div style={{ color: colors.textFaint, fontSize: '0.55rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Round</div>
           <div style={{ color: colors.gold, fontWeight: '900', fontSize: '1.1rem', lineHeight: 1 }}>{currentRound}</div>
         </div>
@@ -173,7 +183,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
       </div>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.4)', overflowX: 'auto' }}>
+      <div className="pv-tabs" style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.4)', overflowX: 'auto' }}>
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
             flex: 1, padding: '0.75rem 0.5rem', border: 'none', cursor: 'pointer',
@@ -226,7 +236,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
       })()}
 
       {/* Content */}
-      <div style={{ padding: '1rem', maxWidth: '700px', margin: '0 auto' }}>
+      <div className="pv-content" style={{ padding: '1rem', maxWidth: '700px', width: '100%', margin: '0 auto', boxSizing: 'border-box', paddingBottom: '3rem' }}>
 
         {/* ── My Character ─────────────────────────────────────────────── */}
         {activeTab === 'mine' && (
@@ -245,20 +255,20 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
           visiblePlayers.length === 0
             ? <EmptyState icon="👥" text="No players in the session yet." />
             : (
-              <div>
+              <div style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
                 {/* Navigation */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div className="pv-carousel-nav" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', width: '100%', minWidth: 0 }}>
                   <button
                     onClick={() => setPlayerIdx(i => Math.max(0, i - 1))}
                     disabled={safeIdx === 0}
                     style={navBtn(safeIdx === 0)}
                   >←</button>
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{ color: colors.textMuted, fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  <div style={{ flex: 1, textAlign: 'center', minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ color: colors.textMuted, fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                       Player {safeIdx + 1} of {visiblePlayers.length}
                     </div>
                     {/* Player selector dots */}
-                    <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginTop: '0.3rem' }}>
+                    <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginTop: '0.3rem', flexWrap: 'wrap' }}>
                       {visiblePlayers.map((p, i) => (
                         <div
                           key={p.id}
@@ -300,7 +310,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
           return (
             <>
               {/* Filter pills */}
-              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
+              <div className="pv-npc-filters" style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
                 {['All', 'Active', 'Inactive', 'Dead'].map(f => (
                   <button key={f} onClick={() => setNpcFilter(f)} style={{
                     padding: '0.3rem 0.75rem', borderRadius: '20px', cursor: 'pointer',
@@ -788,7 +798,7 @@ const ReadOnlyPlayerCard = ({
 
   return (
     <>
-    <div style={{ ...cardShell(false, pColor, false), opacity: isDead ? 0.55 : 1, border: highlight ? `2px solid ${pColor}` : undefined }}>
+    <div style={{ ...cardShell(false, pColor, false), opacity: isDead ? 0.55 : 1, border: highlight ? `2px solid ${pColor}` : undefined, width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem', paddingBottom: '0.65rem', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -845,7 +855,7 @@ const ReadOnlyPlayerCard = ({
 
         {/* Commander attack buttons */}
         {isOwnCard && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+          <div className="pv-cmd-attacks" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
             {[
               { label: '🎯 Shoot',   action: 'shoot'   },
               { label: '⚔️ Melee',   action: 'melee'   },
@@ -875,7 +885,7 @@ const ReadOnlyPlayerCard = ({
       {/* ── Squad units ── */}
       {showSquad && (
         <div style={{ border: `1px solid ${colors.purpleBorder}`, borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden', marginBottom: '0.6rem' }}>
-          <div style={{ maxHeight: 'calc(3 * 120px)', overflowY: 'auto', overflowX: 'hidden' }}>
+          <div style={{ overflowX: 'hidden' }}>
           {(player.subUnits || []).map((unit, index) => {
             const unitDead = unit.hp === 0;
             const livesRemaining = unit.livesRemaining ?? unit.revives ?? 0;
@@ -889,15 +899,15 @@ const ReadOnlyPlayerCard = ({
             const heldCount = getHeldCount(player, unitKey);
             const unitLabel = unit.name?.trim() || (index === 0 ? 'Special' : `Soldier ${index}`);
             return (
-              <div key={index} style={{ padding: '0.6rem 0.75rem', background: isPermaDead ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.25)', borderBottom: index < (player.subUnits || []).length - 1 ? `1px solid ${colors.purpleBorder}` : 'none', opacity: isPermaDead ? 0.3 : unitDead ? 0.55 : 1, filter: isPermaDead ? 'grayscale(1)' : 'none' }}>
+              <div key={index} style={{ padding: '0.75rem', background: isPermaDead ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.25)', borderBottom: index < (player.subUnits || []).length - 1 ? `1px solid ${colors.purpleBorder}` : 'none', opacity: isPermaDead ? 0.3 : unitDead ? 0.55 : 1, filter: isPermaDead ? 'grayscale(1)' : 'none' }}>
                 {/* Unit name row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.4rem' }}>
-                  <span style={{ flex: 1, color: colors.purpleLight, fontWeight: '700', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.5rem' }}>
+                  <span style={{ flex: 1, color: colors.purpleLight, fontWeight: '700', fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {index === 0 ? '⭐ ' : '🛡️ '}{unitLabel}
                   </span>
                   {/* Uncivilized subtype badge */}
                   {unit.unitSubType && (
-                    <span style={{ fontSize: '0.6rem', fontWeight: '800', flexShrink: 0, color: unit.unitSubType === 'dinosaur' ? '#6ee7b7' : '#fbbf24' }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: '800', flexShrink: 0, color: unit.unitSubType === 'dinosaur' ? '#6ee7b7' : '#fbbf24' }}>
                       {unit.unitSubType === 'dinosaur' ? '🦕' : '🪨'}
                     </span>
                   )}
@@ -913,29 +923,28 @@ const ReadOnlyPlayerCard = ({
                     </span>
                   )}
                 </div>
-                {/* HP bar + attack buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.3rem' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.18rem' }}>
-                      <span style={{ color: colors.purpleLight, fontSize: '0.75rem', fontWeight: '700' }}>{unit.hp}/{unit.maxHp}</span>
-                    </div>
-                    <div style={{ height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${unitHPPct}%`, height: '100%', background: hpBarColor(unitHPPct), transition: 'width 0.3s ease' }} />
-                    </div>
+                {/* HP display */}
+                <div style={{ marginBottom: '0.4rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <span style={{ color: colors.purpleLight, fontSize: '0.82rem', fontWeight: '700' }}>{unit.hp}/{unit.maxHp} HP</span>
                   </div>
-                  {isOwnCard && (
-                    <>
-                      <button onClick={() => openAttack(unitKey, 'shoot', unitLabel)} disabled={unitDead}
-                        style={{ ...btn.hpSmall(unitDead), background: unitDead ? 'transparent' : colors.blueSubtle, border: `1px solid ${unitDead ? colors.textDisabled : colors.blueBorder}`, color: unitDead ? colors.textDisabled : colors.blueLight }}>
-                        🎯
-                      </button>
-                      <button onClick={() => openAttack(unitKey, 'melee', unitLabel)} disabled={unitDead}
-                        style={{ ...btn.hpSmall(unitDead), background: unitDead ? 'transparent' : colors.blueSubtle, border: `1px solid ${unitDead ? colors.textDisabled : colors.blueBorder}`, color: unitDead ? colors.textDisabled : colors.blueLight }}>
-                        ⚔️
-                      </button>
-                    </>
-                  )}
+                  <div style={{ height: '6px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${unitHPPct}%`, height: '100%', background: hpBarColor(unitHPPct), transition: 'width 0.3s ease', borderRadius: '3px' }} />
+                  </div>
                 </div>
+                {/* Attack buttons */}
+                {isOwnCard && (
+                  <div className="pv-unit-attacks" style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                    <button onClick={() => openAttack(unitKey, 'shoot', unitLabel)} disabled={unitDead}
+                      style={{ flex: 1, padding: '0.4rem 0', background: unitDead ? 'transparent' : colors.blueSubtle, border: `1px solid ${unitDead ? colors.textDisabled : colors.blueBorder}`, color: unitDead ? colors.textDisabled : colors.blueLight, borderRadius: '6px', cursor: unitDead ? 'not-allowed' : 'pointer', fontFamily: fonts.body, fontSize: '0.72rem', fontWeight: '800' }}>
+                      🎯 Shoot
+                    </button>
+                    <button onClick={() => openAttack(unitKey, 'melee', unitLabel)} disabled={unitDead}
+                      style={{ flex: 1, padding: '0.4rem 0', background: unitDead ? 'transparent' : colors.blueSubtle, border: `1px solid ${unitDead ? colors.textDisabled : colors.blueBorder}`, color: unitDead ? colors.textDisabled : colors.blueLight, borderRadius: '6px', cursor: unitDead ? 'not-allowed' : 'pointer', fontFamily: fonts.body, fontSize: '0.72rem', fontWeight: '800' }}>
+                      ⚔️ Melee
+                    </button>
+                  </div>
+                )}
                 {/* Unit loot slot */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                   <span style={{ ...pill(colors.textFaint, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.3)'), fontSize: '0.6rem', fontWeight: '800', flexShrink: 0 }}>🎒 {heldCount}/{slotCount}</span>
@@ -957,7 +966,7 @@ const ReadOnlyPlayerCard = ({
         {inventory.length === 0 && (
           <div style={{ color: colors.textFaint, fontSize: '0.75rem', textAlign: 'center', padding: '0.85rem' }}>No items</div>
         )}
-        <div style={{ maxHeight: 'calc(3 * 72px)', overflowY: 'auto', overflowX: 'hidden' }}>
+        <div style={{ overflowX: 'hidden' }}>
           {inventory.map((item, i) => {
             const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
             const usesLeft = item.effect?.uses === 0 ? 999 : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
@@ -1002,42 +1011,49 @@ const ReadOnlyPlayerCard = ({
                   })();
 
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.55rem 0.85rem', borderLeft: `3px solid ${tc.text}`, borderBottom: i < inventory.length - 1 ? '1px solid rgba(201,169,97,0.07)' : 'none', opacity: canUse ? 1 : 0.4 }}>
-                <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: tc.text, fontWeight: '700', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                  {item.description && (
-                    <div style={{ color: colors.textFaint, fontSize: '0.65rem', lineHeight: '1.3', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', marginBottom: '0.04rem' }}>
-                      {item.description}
-                    </div>
-                  )}
-                  <div style={{ color: colors.textFaint, fontSize: '0.6rem', marginTop: '0.04rem' }}>
-                    {heldByLabel}
-                    {item.effect?.uses !== 0 && usesLeft !== 999 && ` · ${usesLeft} use${usesLeft !== 1 ? 's' : ''} left`}
+              <div key={i} style={{ padding: '0.65rem 0.85rem', borderLeft: `3px solid ${tc.text}`, borderBottom: i < inventory.length - 1 ? '1px solid rgba(201,169,97,0.07)' : 'none', opacity: canUse ? 1 : 0.4 }}>
+                {/* Row 1: icon + name + description + tier badge */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                  <span style={{ fontSize: '0.95rem', flexShrink: 0, marginTop: '0.05rem' }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: tc.text, fontWeight: '700', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                    {item.description && (
+                      <div style={{ color: colors.textFaint, fontSize: '0.63rem', lineHeight: '1.3', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {item.description}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.2rem', flexShrink: 0, alignItems: 'center' }}>
+                    {item.isQuestItem && <span style={pill('#fde68a', 'rgba(234,179,8,0.1)', 'rgba(234,179,8,0.35)')}>QUEST</span>}
+                    <span style={pill(tc.color || tc.text, tc.subtle || tc.bg, tc.border)}>{item.isQuestItem ? 'Quest' : item.tier}</span>
                   </div>
                 </div>
-                {item.isQuestItem && <span style={pill('#fde68a', 'rgba(234,179,8,0.1)', 'rgba(234,179,8,0.35)')}>QUEST</span>}
-                <span style={pill(tc.color || tc.text, tc.subtle || tc.bg, tc.border)}>{item.isQuestItem ? 'Quest' : item.tier}</span>
-                {isOwnCard && (
-                  <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {showUseButton && (
-                      <button onClick={() => sendItemRequest('use')} disabled={!canUse || sending}
-                        style={{ ...pill(canUse ? tc.text : colors.textDisabled, canUse ? (tc.subtle || tc.bg) : 'rgba(0,0,0,0.2)', canUse ? tc.border : 'rgba(90,74,58,0.2)'), cursor: canUse && !sending ? 'pointer' : 'not-allowed', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body, border: `1px solid ${canUse ? tc.border : 'rgba(90,74,58,0.2)'}` }}>✦ USE</button>
-                    )}
-                    {isKey && (
-                      <button onClick={() => sendItemRequest('useKey')} disabled={sending}
-                        style={{ ...pill(colors.amber, colors.amberSubtle, colors.amberBorder), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🔑 USE</button>
-                    )}
-                    {!item.isQuestItem && (
-                      <button onClick={() => sendItemRequest('pass')} disabled={sending}
-                        style={{ ...pill(colors.textMuted, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.35)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🤝 PASS</button>
-                    )}
-                    {!item.isQuestItem && (
-                      <button onClick={() => { if (window.confirm(`Drop "${item.name}"?`)) sendItemRequest('drop'); }} disabled={sending}
-                        style={{ ...pill('#f87171', 'rgba(239,68,68,0.08)', 'rgba(239,68,68,0.3)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🗑</button>
-                    )}
-                  </div>
-                )}
+                {/* Row 2: holder label + action buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ color: colors.textFaint, fontSize: '0.6rem', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {heldByLabel}{item.effect?.uses !== 0 && usesLeft !== 999 && ` · ${usesLeft} use${usesLeft !== 1 ? 's' : ''} left`}
+                  </span>
+                  {isOwnCard && (
+                    <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                      {showUseButton && (
+                        <button onClick={() => sendItemRequest('use')} disabled={!canUse || sending}
+                          style={{ ...pill(canUse ? tc.text : colors.textDisabled, canUse ? (tc.subtle || tc.bg) : 'rgba(0,0,0,0.2)', canUse ? tc.border : 'rgba(90,74,58,0.2)'), cursor: canUse && !sending ? 'pointer' : 'not-allowed', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body, border: `1px solid ${canUse ? tc.border : 'rgba(90,74,58,0.2)'}` }}>✦ USE</button>
+                      )}
+                      {isKey && (
+                        <button onClick={() => sendItemRequest('useKey')} disabled={sending}
+                          style={{ ...pill(colors.amber, colors.amberSubtle, colors.amberBorder), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🔑 USE</button>
+                      )}
+                      {!item.isQuestItem && (
+                        <button onClick={() => sendItemRequest('pass')} disabled={sending}
+                          style={{ ...pill(colors.textMuted, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.35)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🤝 PASS</button>
+                      )}
+                      {!item.isQuestItem && (
+                        <button onClick={() => { if (window.confirm(`Drop "${item.name}"?`)) sendItemRequest('drop'); }} disabled={sending}
+                          style={{ ...pill('#f87171', 'rgba(239,68,68,0.08)', 'rgba(239,68,68,0.3)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🗑</button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1382,8 +1398,8 @@ const NPCMovesetModal = ({ npc, onClose }) => {
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000, padding: '1rem' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '420px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000, padding: '1rem', boxSizing: 'border-box' }}>
+      <div className="pv-modal-inner" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: '14px', padding: '1.5rem', width: 'calc(100% - 2rem)', maxWidth: '480px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.9)', boxSizing: 'border-box' }}>
 
         {/* Header */}
         <div style={{ marginBottom: '1.1rem' }}>
@@ -1492,6 +1508,117 @@ if (typeof document !== 'undefined' && !document.getElementById('turnPulseStyle'
     @keyframes turnPulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%       { opacity: 0.5; transform: scale(0.85); }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+if (typeof document !== 'undefined' && !document.getElementById('pvMobileStyle')) {
+  const style = document.createElement('style');
+  style.id = 'pvMobileStyle';
+  style.textContent = `
+    /* ── Player View portrait mobile ───────────────────────────── */
+    @media screen and (max-width: 480px) and (orientation: portrait) {
+
+      /* Outer container: never scroll sideways */
+      .pv-root {
+        overflow-x: hidden !important;
+        width: 100% !important;
+      }
+
+      /* Tab bar: equal width tabs, no overflow */
+      .pv-tabs button {
+        padding: 0.65rem 0.25rem !important;
+        font-size: 0.65rem !important;
+        min-width: 0 !important;
+      }
+
+      /* Turn indicator: tighter */
+      .pv-turn-bar {
+        padding: 0.4rem 0.75rem !important;
+        min-height: 32px !important;
+      }
+
+      /* Content area: full width, comfortable padding */
+      .pv-content {
+        padding: 0.75rem !important;
+        padding-bottom: 4rem !important;
+      }
+
+      /* Commander attack buttons: slightly smaller text */
+      .pv-cmd-attacks button {
+        padding: 0.55rem 0.25rem !important;
+        font-size: 0.72rem !important;
+        letter-spacing: 0 !important;
+      }
+
+      /* Squad unit attack buttons: full width row */
+      .pv-unit-attacks {
+        display: flex !important;
+        gap: 0.4rem !important;
+      }
+      .pv-unit-attacks button {
+        flex: 1 !important;
+        padding: 0.45rem 0 !important;
+        font-size: 0.72rem !important;
+      }
+
+      /* Inventory section: readable item names */
+      .pv-inventory-item {
+        padding: 0.6rem 0.75rem !important;
+      }
+      .pv-inventory-item .item-name {
+        font-size: 0.82rem !important;
+      }
+      .pv-inventory-item .item-desc {
+        font-size: 0.62rem !important;
+      }
+
+      /* Stats panel: tighter rows */
+      .pv-stats-row {
+        padding: 0.25rem 0 !important;
+        font-size: 0.68rem !important;
+      }
+
+      /* NPC cards: comfortable */
+      .pv-npc-card {
+        padding: 0.85rem !important;
+      }
+
+      /* NPC filter pills: wrap nicely */
+      .pv-npc-filters {
+        gap: 0.3rem !important;
+        flex-wrap: wrap !important;
+      }
+      .pv-npc-filters button {
+        padding: 0.28rem 0.6rem !important;
+        font-size: 0.65rem !important;
+      }
+
+      /* Modals: full width minus safe margin */
+      .pv-modal-inner {
+        width: calc(100vw - 2rem) !important;
+        max-width: none !important;
+        padding: 1.25rem !important;
+        border-radius: 12px !important;
+      }
+
+      /* Player carousel nav */
+      .pv-carousel-nav {
+        gap: 0.35rem !important;
+      }
+
+      /* Victory tab: readable */
+      .pv-victory-row {
+        font-size: 0.78rem !important;
+        padding: 0.5rem !important;
+      }
+    }
+
+    /* ── Shared: always prevent horizontal scroll ────────────────── */
+    .pv-root {
+      overflow-x: hidden;
+      max-width: 100vw;
     }
   `;
   document.head.appendChild(style);

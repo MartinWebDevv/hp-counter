@@ -33,7 +33,7 @@ import RoundTimerPanel         from './RoundTimerPanel';
 import CommanderTokenPanel     from './CommanderTokenPanel';
 import useFirestoreSync        from '../hooks/useFirestoreSync';
 import { subscribePendingRequests, resolvePendingRequest, writePendingChoice, resolvePendingChoice, subscribePendingChoices } from '../services/gameStateService';
-import { subscribePlayerLeft, subscribePlayerRejoin } from '../services/lobbyService';
+import { subscribePlayerLeft, subscribePlayerRejoin, markPlayerLeft } from '../services/lobbyService';
 
 
 
@@ -881,6 +881,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         try {
           const state = JSON.parse(ev.target.result);
           if (!state.players || !Array.isArray(state.players)) { alert('Invalid save file!'); return; }
+          // In offline mode, clear all session-specific flags — absent/manual/left only apply in live multiplayer
+          if (!isMultiplayer && state.players) {
+            state.players = state.players.map(p => ({ ...p, isAbsent: false, isManual: false, isLeft: false }));
+          }
           loadGameState(state);
           if (state.npcs)     setNpcs(state.npcs);
           if (state.lootPool) setLootPool(state.lootPool);
@@ -905,6 +909,22 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       reader.readAsText(file);
     };
     input.click();
+  };
+
+  // ── Kick player (GM action) ─────────────────────────────────────────────────
+  const handleKick = async (playerId, mode) => {
+    const player = players.find(p => String(p.id) === String(playerId));
+    if (!player) return;
+    if (mode === 'absent') {
+      updatePlayer(playerId, { isAbsent: true, isManual: true, isLeft: false });
+      addLog(`😴 ${player.playerName} was marked absent by GM`);
+    } else if (mode === 'left') {
+      updatePlayer(playerId, { isAbsent: true, isLeft: true, isManual: false });
+      addLog(`🚪 ${player.playerName} was kicked — slot available for rejoin`);
+      if (isMultiplayer && lobbyCode && player.uid) {
+        try { await markPlayerLeft(lobbyCode, player.uid, player.playerName); } catch {}
+      }
+    }
   };
 
   const handleNewSession = () => {
@@ -1117,6 +1137,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                       player={player}
                       onUpdate={updatePlayer}
                       onRemove={removePlayer}
+                      onKick={isMultiplayer ? handleKick : undefined}
                       onToggleSquad={toggleSquad}
                       onOpenCalculator={(attackerId, action, unitType) => {
                         if (attackerId) vp.trackVP(attackerId, 'warmonger', 1);
@@ -1342,7 +1363,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           )}
 
           {isCampaign && activePanel === 'vp' && (
-            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} />
+            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} onUpdateVpStats={vp.setVpStats} />
           )}
 
           {isCampaign && activePanel === 'rooms' && (

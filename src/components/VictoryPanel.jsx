@@ -12,13 +12,15 @@ const CATS = [
   { id: 'finalBossKill', label: 'Final Boss Kill',     icon: '👑', pts: 2 },
 ];
 
-const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession }) => {
+const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpdateVpStats }) => {
   const [manualAward, setManualAward] = useState({ playerId: '', points: 1, reason: '', categoryId: 'finalBossKill' });
   const [showManual, setShowManual] = useState(false);
   const [showDeleteSession, setShowDeleteSession] = useState(false);
   const [deleteSessionConfirm, setDeleteSessionConfirm] = useState(null); // sessionName
   const [expanded, setExpanded] = useState({});
   const [selectedSession, setSelectedSession] = useState({});
+  const [editingVP, setEditingVP] = useState({}); // { [playerId]: draftValue }
+  const [addBubbleModal, setAddBubbleModal] = useState(null); // playerId
 
   if (!players || players.length === 0) {
     return (
@@ -115,7 +117,36 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession }) => {
                   <div style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '600' }}>{sessionAwards.length} award{sessionAwards.length !== 1 ? 's' : ''} across {sessions.length} session{sessions.length !== 1 ? 's' : ''}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ color, fontWeight: '900', fontSize: '1.5rem', lineHeight: 1 }}>{vp}</div>
+                  {editingVP[player.id] !== undefined ? (
+                    <input
+                      type="number"
+                      autoFocus
+                      value={editingVP[player.id]}
+                      onChange={e => setEditingVP(prev => ({ ...prev, [player.id]: e.target.value }))}
+                      onBlur={() => {
+                        const newTotal = parseInt(editingVP[player.id]);
+                        if (!isNaN(newTotal) && onUpdateVpStats) {
+                          const diff = newTotal - vp;
+                          if (diff !== 0) {
+                            onUpdateVpStats(prev => {
+                              const next = { ...prev, [player.id]: { ...(prev[player.id] || {}), manualAwards: [...(prev[player.id]?.manualAwards || []), { points: diff, reason: 'Manual VP adjustment', awardedAt: new Date().toISOString() }] } };
+                              try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+                              return next;
+                            });
+                          }
+                        }
+                        setEditingVP(prev => { const n = { ...prev }; delete n[player.id]; return n; });
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingVP(prev => { const n = { ...prev }; delete n[player.id]; return n; }); }}
+                      style={{ width: '56px', background: 'rgba(0,0,0,0.4)', border: `1px solid ${color}`, borderRadius: '6px', color, fontWeight: '900', fontSize: '1.4rem', textAlign: 'center', padding: '0.1rem 0.2rem', fontFamily: 'inherit' }}
+                    />
+                  ) : (
+                    <div
+                      onClick={() => setEditingVP(prev => ({ ...prev, [player.id]: String(vp) }))}
+                      title="Click to edit VP total"
+                      style={{ color, fontWeight: '900', fontSize: '1.5rem', lineHeight: 1, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: '3px' }}
+                    >{vp}</div>
+                  )}
                   <div style={{ color: colors.textFaint, fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em' }}>VP TOTAL</div>
                 </div>
                 <button onClick={() => setExpanded(prev => ({ ...prev, [player.id]: !prev[player.id] }))} style={{
@@ -123,21 +154,48 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession }) => {
                 }}>{isExpanded ? '▲' : '▼'}</button>
               </div>
 
-              {/* Award icon strip */}
-              {sessionAwards.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.22rem', marginTop: '0.5rem' }}>
-                  {sessionAwards.map((a, i) => (
-                    <span key={i} title={`${a.label} — ${a.sessionName}`} style={pill(colors.gold, colors.goldSubtle, colors.goldBorder)}>
-                      {a.icon} +{a.pts}
-                    </span>
-                  ))}
-                  {manualAwards.map((a, i) => (
-                    <span key={`m${i}`} title={a.reason} style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>
-                      🏅 +{a.points}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {/* Award icon strip — click to remove, + to add */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.22rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                {sessionAwards.map((a, i) => (
+                  <span key={i} title={`${a.label} — ${a.sessionName} (click to remove)`}
+                    onClick={() => {
+                      if (!onUpdateVpStats) return;
+                      onUpdateVpStats(prev => {
+                        const playerStats = prev[player.id] || {};
+                        const updated = { ...playerStats, sessionAwards: (playerStats.sessionAwards || []).filter((_, idx) => idx !== i) };
+                        const next = { ...prev, [player.id]: updated };
+                        try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+                        return next;
+                      });
+                    }}
+                    style={{ ...pill(colors.gold, colors.goldSubtle, colors.goldBorder), cursor: 'pointer' }}>
+                    {a.icon} +{a.pts} ✕
+                  </span>
+                ))}
+                {manualAwards.map((a, i) => (
+                  <span key={`m${i}`} title={`${a.reason} (click to remove)`}
+                    onClick={() => {
+                      if (!onUpdateVpStats) return;
+                      onUpdateVpStats(prev => {
+                        const playerStats = prev[player.id] || {};
+                        const updated = { ...playerStats, manualAwards: (playerStats.manualAwards || []).filter((_, idx) => idx !== i) };
+                        const next = { ...prev, [player.id]: updated };
+                        try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+                        return next;
+                      });
+                    }}
+                    style={{ ...pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder), cursor: 'pointer' }}>
+                    🏅 +{a.points} ✕
+                  </span>
+                ))}
+                {onUpdateVpStats && (
+                  <button
+                    onClick={() => setAddBubbleModal(player.id)}
+                    style={{ ...pill(colors.textFaint, 'rgba(255,255,255,0.04)', 'rgba(255,255,255,0.1)'), cursor: 'pointer', fontFamily: 'inherit', border: '1px dashed rgba(255,255,255,0.2)' }}
+                    title="Add VP category bubble"
+                  >＋</button>
+                )}
+              </div>
 
               {/* Expanded breakdown */}
               {isExpanded && (
@@ -316,6 +374,36 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession }) => {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── Add Bubble Modal ── */}
+      {addBubbleModal && (
+        <div onClick={() => setAddBubbleModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(145deg,#1a0f0a,#0f0805)', border: `2px solid ${colors.goldBorder}`, borderRadius: '14px', padding: '1.5rem', width: '300px', maxWidth: '95%', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+            <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.95rem', textAlign: 'center', marginBottom: '1rem' }}>Add VP Bubble</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+              {CATS.map(cat => (
+                <button key={cat.id} onClick={() => {
+                  if (!onUpdateVpStats) return;
+                  const pid = addBubbleModal;
+                  onUpdateVpStats(prev => {
+                    const playerStats = prev[pid] || {};
+                    const newAward = { label: cat.label, icon: cat.icon, pts: cat.pts, sessionName: 'Manual', categoryId: cat.id, awardedAt: new Date().toISOString() };
+                    const next = { ...prev, [pid]: { ...playerStats, sessionAwards: [...(playerStats.sessionAwards || []), newAward] } };
+                    try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+                    return next;
+                  });
+                  setAddBubbleModal(null);
+                }} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 0.85rem', background: 'rgba(0,0,0,0.3)', border: `1px solid ${colors.goldBorder}`, borderRadius: '8px', color: colors.gold, cursor: 'pointer', fontFamily: 'inherit', fontWeight: '700', fontSize: '0.82rem', textAlign: 'left' }}>
+                  <span style={{ fontSize: '1rem' }}>{cat.icon}</span>
+                  <span style={{ flex: 1 }}>{cat.label}</span>
+                  <span style={{ color: colors.textFaint, fontSize: '0.7rem' }}>+{cat.pts} VP</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setAddBubbleModal(null)} style={{ width: '100%', padding: '0.6rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: colors.textFaint, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.8rem' }}>Cancel</button>
+          </div>
         </div>
       )}
     </div>

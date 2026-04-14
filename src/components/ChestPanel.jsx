@@ -217,7 +217,7 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
   const [rolled, setRolled] = useState(null); // array of dropped items after roll
 
-  const player = players.find(p => p.id === selectedPlayerId);
+  const player = players.find(p => String(p.id) === String(selectedPlayerId));
 
   // Check if player holds the required key
   const playerHasKey = (p) => {
@@ -512,7 +512,7 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
   };
 
   const handleConfirmOpen = (chestId, playerId, droppedItems) => {
-    const player = players.find(p => p.id === playerId);
+    const player = players.find(p => String(p.id) === String(playerId));
     // Mark chest as opened
     setChests(prev => prev.map(c => c.id !== chestId ? c : {
       ...c,

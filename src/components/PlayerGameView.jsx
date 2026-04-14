@@ -23,6 +23,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   const [movesetNpc,    setMovesetNpc]    = React.useState(null);
   const seenDenials = React.useRef(new Set());
   const seenChoices = React.useRef(new Set());
+  const touchStartX = React.useRef(null);
 
   // ── Live Firestore subscription ───────────────────────────────────────────
   React.useEffect(() => {
@@ -236,7 +237,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
       })()}
 
       {/* Content */}
-      <div className="pv-content" style={{ padding: '1rem', maxWidth: '700px', width: '100%', margin: '0 auto', boxSizing: 'border-box', paddingBottom: '3rem' }}>
+      <div className="pv-content" style={{ padding: '1rem', maxWidth: '700px', width: '100%', margin: '0 auto', boxSizing: 'border-box', paddingBottom: '3rem', overflowX: 'hidden' }}>
 
         {/* ── My Character ─────────────────────────────────────────────── */}
         {activeTab === 'mine' && (
@@ -254,46 +255,44 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
         {activeTab === 'players' && (
           visiblePlayers.length === 0
             ? <EmptyState icon="👥" text="No players in the session yet." />
-            : (
-              <div style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
-                {/* Navigation */}
-                <div className="pv-carousel-nav" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', width: '100%', minWidth: 0 }}>
-                  <button
-                    onClick={() => setPlayerIdx(i => Math.max(0, i - 1))}
-                    disabled={safeIdx === 0}
-                    style={navBtn(safeIdx === 0)}
-                  >←</button>
-                  <div style={{ flex: 1, textAlign: 'center', minWidth: 0, overflow: 'hidden' }}>
-                    <div style={{ color: colors.textMuted, fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                      Player {safeIdx + 1} of {visiblePlayers.length}
+            : (() => {
+              const handleTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
+              const handleTouchEnd = (e) => {
+                if (touchStartX.current === null) return;
+                const dx = e.changedTouches[0].clientX - touchStartX.current;
+                if (Math.abs(dx) < 40) return;
+                if (dx < 0) setPlayerIdx(i => Math.min(visiblePlayers.length - 1, i + 1));
+                if (dx > 0) setPlayerIdx(i => Math.max(0, i - 1));
+                touchStartX.current = null;
+              };
+              return (
+                <div style={{ width: '100%', minWidth: 0 }}>
+                  {/* Dot indicator row — arrows hidden on touch screens via CSS, dots always shown */}
+                  <div className="pv-carousel-nav" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', width: '100%', boxSizing: 'border-box' }}>
+                    <button className="pv-carousel-arrow" onClick={() => setPlayerIdx(i => Math.max(0, i - 1))} disabled={safeIdx === 0} style={navBtn(safeIdx === 0)}>←</button>
+                    <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+                      <div style={{ color: colors.textMuted, fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        Player {safeIdx + 1} of {visiblePlayers.length}
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginTop: '0.3rem', flexWrap: 'wrap' }}>
+                        {visiblePlayers.map((p, i) => (
+                          <div key={p.id} onClick={() => setPlayerIdx(i)} style={{ width: i === safeIdx ? '20px' : '8px', height: '8px', borderRadius: '4px', background: i === safeIdx ? (p.playerColor || colors.gold) : 'rgba(255,255,255,0.15)', cursor: 'pointer', transition: 'all 0.2s' }} />
+                        ))}
+                      </div>
                     </div>
-                    {/* Player selector dots */}
-                    <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginTop: '0.3rem', flexWrap: 'wrap' }}>
-                      {visiblePlayers.map((p, i) => (
-                        <div
-                          key={p.id}
-                          onClick={() => setPlayerIdx(i)}
-                          style={{
-                            width: i === safeIdx ? '20px' : '8px',
-                            height: '8px',
-                            borderRadius: '4px',
-                            background: i === safeIdx ? (p.playerColor || colors.gold) : 'rgba(255,255,255,0.15)',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                          }}
-                        />
-                      ))}
-                    </div>
+                    <button className="pv-carousel-arrow" onClick={() => setPlayerIdx(i => Math.min(visiblePlayers.length - 1, i + 1))} disabled={safeIdx === visiblePlayers.length - 1} style={navBtn(safeIdx === visiblePlayers.length - 1)}>→</button>
                   </div>
-                  <button
-                    onClick={() => setPlayerIdx(i => Math.min(visiblePlayers.length - 1, i + 1))}
-                    disabled={safeIdx === visiblePlayers.length - 1}
-                    style={navBtn(safeIdx === visiblePlayers.length - 1)}
-                  >→</button>
+                  {/* Card — swipeable on touch */}
+                  <div
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    style={{ width: '100%', overflow: 'hidden', boxSizing: 'border-box', touchAction: 'pan-y' }}
+                  >
+                    <ReadOnlyPlayerCard player={visiblePlayers[safeIdx]} />
+                  </div>
                 </div>
-                <ReadOnlyPlayerCard player={visiblePlayers[safeIdx]} />
-              </div>
-            )
+              );
+            })()
         )}
 
         {/* ── NPCs ─────────────────────────────────────────────────────── */}
@@ -1517,13 +1516,20 @@ if (typeof document !== 'undefined' && !document.getElementById('pvMobileStyle')
   const style = document.createElement('style');
   style.id = 'pvMobileStyle';
   style.textContent = `
-    /* ── Player View portrait mobile ───────────────────────────── */
-    @media screen and (max-width: 480px) and (orientation: portrait) {
+    /* ── Global: prevent horizontal scroll on all narrow screens ── */
+    html, body {
+      overflow-x: hidden !important;
+      max-width: 100vw !important;
+    }
+
+    /* ── Player View narrow screens ─────────────────────────────── */
+    @media screen and (max-width: 480px) {
 
       /* Outer container: never scroll sideways */
       .pv-root {
         overflow-x: hidden !important;
-        width: 100% !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
       }
 
       /* Tab bar: equal width tabs, no overflow */
@@ -1531,6 +1537,15 @@ if (typeof document !== 'undefined' && !document.getElementById('pvMobileStyle')
         padding: 0.65rem 0.25rem !important;
         font-size: 0.65rem !important;
         min-width: 0 !important;
+      }
+
+      /* Content area: never wider than viewport */
+      .pv-content {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+        overflow-x: hidden !important;
       }
 
       /* Turn indicator: tighter */
@@ -1617,8 +1632,29 @@ if (typeof document !== 'undefined' && !document.getElementById('pvMobileStyle')
 
     /* ── Shared: always prevent horizontal scroll ────────────────── */
     .pv-root {
-      overflow-x: hidden;
-      max-width: 100vw;
+      overflow-x: hidden !important;
+      max-width: 100vw !important;
+    }
+
+    /* Carousel nav: always constrained */
+    .pv-carousel-nav {
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    /* ── Touch screens: hide arrows, center the label+dots ─────── */
+    @media (hover: none) and (pointer: coarse) {
+      .pv-carousel-arrow {
+        display: none !important;
+      }
+      /* When arrows are gone, nav label+dots take full width */
+      .pv-carousel-nav {
+        justify-content: center !important;
+      }
+      .pv-carousel-nav > div {
+        flex: unset !important;
+        width: 100% !important;
+      }
     }
   `;
   document.head.appendChild(style);

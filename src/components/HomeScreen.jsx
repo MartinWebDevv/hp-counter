@@ -41,7 +41,7 @@ const HomeScreen = ({ onCreateLobby, onJoinLobby, onLoadGame, onPlayOffline, joi
           letterSpacing: '0.12em',
           margin: '0 0 0.5rem',
           textShadow: `0 0 30px ${colors.amber}40`,
-        }}>HP COUNTER</h1>
+        }}>BATTLE TRACKER</h1>
         <div style={{ color: colors.textMuted, fontSize: '0.85rem', letterSpacing: '0.1em' }}>
           CAMPAIGN MANAGER
         </div>
@@ -232,7 +232,7 @@ const HomeScreen = ({ onCreateLobby, onJoinLobby, onLoadGame, onPlayOffline, joi
       </div>
 
       <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '2rem', letterSpacing: '0.08em' }}>
-        HP COUNTER · CAMPAIGN MANAGER
+        BATTLE TRACKER · CAMPAIGN MANAGER
       </div>
     </div>
   );

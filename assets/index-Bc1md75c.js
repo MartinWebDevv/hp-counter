@@ -163,12 +163,11 @@ This will wipe all players, NPCs, loot, sessions, VP history, timers, tokens, an
       box-sizing: border-box !important;
     }
 
-    /* ── Touch screens: hide arrows, center the label+dots ─────── */
-    @media (hover: none) and (pointer: coarse) {
+    /* ── Mobile: hide arrows under 600px, use swipe instead ────── */
+    @media screen and (max-width: 600px) {
       .pv-carousel-arrow {
         display: none !important;
       }
-      /* When arrows are gone, nav label+dots take full width */
       .pv-carousel-nav {
         justify-content: center !important;
       }

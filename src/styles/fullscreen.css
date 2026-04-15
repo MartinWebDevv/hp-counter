@@ -3,24 +3,19 @@
      padding: 0;
      box-sizing: border-box;
    }
+
+   html {
+     height: 100%;
+   }
    
    body {
      margin: 0;
      padding: 0;
-     /* overflow: hidden removed — was preventing vertical scroll on mobile */
+     min-height: 100%;
+     /* No overflow:hidden — allows natural page scrolling on mobile */
    }
    
-   html, body, #root {
-     height: 100%;
+   #root {
+     min-height: 100%;
      width: 100%;
-     margin: 0;
-     padding: 0;
-   }
-
-   /* Mobile: use min-height instead of fixed height so content can scroll */
-   @media screen and (max-width: 768px) {
-     html, body, #root {
-       height: auto;
-       min-height: 100%;
-     }
    }

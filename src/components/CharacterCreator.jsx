@@ -274,7 +274,7 @@ const CharacterCreator = ({ onComplete, lobbyCode }) => {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const pageStyle = {
-  minHeight: '100svh',
+  minHeight: '100vh',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'flex-start',

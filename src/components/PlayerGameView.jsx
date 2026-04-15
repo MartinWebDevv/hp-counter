@@ -145,7 +145,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   ];
 
   return (
-    <div className="pv-root" style={{ height: '100vh', overflowY: 'auto', overflowX: 'hidden', background: 'linear-gradient(145deg,#0a0505,#100808)', fontFamily: fonts.body, paddingBottom: '5rem', width: '100%', boxSizing: 'border-box' }}>
+    <div className="pv-root" style={{ height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overflowX: 'hidden', background: 'linear-gradient(145deg,#0a0505,#100808)', fontFamily: fonts.body, paddingBottom: '5rem', width: '100%', boxSizing: 'border-box' }}>
 
       {/* Denied toast */}
       {deniedToast && (

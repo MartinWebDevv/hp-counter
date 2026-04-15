@@ -35,7 +35,7 @@ const PlayerWaitingRoom = ({ lobbyCode, playerData, onGameStart }) => {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', fontFamily: fonts.body, padding: '2rem', paddingTop: '2.5rem', paddingBottom: '3rem', boxSizing: 'border-box' }}>
+    <div style={{ height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', fontFamily: fonts.body, padding: '2rem', paddingTop: '2.5rem', paddingBottom: '3rem', boxSizing: 'border-box' }}>
       <div style={{ width: '100%', maxWidth: '420px' }}>
 
         {/* Header */}
@@ -89,7 +89,7 @@ const PlayerWaitingRoom = ({ lobbyCode, playerData, onGameStart }) => {
 };
 
 const centeredPage = {
-  minHeight: '100vh',
+  height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'center',

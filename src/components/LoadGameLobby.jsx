@@ -339,7 +339,7 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
     const allClaimed    = slotList.filter(([, s]) => !s.isAbsent && !s.isManual).every(([, s]) => s.claimedByUid);
 
     return (
-      <div style={{ minHeight: '100vh', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '1.5rem', fontFamily: fonts.body }}>
+      <div style={{ height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '1.5rem', fontFamily: fonts.body }}>
         <div style={{ width: '100%', maxWidth: '520px' }}>
 
           {/* Header */}
@@ -461,7 +461,7 @@ const Row = ({ label, value }) => (
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 const page = {
-  minHeight: '100vh',
+  height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'flex-start',

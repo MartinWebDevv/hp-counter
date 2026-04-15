@@ -337,7 +337,7 @@ const StatBlock = ({ title, icon, stats }) => (
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 const page = {
-  minHeight: '100vh',
+  height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'flex-start',

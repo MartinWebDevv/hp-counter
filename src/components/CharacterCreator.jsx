@@ -274,12 +274,12 @@ const CharacterCreator = ({ onComplete, lobbyCode }) => {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const pageStyle = {
-  minHeight: '100vh',
+  minHeight: '100svh',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'flex-start',
   fontFamily: fonts.body, padding: '2rem',
-  paddingTop: '2rem', paddingBottom: '3rem', overflowY: 'auto', boxSizing: 'border-box',
+  paddingTop: '2rem', paddingBottom: '3rem', boxSizing: 'border-box',
 };
 
 const cardStyle = {
@@ -288,7 +288,7 @@ const cardStyle = {
   borderRadius: '16px', padding: '2rem',
   width: '100%', maxWidth: '480px',
   boxShadow: '0 24px 64px rgba(0,0,0,0.8)',
-  maxHeight: '90vh', overflowY: 'auto',
+  maxHeight: '90vh',
 };
 
 const titleStyle = {

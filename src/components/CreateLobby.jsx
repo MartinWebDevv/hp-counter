@@ -83,7 +83,7 @@ const CreateLobby = ({ onGameStart, onBack }) => {
 
   // ── Waiting room ──────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: fonts.body, padding: '2rem' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', fontFamily: fonts.body, padding: '2rem', paddingTop: '2.5rem', paddingBottom: '3rem', overflowY: 'auto', boxSizing: 'border-box' }}>
 
       <div style={{ width: '100%', maxWidth: '480px' }}>
 

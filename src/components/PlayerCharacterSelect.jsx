@@ -340,8 +340,9 @@ const page = {
   minHeight: '100vh',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
-  alignItems: 'center', justifyContent: 'center',
+  alignItems: 'center', justifyContent: 'flex-start',
   fontFamily: fonts.body, padding: '1.5rem',
+  paddingTop: '2rem', paddingBottom: '3rem', overflowY: 'auto', boxSizing: 'border-box',
 };
 
 const card = {

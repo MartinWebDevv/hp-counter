@@ -48,6 +48,19 @@ function App() {
     setScreen('home');
   }, []);
 
+  // ── When GM closes/refreshes the tab, mark the session ended so players don't get stuck ──
+  React.useEffect(() => {
+    const handleUnload = async () => {
+      if (screen !== 'gm-game' || !lobbyCode) return;
+      try {
+        const { endGame } = await import('./services/lobbyService');
+        await endGame(lobbyCode);
+      } catch {}
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [screen, lobbyCode]);
+
   const persistAndSet = React.useCallback((screenName, extras = {}) => {
     saveSession({ screen: screenName, lobbyCode, gmUid, playerData, myUid, ...extras });
     setScreen(screenName);
@@ -110,6 +123,17 @@ function App() {
     if (!lobbyCode) return;
     const { endGame } = await import('./services/lobbyService');
     await endGame(lobbyCode);
+    goHome();
+  }, [lobbyCode, goHome]);
+
+  // ── GM navigates home within the app — also end the session ──────────────
+  const handleGMGoHome = React.useCallback(async () => {
+    if (lobbyCode) {
+      try {
+        const { endGame } = await import('./services/lobbyService');
+        await endGame(lobbyCode);
+      } catch {}
+    }
     goHome();
   }, [lobbyCode, goHome]);
 

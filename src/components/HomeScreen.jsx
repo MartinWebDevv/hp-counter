@@ -19,8 +19,8 @@ const HomeScreen = ({ onCreateLobby, onJoinLobby, onLoadGame, onPlayOffline, joi
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
+    <div className="bt-page" style={{
+      minHeight: '100svh',
       background: 'linear-gradient(145deg, #0a0505, #100808)',
       display: 'flex',
       flexDirection: 'column',

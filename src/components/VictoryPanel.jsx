@@ -12,11 +12,12 @@ const CATS = [
   { id: 'finalBossKill', label: 'Final Boss Kill',     icon: '👑', pts: 2 },
 ];
 
-const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpdateVpStats }) => {
+const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpdateVpStats, onClearTrackers }) => {
   const [manualAward, setManualAward] = useState({ playerId: '', points: 1, reason: '', categoryId: 'finalBossKill' });
   const [showManual, setShowManual] = useState(false);
   const [showDeleteSession, setShowDeleteSession] = useState(false);
   const [deleteSessionConfirm, setDeleteSessionConfirm] = useState(null); // sessionName
+  const [clearConfirm, setClearConfirm] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [selectedSession, setSelectedSession] = useState({});
   const [editingVP, setEditingVP] = useState({}); // { [playerId]: draftValue }
@@ -333,6 +334,31 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
             cursor: manualAward.playerId && manualAward.reason.trim() ? 'pointer' : 'not-allowed',
             fontFamily: fonts.body,
           }}>🏅 AWARD POINTS</button>
+        </div>
+      )}
+
+      {/* ── Clear Current Session Trackers ── */}
+      {onClearTrackers && (
+        <div style={{ marginTop: '0.5rem' }}>
+          {!clearConfirm ? (
+            <button onClick={() => setClearConfirm(true)} style={{
+              width: '100%', padding: '0.55rem',
+              background: 'rgba(0,0,0,0.28)',
+              border: '1px solid rgba(251,191,36,0.2)',
+              borderRadius: '8px', color: colors.amber,
+              fontWeight: '800', fontSize: '0.75rem', cursor: 'pointer',
+              fontFamily: fonts.body, letterSpacing: '0.05em',
+              transition: 'all 0.15s',
+            }}>🧹 CLEAR SESSION TRACKERS</button>
+          ) : (
+            <div style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '8px', padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ flex: 1, color: colors.textMuted, fontSize: '0.72rem', fontWeight: '700' }}>
+                Reset all live VP trackers (npc damage, pvp, etc.) to 0? Historical awards are kept.
+              </span>
+              <button onClick={() => { onClearTrackers(); setClearConfirm(false); }} style={{ padding: '0.3rem 0.65rem', background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: '6px', color: colors.amber, fontFamily: fonts.body, fontWeight: '800', fontSize: '0.68rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>✓ Clear</button>
+              <button onClick={() => setClearConfirm(false)} style={{ padding: '0.3rem 0.55rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px', color: colors.textMuted, fontFamily: fonts.body, fontWeight: '700', fontSize: '0.68rem', cursor: 'pointer' }}>Cancel</button>
+            </div>
+          )}
         </div>
       )}
 

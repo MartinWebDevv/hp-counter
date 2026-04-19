@@ -1,6 +1,6 @@
 {
-  "name": "MyWebSite",
-  "short_name": "MySite",
+  "name": "Battle Tracker",
+  "short_name": "Battle Tracker",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",

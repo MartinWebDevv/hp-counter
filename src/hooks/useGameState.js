@@ -238,9 +238,9 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     if (player) {
       if (isSuccessful) {
         const newMaxHP = Math.floor(player.commanderStats.maxHp / 2);
-        addLog(`${player.playerName}'s ${player.commanderStats?.customName || player.commander || 'Commander'} revived with ${newMaxHP}hp (new max)!`);
+        addLog(`${player.playerName}'s ${player.commanderStats?.customName || player.commander || 'Commander'} revived with ${newMaxHP}hp (new max)!`, 'combat');
       } else {
-        addLog(`${player.playerName}'s ${player.commanderStats?.customName || player.commander || 'Commander'} failed to revive — eliminated from the game!`);
+        addLog(`${player.playerName}'s ${player.commanderStats?.customName || player.commander || 'Commander'} failed to revive — eliminated from the game!`, 'combat');
       }
     }
   };
@@ -254,7 +254,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     if (!allDead) return player;
 
     // Squad wipe! Clear queue and set all lives to 0
-    addLog(`💀 SQUAD WIPE! ${player.playerName}'s entire squad is eliminated!`);
+    addLog(`💀 SQUAD WIPE! ${player.playerName}'s entire squad is eliminated!`, 'combat');
     return {
       ...player,
       reviveQueue: [],
@@ -312,11 +312,11 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
           reviveQueue: newQueue,
         };
 
-        addLog(`✅ ${player.playerName}'s ${unit.name || `Unit ${unitIndex + 1}`} revived with ${restoredHP}hp! (immune this round)`);
+        addLog(`✅ ${player.playerName}'s ${unit.name || `Unit ${unitIndex + 1}`} revived with ${restoredHP}hp! (immune this round)`, 'combat');
         return updatedPlayer;
       } else {
         // Fail: stays in queue, no life lost
-        addLog(`❌ ${player.playerName}'s ${unit.name || `Unit ${unitIndex + 1}`} failed to revive — still in queue.`);
+        addLog(`❌ ${player.playerName}'s ${unit.name || `Unit ${unitIndex + 1}`} failed to revive — still in queue.`, 'combat');
         return player; // No change
       }
     }));
@@ -363,7 +363,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     setPlayersWhoActedThisRound([]);
     setGameStarted(false);
     
-    addLog(`Game mode changed to ${newModeConfig.name}`);
+    addLog(`Game mode changed to ${newModeConfig.name}`, 'system');
     return true;
   };
 
@@ -387,14 +387,15 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     setGameStarted(true);
     setCurrentPlayerIndex(0);
     setPlayersWhoActedThisRound([]);
-    addLog(`----- Game Started - Round ${currentRound} -----`);
+    addLog(`----- Game Started - Round ${currentRound} -----`, 'system');
   };
 
-  const addLog = (message) => {
+  const addLog = (message, category = 'system') => {
     setCombatLog(prev => [{
       id: Date.now(),
       round: currentRound,
       message,
+      category,
       timestamp: new Date().toISOString()
     }, ...prev]);
   };
@@ -457,7 +458,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
       }
 
       setCurrentPlayerIndex(firstAliveIndex);
-      addLog(`----- Round ${currentRound + 1} -----`);
+      addLog(`----- Round ${currentRound + 1} -----`, 'system');
     } else {
       let nextIndex = (currentPlayerIndex + 1) % players.length;
       let attempts = 0;
@@ -576,7 +577,7 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     setGameStarted(false);
     // NPC reset handled by caller (useNPCState)
     if (resetNPCsFn) resetNPCsFn();
-    addLog('🔄 New session started — all units restored. Loot and chests preserved.');
+    addLog('🔄 New session started — all units restored. Loot and chests preserved.', 'system');
   };
 
   return {

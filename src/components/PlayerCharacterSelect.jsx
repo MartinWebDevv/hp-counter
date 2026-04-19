@@ -83,8 +83,8 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
   if (myClaimedSlot) {
     const p = myClaimedSlot[1].playerData;
     return (
-      <div style={page}>
-        <div style={card}>
+      <div className="bt-page" style={page}>
+        <div className="bt-card" style={card}>
           <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
             <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>✅</div>
             <h2 style={heading}>CHARACTER CLAIMED</h2>
@@ -101,8 +101,8 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
   // ── Choose screen ──────────────────────────────────────────────────────────
   if (phase === 'choose') {
     return (
-      <div style={page}>
-        <div style={{ ...card, maxWidth: '460px' }}>
+      <div className="bt-page" style={page}>
+        <div className="bt-card" style={{ ...card, maxWidth: '460px' }}>
           <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
             <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>⚔️</div>
             <h2 style={heading}>JOIN SESSION</h2>
@@ -201,8 +201,8 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
     const facStats   = FACTION_STATS[p.faction] || {};
 
     return (
-      <div style={page}>
-        <div style={{ ...card, maxWidth: '480px' }}>
+      <div className="bt-page" style={page}>
+        <div className="bt-card" style={{ ...card, maxWidth: '480px' }}>
           <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
             <div style={{ fontSize: '1.75rem', marginBottom: '0.3rem' }}>⚔️</div>
             <h2 style={heading}>YOUR CHARACTER</h2>
@@ -337,7 +337,7 @@ const StatBlock = ({ title, icon, stats }) => (
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 const page = {
-  height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+  height: 'auto', minHeight: '100svh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'flex-start',

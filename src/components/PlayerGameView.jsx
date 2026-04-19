@@ -21,9 +21,11 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   const [destroyNotice, setDestroyNotice] = React.useState(null);
   const [npcFilter,     setNpcFilter]     = React.useState('All');
   const [movesetNpc,    setMovesetNpc]    = React.useState(null);
+  const [turnFlash,     setTurnFlash]     = React.useState(false);
   const seenDenials = React.useRef(new Set());
   const seenChoices = React.useRef(new Set());
   const touchStartX = React.useRef(null);
+  const prevIsMyTurn = React.useRef(false);
 
   // ── Live Firestore subscription ───────────────────────────────────────────
   React.useEffect(() => {
@@ -94,6 +96,31 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
     return () => unsub();
   }, [lobbyCode, onLeaveGame]);
 
+  // ── Flash the screen when it becomes MY turn ──────────────────────────────
+  // Must be above the early return. Derives isMyTurn inline from gameState.
+  React.useEffect(() => {
+    if (!gameState) return;
+    const gs = gameState;
+    const allPlayers = gs.players || [];
+    const cpIdx = gs.currentPlayerIndex ?? 0;
+    const ccpId = gs.currentCampaignPlayerId ?? null;
+    const isCampaign = gs.gameMode === 'campaign';
+    const turnPlayer = isCampaign
+      ? (ccpId ? allPlayers.find(p => p.id === ccpId) || null : null)
+      : (allPlayers[cpIdx] || null);
+    const myTurn = !!(turnPlayer && (
+      turnPlayer.uid === playerData?.uid ||
+      (playerData?.id && String(turnPlayer.id) === String(playerData.id))
+    ));
+    if (myTurn && !prevIsMyTurn.current) {
+      setTurnFlash(true);
+      const t = setTimeout(() => setTurnFlash(false), 800);
+      prevIsMyTurn.current = true;
+      return () => clearTimeout(t);
+    }
+    if (!myTurn) prevIsMyTurn.current = false;
+  }, [gameState, playerData?.uid, playerData?.id]);
+
   if (!gameState) {
     return (
       <div style={centeredPage}>
@@ -145,7 +172,12 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   ];
 
   return (
-    <div className="pv-root" style={{ height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overflowX: 'hidden', background: 'linear-gradient(145deg,#0a0505,#100808)', fontFamily: fonts.body, paddingBottom: '5rem', width: '100%', boxSizing: 'border-box' }}>
+    <div className="pv-root" style={{ height: 'auto', minHeight: '100svh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overflowX: 'hidden', background: 'linear-gradient(145deg,#0a0505,#100808)', fontFamily: fonts.body, paddingBottom: '5rem', width: '100%', boxSizing: 'border-box' }}>
+
+      {/* Your turn flash overlay */}
+      {turnFlash && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9998, pointerEvents: 'none', animation: 'turnFlashAnim 0.8s ease-out forwards' }} />
+      )}
 
       {/* Denied toast */}
       {deniedToast && (
@@ -229,8 +261,11 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
                 {isMyTurn ? "It's your turn!" : (turnPlayer?.playerName || '—')}
               </span>
             </div>
-            {isMyTurn && (
+            {isMyTurn && !isCampaignMode && (
               <span style={{ color: pColor, fontSize: '0.7rem', fontWeight: '800', animation: 'turnPulse 1.5s ease-in-out infinite' }}>⚔️</span>
+            )}
+            {isMyTurn && isCampaignMode && (
+              <EndTurnButton lobbyCode={lobbyCode} player={myPlayer} pColor={pColor} />
             )}
           </div>
         );
@@ -354,47 +389,202 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
         })()}
 
         {/* ── Victory ───────────────────────────────────────────────────── */}
-        {activeTab === 'victory' && (
-          players.length === 0
+        {activeTab === 'victory' && (() => {
+          // ── VP helpers (match DM logic exactly) ──────────────────────
+          const getTotalVP = (playerId) => {
+            const s = vpStats[playerId] || {};
+            const fromSessions = (s.sessionAwards || []).reduce((acc, a) => acc + (a.pts || 0), 0);
+            const fromManual   = (s.manualAwards  || []).reduce((acc, a) => acc + (a.points || 0), 0);
+            return fromSessions + fromManual;
+          };
+
+          const LIVE_STAT_ROWS = [
+            { key: 'npcDamage',     label: '🐉 NPC Damage',       unit: 'hp'      },
+            { key: 'pvpDamage',     label: '⚔️ PvP Damage',       unit: 'hp'      },
+            { key: 'damageTaken',   label: '🛡️ Damage Taken',     unit: 'hp'      },
+            { key: 'itemsObtained', label: '📦 Items Obtained',   unit: 'items'   },
+            { key: 'revivesUsed',   label: '💀 Revives Used',     unit: 'times'   },
+            { key: 'finalBossKill', label: '👑 Final Boss Kill',  unit: ''        },
+            { key: 'firstBlood',    label: '🩸 First Blood',      unit: ''        },
+            { key: 'warmonger',     label: '⚡ Attacks Made',     unit: 'attacks' },
+          ];
+
+          const ranked = [...players]
+            .map(p => ({ ...p, totalVP: getTotalVP(p.id) }))
+            .sort((a, b) => b.totalVP - a.totalVP);
+
+          const rankBadge = ['👑', '🥈', '🥉'];
+
+          // ── Per-player expandable card ────────────────────────────────
+          const VPCard = ({ p, rank }) => {
+            const [open, setOpen] = React.useState(false);
+            const isMe    = myPlayer && String(p.id) === String(myPlayer.id);
+            const pColor  = p.playerColor || colors.blue;
+            const s       = vpStats[p.id] || {};
+            const sessionAwards = s.sessionAwards || [];
+            const manualAwards  = s.manualAwards  || [];
+            const isFirst = rank === 0;
+
+            // Group session awards by session name
+            const sessionGroups = sessionAwards.reduce((acc, a) => {
+              const key = a.sessionName || 'Unnamed Session';
+              if (!acc[key]) acc[key] = [];
+              acc[key].push(a);
+              return acc;
+            }, {});
+            const sessionNames = Object.keys(sessionGroups);
+
+            // Live stats — only non-zero rows
+            const liveRows = LIVE_STAT_ROWS.filter(r => (s[r.key] || 0) > 0 || r.key === 'finalBossKill' && s[r.key]);
+            const hasAnyLive = liveRows.length > 0;
+            const hasHistory = sessionAwards.length > 0 || manualAwards.length > 0;
+
+            return (
+              <div style={{
+                background: isFirst ? 'rgba(201,169,97,0.08)' : 'rgba(0,0,0,0.25)',
+                border: `1px solid ${isFirst ? 'rgba(201,169,97,0.25)' : open && isMe ? pColor + '40' : 'rgba(255,255,255,0.05)'}`,
+                borderRadius: '10px',
+                overflow: 'hidden',
+                transition: 'border-color 0.15s',
+              }}>
+                {/* Row */}
+                <div
+                  onClick={() => isMe && setOpen(o => !o)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    padding: '0.85rem 1rem',
+                    cursor: isMe ? 'pointer' : 'default',
+                  }}
+                >
+                  <div style={{ color: isFirst ? colors.gold : colors.textFaint, fontWeight: '900', fontSize: '1.1rem', width: '24px', textAlign: 'center', flexShrink: 0 }}>
+                    {rankBadge[rank] || `#${rank + 1}`}
+                  </div>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: pColor, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: isMe ? pColor : colors.textPrimary, fontWeight: '700', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.playerName}{isMe ? ' (you)' : ''}
+                    </div>
+                    <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.1rem' }}>{p.faction}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ color: isFirst ? colors.gold : colors.amber, fontWeight: '900', fontSize: '1.3rem', lineHeight: 1 }}>
+                      {p.totalVP}
+                      <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '600', marginLeft: '0.2rem' }}>VP</span>
+                    </div>
+                    {isMe && (
+                      <div style={{ color: colors.textFaint, fontSize: '0.58rem', marginTop: '0.2rem', fontWeight: '700' }}>
+                        {open ? 'tap to close ▲' : 'tap for details ▼'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Expanded breakdown — only for own card */}
+                {open && isMe && (
+                  <div style={{ borderTop: `1px solid ${pColor}25`, padding: '0.85rem 1rem', background: 'rgba(0,0,0,0.2)' }}>
+
+                    {/* Live session stats */}
+                    <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+                      📊 Live Session Stats
+                    </div>
+                    {hasAnyLive ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', marginBottom: '0.85rem' }}>
+                        {LIVE_STAT_ROWS.map(r => {
+                          const val = s[r.key] || 0;
+                          if (!val) return null;
+                          const display = r.key === 'finalBossKill' ? (val > 0 ? 'YES' : null) : val;
+                          if (!display) return null;
+                          return (
+                            <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.3rem 0.5rem', background: 'rgba(0,0,0,0.3)', border: `1px solid ${pColor}20`, borderRadius: '6px' }}>
+                              <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '700' }}>{r.label}</span>
+                              <span style={{ color: pColor, fontSize: '0.72rem', fontWeight: '900' }}>
+                                {display}{r.unit ? ` ${r.unit}` : ''}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ color: colors.textFaint, fontSize: '0.72rem', textAlign: 'center', padding: '0.5rem', marginBottom: '0.85rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                        No stats recorded this session yet.
+                      </div>
+                    )}
+
+                    {/* Session award history */}
+                    {sessionNames.length > 0 && (
+                      <>
+                        <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+                          🏆 Award History
+                        </div>
+                        {sessionNames.map(sessName => (
+                          <div key={sessName} style={{ marginBottom: '0.6rem' }}>
+                            <div style={{ color: colors.amber, fontSize: '0.62rem', fontWeight: '800', marginBottom: '0.3rem' }}>
+                              📅 {sessName}
+                            </div>
+                            {sessionGroups[sessName].map((a, ai) => (
+                              <div key={ai} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.28rem 0.55rem', background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.15)', borderRadius: '5px', marginBottom: '0.18rem' }}>
+                                <span style={{ color: colors.textPrimary, fontSize: '0.72rem', fontWeight: '700' }}>{a.icon} {a.label}</span>
+                                <span style={{ color: colors.gold, fontSize: '0.72rem', fontWeight: '900', flexShrink: 0 }}>+{a.pts} VP</span>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Manual / DM awards */}
+                    {manualAwards.length > 0 && (
+                      <>
+                        <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem', marginTop: sessionNames.length > 0 ? '0.25rem' : 0 }}>
+                          🏅 DM Awards
+                        </div>
+                        {manualAwards.map((a, ai) => (
+                          <div key={ai} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.28rem 0.55rem', background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.2)', borderRadius: '5px', marginBottom: '0.18rem' }}>
+                            <span style={{ color: colors.purpleLight, fontSize: '0.72rem', fontWeight: '700' }}>🏅 {a.reason}</span>
+                            <span style={{ color: colors.purpleLight, fontSize: '0.72rem', fontWeight: '900', flexShrink: 0 }}>+{a.points} VP</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {!hasAnyLive && !hasHistory && (
+                      <div style={{ color: colors.textFaint, fontSize: '0.72rem', textAlign: 'center', padding: '0.5rem' }}>
+                        No awards yet this campaign.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          return players.length === 0
             ? <EmptyState icon="🏆" text="No players yet." />
             : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <div style={{ color: colors.textFaint, fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ color: colors.textFaint, fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.1rem' }}>
                   Victory Points
                 </div>
-                {[...players]
-                  .map(p => ({ ...p, totalVP: Object.values(vpStats[p.id] || {}).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0) }))
-                  .sort((a, b) => b.totalVP - a.totalVP)
-                  .map((p, i) => (
-                    <div key={p.id} style={{
-                      display: 'flex', alignItems: 'center', gap: '0.75rem',
-                      padding: '0.85rem 1rem',
-                      background: i === 0 ? 'rgba(201,169,97,0.08)' : 'rgba(0,0,0,0.25)',
-                      border: `1px solid ${i === 0 ? 'rgba(201,169,97,0.25)' : 'rgba(255,255,255,0.05)'}`,
-                      borderRadius: '10px',
-                    }}>
-                      <div style={{ color: i === 0 ? colors.gold : colors.textFaint, fontWeight: '900', fontSize: '1.1rem', width: '24px', textAlign: 'center' }}>
-                        {i === 0 ? '👑' : `#${i + 1}`}
-                      </div>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: p.playerColor || '#3b82f6', flexShrink: 0 }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.9rem' }}>{p.playerName}</div>
-                        <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.1rem' }}>{p.faction}</div>
-                      </div>
-                      <div style={{ color: i === 0 ? colors.gold : colors.amber, fontWeight: '900', fontSize: '1.3rem' }}>
-                        {p.totalVP}
-                        <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '600', marginLeft: '0.2rem' }}>VP</span>
-                      </div>
-                    </div>
-                  ))
-                }
+                {ranked.map((p, i) => <VPCard key={p.id} p={p} rank={i} />)}
+                <div style={{ color: colors.textFaint, fontSize: '0.6rem', textAlign: 'center', marginTop: '0.25rem' }}>
+                  Tap your name to see your full breakdown
+                </div>
               </div>
-            )
-        )}
+            );
+        })()}
       </div>
 
       {/* ── Item Choice Screen — shown after GM approves a choice-required item ── */}
-      {pendingChoice && (
+      {pendingChoice && pendingChoice.type === 'passChoice' && (
+        <PassChoiceScreen
+          choice={pendingChoice}
+          lobbyCode={lobbyCode}
+          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.find(p => String(p.id) === String(playerData?.id)) || null}
+          allPlayers={gameState?.players || []}
+          onSubmit={() => setPendingChoice(null)}
+        />
+      )}
+      {pendingChoice && pendingChoice.type !== 'passChoice' && (
         <ItemChoiceScreen
           choice={pendingChoice}
           lobbyCode={lobbyCode}
@@ -724,6 +914,7 @@ const ReadOnlyPlayerCard = ({
   const [squadUnits,       setSquadUnits]       = React.useState([]);
   const [expandedTargetId, setExpandedTargetId] = React.useState(null);
   const [targetUnitKeys,   setTargetUnitKeys]   = React.useState([]);
+  const [confirmItem,      setConfirmItem]      = React.useState(null); // { item, index } — one-use confirm modal
 
   const cmdHp      = player.commanderStats?.hp    ?? 0;
   const cmdMaxHp   = player.commanderStats?.maxHp ?? 1;
@@ -1035,7 +1226,14 @@ const ReadOnlyPlayerCard = ({
                   {isOwnCard && (
                     <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
                       {showUseButton && (
-                        <button onClick={() => sendItemRequest('use')} disabled={!canUse || sending}
+                        <button onClick={() => {
+                          const isOneUse = item.effect?.uses !== 0 && usesLeft === 1;
+                          if (isOneUse) {
+                            setConfirmItem({ item, index: i });
+                          } else {
+                            sendItemRequest('use');
+                          }
+                        }} disabled={!canUse || sending}
                           style={{ ...pill(canUse ? tc.text : colors.textDisabled, canUse ? (tc.subtle || tc.bg) : 'rgba(0,0,0,0.2)', canUse ? tc.border : 'rgba(90,74,58,0.2)'), cursor: canUse && !sending ? 'pointer' : 'not-allowed', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body, border: `1px solid ${canUse ? tc.border : 'rgba(90,74,58,0.2)'}` }}>✦ USE</button>
                       )}
                       {isKey && (
@@ -1244,7 +1442,395 @@ const ReadOnlyPlayerCard = ({
         </div>
       </div>
     )}
+
+    {/* ── One-use item confirmation modal ── */}
+    {confirmItem && (() => {
+      const { item: ci, index: ci_idx } = confirmItem;
+      const ciTc = ci.isQuestItem ? tierColors.Quest : (tierColors[ci.tier] || tierColors.Common);
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4100, padding: '1rem' }}>
+          <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: `2px solid ${ciTc.border}`, borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '360px', boxShadow: '0 24px 64px rgba(0,0,0,0.95)', textAlign: 'center' }}>
+
+            {/* Icon + title */}
+            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>✦</div>
+            <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em', marginBottom: '1rem' }}>
+              Use Item?
+            </div>
+
+            {/* Item info */}
+            <div style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${ciTc.border}`, borderRadius: '10px', padding: '0.85rem', marginBottom: '1.25rem', textAlign: 'left' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: ci.description ? '0.4rem' : 0 }}>
+                <span style={{ fontSize: '1rem' }}>📦</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: ciTc.text, fontWeight: '800', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ci.name}</div>
+                  <div style={{ color: ciTc.text, fontSize: '0.62rem', fontWeight: '700', opacity: 0.7, marginTop: '0.1rem' }}>{ci.tier} · 1 use remaining</div>
+                </div>
+              </div>
+              {ci.description && (
+                <div style={{ color: colors.textFaint, fontSize: '0.7rem', lineHeight: '1.4', marginTop: '0.35rem', paddingTop: '0.35rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  {ci.description}
+                </div>
+              )}
+            </div>
+
+            <div style={{ color: colors.textFaint, fontSize: '0.72rem', marginBottom: '1.25rem' }}>
+              This item will be <span style={{ color: '#fca5a5', fontWeight: '800' }}>consumed</span> after use. The GM will process the effect.
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+              <button
+                onClick={() => setConfirmItem(null)}
+                style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >✕ Cancel</button>
+              <button
+                onClick={() => {
+                  setConfirmItem(null);
+                  // Build a scoped sendItemRequest for this specific item index
+                  (async () => {
+                    if (!isOwnCard || !lobbyCode || sending) return;
+                    setSending(true);
+                    try {
+                      const reqId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                      const { writePendingRequest } = await import('../services/gameStateService');
+                      await writePendingRequest(lobbyCode, reqId, {
+                        type: 'useItem', reqId,
+                        playerId:   player.id,
+                        playerName: player.playerName,
+                        itemIndex:  ci_idx,
+                        itemName:   ci.name,
+                        itemEffect: ci.effect?.type || 'none',
+                        action:     'use',
+                        timestamp:  Date.now(),
+                      });
+                    } finally { setSending(false); }
+                  })();
+                }}
+                style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >✦ Confirm Use</button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
     </>
+  );
+};
+
+// ── Pass Choice Screen ────────────────────────────────────────────────────────
+// Shown to the item owner after the GM approves their pass request.
+// Player picks a target player + unit → auto-detects give vs trade → confirms.
+// Then writes an itemChoice back so the GM can do a final hand-off approval.
+const PassChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit }) => {
+  const [selectedPlayerId, setSelectedPlayerId] = React.useState('');
+  const [selectedUnitType, setSelectedUnitType] = React.useState('');
+  const [tradeItem,        setTradeItem]        = React.useState(null);
+  const [sending,          setSending]          = React.useState(false);
+
+  // The item being passed (look it up from the live allPlayers snapshot for freshest inventory)
+  const freshMe = allPlayers.find(p => String(p.id) === String(myPlayer?.id)) || myPlayer;
+  const item = freshMe ? (freshMe.inventory || [])[choice.itemIndex] : null;
+
+  // Unit helpers
+  const getAllUnits = (player) => {
+    const units = [{
+      unitType: 'commander',
+      label: player.commanderStats?.customName || player.commander || 'Commander',
+      hp: player.commanderStats?.hp || 0,
+      maxHp: player.commanderStats?.maxHp || 1,
+      isDead: (player.commanderStats?.hp || 0) === 0,
+    }];
+    (player.subUnits || []).forEach((u, idx) => {
+      units.push({
+        unitType: idx === 0 ? 'special' : `soldier${idx}`,
+        label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`),
+        hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0,
+      });
+    });
+    return units;
+  };
+
+  const getSlots = (p, unitType) => {
+    const fromItems = (p.inventory || []).filter(it => it.heldBy === unitType && it.effect?.type === 'extraSlot').length;
+    let fromUnit = 0;
+    if (unitType === 'commander') { fromUnit = p.commanderStats?.bonusSlots || 0; }
+    else { const idx = unitType === 'special' ? 0 : parseInt((unitType||'').replace('soldier','')); fromUnit = p.subUnits?.[idx]?.bonusSlots || 0; }
+    return 1 + fromItems + fromUnit;
+  };
+  const getHeld  = (p, unitType) => (p.inventory || []).filter(it => it.heldBy === unitType && !it.isQuestItem).length;
+  const isFull   = (p, unitType) => getHeld(p, unitType) >= getSlots(p, unitType);
+
+  const targetPlayer  = allPlayers.find(p => String(p.id) === String(selectedPlayerId));
+  const targetUnits   = targetPlayer ? getAllUnits(targetPlayer) : [];
+
+  // Items the selected unit already holds (for trade)
+  const unitHeldItems = targetPlayer && selectedUnitType
+    ? (targetPlayer.inventory || []).filter(it => it.heldBy === selectedUnitType && !it.isQuestItem)
+    : [];
+
+  const unitFull = targetPlayer && selectedUnitType ? isFull(targetPlayer, selectedUnitType) : false;
+
+  // Auto-mode: if target unit has no items → give; if it does → trade required
+  const mode = unitHeldItems.length === 0 ? 'give' : 'trade';
+
+  // Source unit label (where item currently lives)
+  const sourceUnitLabel = !item ? '' : (() => {
+    const ut = item.heldBy;
+    if (!ut || ut === 'commander') return freshMe?.commanderStats?.customName || freshMe?.commander || 'Commander';
+    if (ut === 'special') return freshMe?.subUnits?.[0]?.name?.trim() || 'Special';
+    const idx = parseInt(ut.replace('soldier', ''));
+    return freshMe?.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`;
+  })();
+
+  const canConfirm = !!(selectedPlayerId && selectedUnitType && (mode === 'give' || (mode === 'trade' && tradeItem)));
+
+  const handleSelectUnit = (unitType) => {
+    setSelectedUnitType(unitType);
+    setTradeItem(null);
+  };
+
+  const handleSubmit = async () => {
+    if (!canConfirm || sending) return;
+    setSending(true);
+    try {
+      const reqId = `itemChoice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await writePendingRequest(lobbyCode, reqId, {
+        type:               'itemChoice',
+        reqId,
+        choiceId:           choice.choiceId,
+        playerId:           myPlayer?.id,
+        playerName:         myPlayer?.playerName,
+        itemIndex:          choice.itemIndex,
+        itemName:           choice.itemName || item?.name,
+        itemEffect:         'passChoice',   // sentinel so GM routes to firstPassChoice
+        // Pass-specific fields
+        passTargetPlayerId: selectedPlayerId,
+        passTargetUnitType: selectedUnitType,
+        passMode:           mode,
+        passTradeItemId:    tradeItem?.id || null,
+        timestamp:          Date.now(),
+      });
+      onSubmit();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const tierColors2 = {
+    Common:    { text: '#d1d5db', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.35)' },
+    Rare:      { text: '#93c5fd', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+    Legendary: { text: '#fde68a', bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.35)'  },
+  };
+  const tc = item ? (tierColors2[item.tier] || tierColors2.Common) : tierColors2.Common;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000, padding: '1rem' }}>
+      <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🤝</div>
+          <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>
+            Pass Item
+          </div>
+          <div style={{ color: colors.textFaint, fontSize: '0.7rem', marginTop: '0.25rem' }}>
+            Choose who receives <span style={{ color: tc.text, fontWeight: '800' }}>{item?.name || choice.itemName}</span>
+            {sourceUnitLabel && <span style={{ color: colors.textFaint }}> from {sourceUnitLabel}</span>}
+          </div>
+        </div>
+
+        {/* Player picker */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+            Receiving Player
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            {allPlayers.filter(p => !p.isAbsent).map(p => {
+              const isMe     = String(p.id) === String(myPlayer?.id);
+              const selected = String(p.id) === String(selectedPlayerId);
+              const pColor   = p.playerColor || colors.blue;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => { setSelectedPlayerId(String(p.id)); setSelectedUnitType(''); setTradeItem(null); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem',
+                    padding: '0.6rem 0.85rem',
+                    background: selected ? `${pColor}18` : 'rgba(0,0,0,0.3)',
+                    border: `1px solid ${selected ? pColor + '60' : 'rgba(255,255,255,0.08)'}`,
+                    borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, textAlign: 'left',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: pColor, flexShrink: 0 }} />
+                  <span style={{ flex: 1, color: selected ? pColor : colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>
+                    {p.playerName}{isMe ? ' (you)' : ''}
+                  </span>
+                  {selected && <span style={{ color: pColor, fontSize: '0.65rem', fontWeight: '800' }}>▸</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Unit picker */}
+        {targetPlayer && (
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+              Receiving Unit
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              {targetUnits.map(u => {
+                const isSelf    = String(targetPlayer.id) === String(myPlayer?.id) && u.unitType === item?.heldBy;
+                const full      = !item?.isQuestItem && isFull(targetPlayer, u.unitType) && unitHeldItems.length === 0;
+                const selected  = selectedUnitType === u.unitType;
+                const unitItems = (targetPlayer.inventory || []).filter(it => it.heldBy === u.unitType && !it.isQuestItem);
+                const disabled  = u.isDead || isSelf;
+                return (
+                  <div
+                    key={u.unitType}
+                    onClick={() => !disabled && handleSelectUnit(u.unitType)}
+                    style={{
+                      padding: '0.6rem 0.85rem', borderRadius: '8px',
+                      background: selected ? 'rgba(201,169,97,0.1)' : 'rgba(0,0,0,0.3)',
+                      border: `1px solid ${selected ? 'rgba(201,169,97,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                      opacity: disabled ? 0.35 : 1,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ color: selected ? colors.gold : colors.textPrimary, fontWeight: '700', fontSize: '0.85rem', flex: 1 }}>
+                        {u.unitType === 'commander' ? '👑' : u.unitType === 'special' ? '⭐' : '🛡️'} {u.label}
+                      </span>
+                      {isSelf  && <span style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800' }}>SOURCE</span>}
+                      {u.isDead && <span style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800' }}>DEAD</span>}
+                      {unitItems.length > 0 && (
+                        <span style={{ color: colors.amber, fontSize: '0.65rem', fontWeight: '800' }}>
+                          {unitItems.length} item{unitItems.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {unitItems.length === 0 && !u.isDead && !isSelf && (
+                        <span style={{ color: '#4ade80', fontSize: '0.6rem', fontWeight: '800' }}>OPEN</span>
+                      )}
+                    </div>
+                    {/* Show items on this unit so player knows what they'd be trading */}
+                    {selected && unitItems.length > 0 && (
+                      <div style={{ marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.3rem' }}>
+                          ⇄ Trade required — select item to receive back
+                        </div>
+                        {unitItems.map(it => {
+                          const itc = tierColors2[it.tier] || tierColors2.Common;
+                          return (
+                            <div
+                              key={it.id}
+                              onClick={e => { e.stopPropagation(); setTradeItem(tradeItem?.id === it.id ? null : it); }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                padding: '0.4rem 0.6rem', marginTop: '0.25rem',
+                                background: tradeItem?.id === it.id ? `${itc.bg}` : 'rgba(0,0,0,0.2)',
+                                border: `1px solid ${tradeItem?.id === it.id ? itc.border : 'rgba(255,255,255,0.06)'}`,
+                                borderRadius: '6px', cursor: 'pointer',
+                              }}
+                            >
+                              <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>📦</span>
+                              <span style={{ flex: 1, color: tradeItem?.id === it.id ? itc.text : colors.textPrimary, fontWeight: '700', fontSize: '0.8rem' }}>{it.name}</span>
+                              <span style={{ color: itc.text, fontSize: '0.62rem', fontWeight: '800', flexShrink: 0 }}>{it.tier}</span>
+                              {tradeItem?.id === it.id && <span style={{ color: '#4ade80', fontSize: '0.7rem', flexShrink: 0 }}>✓</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Summary box */}
+        {canConfirm && (
+          <div style={{ background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.7rem 0.85rem', marginBottom: '1rem', fontSize: '0.72rem' }}>
+            {mode === 'give' ? (
+              <span style={{ color: '#86efac' }}>
+                🎁 <strong style={{ color: colors.gold }}>{item?.name}</strong> will be given to <strong style={{ color: colors.purpleLight }}>{targetPlayer?.playerName}</strong>. Awaiting GM approval.
+              </span>
+            ) : (
+              <span style={{ color: colors.amber }}>
+                ⇄ <strong style={{ color: colors.gold }}>{item?.name}</strong> trades with <strong style={{ color: colors.amber }}>{tradeItem?.name}</strong> from <strong style={{ color: colors.purpleLight }}>{targetPlayer?.playerName}</strong>. Awaiting GM approval.
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Confirm / Cancel */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+          <button
+            onClick={onSubmit}
+            style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+          >✕ Cancel</button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canConfirm || sending}
+            style={{ padding: '0.85rem', background: canConfirm ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${canConfirm ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '10px', color: canConfirm ? '#86efac' : colors.textDisabled, cursor: canConfirm && !sending ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+          >{sending ? '⏳ Sending...' : '✓ Confirm Pass'}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── End Turn Button ───────────────────────────────────────────────────────────
+const EndTurnButton = ({ lobbyCode, player, pColor }) => {
+  const [sending, setSending] = React.useState(false);
+  const [sent,    setSent]    = React.useState(false);
+
+  const handleEndTurn = async () => {
+    if (!lobbyCode || !player || sending || sent) return;
+    setSending(true);
+    try {
+      const reqId = `endturn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await writePendingRequest(lobbyCode, reqId, {
+        type:       'endTurn',
+        reqId,
+        playerId:   player.id,
+        playerName: player.playerName,
+        timestamp:  Date.now(),
+      });
+      setSent(true);
+      // Reset after a few seconds so they can re-request if DM denies
+      setTimeout(() => setSent(false), 5000);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleEndTurn}
+      disabled={sending || sent}
+      style={{
+        padding: '0.3rem 0.7rem',
+        background: sent
+          ? 'rgba(34,197,94,0.1)'
+          : `${pColor}18`,
+        border: `1px solid ${sent ? 'rgba(34,197,94,0.4)' : pColor + '50'}`,
+        borderRadius: '8px',
+        color: sent ? '#86efac' : pColor,
+        cursor: sending || sent ? 'not-allowed' : 'pointer',
+        fontFamily: fonts.body,
+        fontWeight: '800',
+        fontSize: '0.65rem',
+        letterSpacing: '0.05em',
+        flexShrink: 0,
+        transition: 'all 0.2s',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {sent ? '⏳ Waiting...' : '⏭️ End Turn'}
+    </button>
   );
 };
 
@@ -1336,29 +1922,30 @@ const ReadOnlyNPCCard = ({ npc, onShowMoveset }) => {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: active ? '0.75rem' : 0 }}>
         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: dotColor, boxShadow: active ? `0 0 6px ${dotColor}` : 'none', flexShrink: 0 }} />
-        <div style={{ flex: 1 }}>
-          <div style={{ color: dead ? '#6b7280' : active ? '#fecaca' : colors.textMuted, fontWeight: '800', fontSize: '0.95rem' }}>{npc.name || 'Unknown'}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: dead ? '#6b7280' : active ? '#fecaca' : colors.textMuted, fontWeight: '800', fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{npc.name || 'Unknown'}</div>
           <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.1rem' }}>
             {dead ? '💀 Defeated' : active ? '⚔️ In Battle' : '⏳ Staging'}
           </div>
         </div>
-        {active && <div style={{ color: colors.amber, fontWeight: '700', fontSize: '0.82rem' }}>{npc.hp} / {npc.maxHp}</div>}
-        {hasMoveset && <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>⚔️ Moves ▸</div>}
+        {active && <div style={{ color: colors.amber, fontWeight: '700', fontSize: '0.82rem', flexShrink: 0 }}>{npc.hp} / {npc.maxHp}</div>}
+        {hasMoveset && <div style={{ color: colors.textFaint, fontSize: '0.65rem', flexShrink: 0 }}>Moves ▸</div>}
       </div>
       {active && (
         <>
           <div style={{ height: '5px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', overflow: 'hidden' }}>
             <div style={{ width: `${pct}%`, height: '100%', background: hpBarColor(pct), borderRadius: '3px', transition: 'width 0.4s ease' }} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '0.4rem', marginTop: '0.6rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.4rem', marginTop: '0.6rem' }}>
             {[
-              { label: 'Armor', value: `${npc.armor}+` },
-              { label: 'Walk',  value: npc.walk  || '—' },
-              { label: 'Run',   value: npc.run   || '—' },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ background: 'rgba(0,0,0,0.3)', border: borders.default, borderRadius: '6px', padding: '0.3rem', textAlign: 'center' }}>
-                <div style={{ color: colors.textFaint, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-                <div style={{ color: colors.purpleLight, fontWeight: '800', fontSize: '0.78rem', marginTop: '0.1rem' }}>{value}</div>
+              { label: 'Attack', value: npc.attackBonus != null ? `+${npc.attackBonus}` : '—', color: '#fca5a5', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.2)'  },
+              { label: 'Armor',  value: npc.armor != null ? `${npc.armor}+` : '—',             color: '#93c5fd', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.2)' },
+              { label: 'Walk',   value: npc.walk  || '—',                                       color: '#fbbf24', bg: 'rgba(251,191,36,0.06)', border: 'rgba(251,191,36,0.15)' },
+              { label: 'Run',    value: npc.run   || '—',                                       color: '#fde68a', bg: 'rgba(251,191,36,0.1)',  border: 'rgba(251,191,36,0.25)' },
+            ].map(({ label, value, color, bg, border }) => (
+              <div key={label} style={{ background: bg, border: `1px solid ${border}`, borderRadius: '6px', padding: '0.3rem', textAlign: 'center' }}>
+                <div style={{ color: color, fontSize: '0.55rem', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 }}>{label}</div>
+                <div style={{ color: color, fontWeight: '800', fontSize: '0.78rem', marginTop: '0.1rem' }}>{value}</div>
               </div>
             ))}
           </div>
@@ -1493,7 +2080,7 @@ const navBtn = (disabled) => ({
 });
 
 const centeredPage = {
-  minHeight: '100vh',
+  minHeight: '100svh',
   background: 'linear-gradient(145deg,#0a0505,#100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'center',
@@ -1507,6 +2094,11 @@ if (typeof document !== 'undefined' && !document.getElementById('turnPulseStyle'
     @keyframes turnPulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%       { opacity: 0.5; transform: scale(0.85); }
+    }
+    @keyframes turnFlashAnim {
+      0%   { background: rgba(201,169,97,0.35); }
+      40%  { background: rgba(201,169,97,0.15); }
+      100% { background: rgba(201,169,97,0); }
     }
   `;
   document.head.appendChild(style);

@@ -142,8 +142,19 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
     const newItems = assignedItems.map(buildLootItem);
     let baseInventory = player.inventory || [];
     if (requiredKeyName?.trim()) {
-      const keyIdx = baseInventory.findIndex(it => it.name.trim().toLowerCase() === requiredKeyName.trim().toLowerCase());
-      if (keyIdx !== -1) baseInventory = baseInventory.filter((_, i) => i !== keyIdx);
+      const nameLC = requiredKeyName.trim().toLowerCase();
+      // Prefer a key-typed item with matching name; fall back to name-only match
+      let keyIdx = baseInventory.findIndex(it =>
+        it.effect?.type === 'key' &&
+        it.name.trim().toLowerCase() === nameLC
+      );
+      if (keyIdx === -1) {
+        keyIdx = baseInventory.findIndex(it => it.name.trim().toLowerCase() === nameLC);
+      }
+      if (keyIdx !== -1) {
+        addLog(`🔑 "${baseInventory[keyIdx].name}" was used to open the chest.`, 'items');
+        baseInventory = baseInventory.filter((_, i) => i !== keyIdx);
+      }
     }
     let inv = baseInventory.filter(it => !droppedIds.includes(it.id));
     inv = [...inv, ...newItems];

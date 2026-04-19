@@ -32,18 +32,76 @@ const NPCCard = ({
     ? (npc.phases[npc.currentPhase - 1]?.label || `Phase ${npc.currentPhase + 1}`)
     : 'Phase 1';
 
+  // ── Phase alert logic — covers all three trigger scenarios ──────────────
+  //
+  // Case 1: triggerType 'hp', triggerHP > 0
+  //   checkPhaseTransition() fires automatically on HP change, so the phase
+  //   transitions on its own. Alert fires as a brief confirmation that the
+  //   transition happened (phaseJustTriggered flag on the NPC).
+  //
+  // Case 2: triggerType 'hp', triggerHP === 0 (resurrection)
+  //   Also auto-fires in checkPhaseTransition when HP hits 0. The NPC
+  //   comes back to life automatically. Alert shows if isDead + next phase
+  //   is a resurrection phase (so DM knows to expect a revive).
+  //
+  // Case 3: triggerType 'manual'
+  //   Never auto-fires. DM must trigger it. Alert fires as a persistent
+  //   reminder that a manual phase is waiting to be triggered.
+
+  const nextPhaseData = hasNextPhase ? npc.phases[npc.currentPhase] : null;
+
+  const phaseAlertReady = !!nextPhaseData && !npc.isDead && (() => {
+    const tt = nextPhaseData.triggerType || 'hp';
+
+    // Case 3: manual — always show alert while NPC is active, reminding DM to trigger
+    if (tt === 'manual') return npc.active;
+
+    // Case 1: HP threshold — alert while HP is at or below threshold
+    // (auto-transition may not have fired yet if damage was applied externally)
+    if (tt === 'hp' && nextPhaseData.triggerHP > 0) {
+      return npc.active && npc.hp <= nextPhaseData.triggerHP;
+    }
+
+    // Case 2: resurrection — alert when NPC is dead and next phase revives them
+    if (tt === 'hp' && nextPhaseData.triggerHP === 0 && nextPhaseData.resurrectHP) {
+      return npc.isDead;
+    }
+
+    return false;
+  })();
+
+  // Human-readable label for the alert badge
+  const phaseAlertLabel = (() => {
+    if (!nextPhaseData) return 'PHASE CHANGE';
+    const tt = nextPhaseData.triggerType || 'hp';
+    if (tt === 'manual') return '⚡ TRIGGER PHASE';
+    if (nextPhaseData.triggerHP === 0) return '💀 RESURRECTION';
+    return '⚡ PHASE CHANGE';
+  })();
+
+  const phaseAlertTitle = (() => {
+    if (!nextPhaseData) return 'Trigger next phase';
+    const tt = nextPhaseData.triggerType || 'hp';
+    const label = nextPhaseData.label || `Phase ${npc.currentPhase + 2}`;
+    if (tt === 'manual') return `Manual phase — click to trigger: ${label}`;
+    if (nextPhaseData.triggerHP === 0) return `Resurrection phase — NPC revives at ${nextPhaseData.resurrectHP || 20}hp: ${label}`;
+    return `HP threshold reached — click to trigger: ${label}`;
+  })();
+
   const handleSetHP = () => {
     const val = parseInt(manualHP);
     if (!isNaN(val)) { onHPChange(npc.id, val); setManualHP(''); }
   };
 
-  const cardBorder = isCurrentTurn
-    ? `2px solid ${colors.red}`
-    : npc.isDead
-      ? `1px solid ${colors.redDeep}`
-      : npc.active
-        ? `1px solid rgba(239,68,68,0.3)`
-        : borders.default;
+  const cardBorder = phaseAlertReady
+    ? `2px solid ${(nextPhaseData?.triggerHP === 0) ? '#a78bfa' : '#f97316'}`
+    : isCurrentTurn
+      ? `2px solid ${colors.red}`
+      : npc.isDead
+        ? `1px solid ${colors.redDeep}`
+        : npc.active
+          ? `1px solid rgba(239,68,68,0.3)`
+          : borders.default;
 
   return (
     <div style={{
@@ -81,6 +139,29 @@ const NPCCard = ({
         </div>
         {isCurrentTurn && <div style={pill(colors.red, colors.redSubtle, colors.redBorder)}>NPC TURN</div>}
         {!isCurrentTurn && hasActedThisRound && <div style={pill(colors.green, colors.greenSubtle, colors.greenBorder)}>✓ ACTED</div>}
+        {phaseAlertReady && (
+          <div
+            onClick={() => onTriggerPhase && onTriggerPhase(npc.id, npc.currentPhase)}
+            title={phaseAlertTitle}
+            style={{
+              padding: '0.22rem 0.55rem',
+              background: (nextPhaseData?.triggerHP === 0)
+                ? 'rgba(139,92,246,0.15)'   // purple for resurrection
+                : 'rgba(249,115,22,0.15)',   // orange for HP / manual
+              border: `2px solid ${(nextPhaseData?.triggerHP === 0) ? '#a78bfa' : '#f97316'}`,
+              borderRadius: '6px',
+              color: (nextPhaseData?.triggerHP === 0) ? '#c4b5fd' : '#fb923c',
+              fontSize: '0.65rem',
+              fontWeight: '900',
+              cursor: 'pointer',
+              letterSpacing: '0.04em',
+              animation: 'phaseAlertPulse 1.2s ease-in-out infinite',
+              flexShrink: 0,
+            }}
+          >
+            {phaseAlertLabel}
+          </div>
+        )}
         {npc.hasPhases && npc.phases?.length > 0 && (
           <>
             <div style={{
@@ -315,5 +396,18 @@ const NPCCard = ({
     </div>
   );
 };
+
+// Inject phase alert pulse animation once
+if (typeof document !== 'undefined' && !document.getElementById('phaseAlertStyle')) {
+  const s = document.createElement('style');
+  s.id = 'phaseAlertStyle';
+  s.textContent = `
+    @keyframes phaseAlertPulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+      50%       { opacity: 0.85; box-shadow: 0 0 0 4px transparent; }
+    }
+  `;
+  document.head.appendChild(s);
+}
 
 export default NPCCard;

@@ -35,8 +35,8 @@ const PlayerWaitingRoom = ({ lobbyCode, playerData, onGameStart }) => {
   }
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', fontFamily: fonts.body, padding: '2rem', paddingTop: '2.5rem', paddingBottom: '3rem', boxSizing: 'border-box' }}>
-      <div style={{ width: '100%', maxWidth: '420px' }}>
+    <div className="bt-page" style={{ height: 'auto', minHeight: '100svh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'linear-gradient(145deg, #0a0505, #100808)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', fontFamily: fonts.body, padding: '2rem', paddingTop: '2.5rem', paddingBottom: '3rem', boxSizing: 'border-box' }}>
+      <div className="bt-card" style={{ width: '100%', maxWidth: '420px' }}>
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
@@ -89,7 +89,7 @@ const PlayerWaitingRoom = ({ lobbyCode, playerData, onGameStart }) => {
 };
 
 const centeredPage = {
-  height: '100vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+  height: 'auto', minHeight: '100svh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   background: 'linear-gradient(145deg, #0a0505, #100808)',
   display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'center',

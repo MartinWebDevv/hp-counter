@@ -202,6 +202,7 @@ export const useVPState = (players, addLog) => {
   return {
     vpStats,
     setVpStats,
+    saveVpStats,
     sessionCount,
     firstBloodAwarded,
     setFirstBloodAwarded,

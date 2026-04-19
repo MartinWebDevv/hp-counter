@@ -171,7 +171,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     }
     if (killedNPC.isFinalBoss && attackingPlayer) {
       vp.trackVP(attackingPlayer.id, 'finalBossKill', 1);
-      addLog(`👑 ${attackingPlayer.playerName} dealt the killing blow to ${killedNPC.name}!`);
+      addLog(`👑 ${attackingPlayer.playerName} dealt the killing blow to ${killedNPC.name}!`, 'combat');
     }
   });
 
@@ -186,6 +186,22 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       initialStateLoaded.current = true;
       loadGameState(initialGameState);
       if (initialGameState.npcs?.length) setNpcs(initialGameState.npcs);
+      // Restore vpStats from save file — overrides stale localStorage data
+      // Also zero out live session trackers so npcDamage etc don't bleed in
+      if (initialGameState.vpStats) {
+        const restoredVp = {};
+        Object.entries(initialGameState.vpStats).forEach(([pid, pdata]) => {
+          restoredVp[pid] = {
+            ...pdata,
+            // Zero live trackers so current session starts fresh
+            npcDamage: 0, pvpDamage: 0, damageTaken: 0,
+            revivesUsed: 0, finalBossKill: 0, warmonger: 0,
+            firstBlood: 0, itemsObtained: 0, leastDeaths: 0,
+            leastDamageTaken: 0,
+          };
+        });
+        vp.saveVpStats(restoredVp);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMultiplayer, initialGameState]);
@@ -232,7 +248,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         setPlayers(prev => prev.map(p =>
           p.uid === n.uid ? { ...p, isLeft: true, isAbsent: true } : p
         ));
-        addLog(`🚪 ${n.playerName} has left the game`);
+        addLog(`🚪 ${n.playerName} has left the game`, 'system');
         // Auto-dismiss toast after 5s
         setTimeout(() => setLeftToasts(prev => prev.filter(t => t.id !== id)), 5000);
       });
@@ -257,7 +273,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             ? { ...p, uid: n.uid, isAbsent: false, isManual: false, isLeft: false }
             : p
         ));
-        addLog(`🔄 ${n.playerName} has rejoined the game`);
+        addLog(`🔄 ${n.playerName} has rejoined the game`, 'system');
         setTimeout(() => setRejoinToasts(prev => prev.filter(t => t.id !== id)), 5000);
       });
     });
@@ -270,8 +286,22 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const firstItemRequest = !firstRequest ? Object.values(pendingRequests).find(r => r?.type === 'useItem') : null;
   // First pending item choice (player made their choice, GM confirms to execute)
   const firstItemChoice = (!firstRequest && !firstItemRequest)
-    ? Object.values(pendingRequests).find(r => r?.type === 'itemChoice')
+    ? Object.values(pendingRequests).find(r => r?.type === 'itemChoice' && r?.itemEffect !== 'passChoice')
     : null;
+  // First pending pass choice (player chose where to send item, GM confirms hand-off)
+  const firstPassChoice = (!firstRequest && !firstItemRequest && !firstItemChoice)
+    ? Object.values(pendingRequests).find(r => r?.type === 'itemChoice' && r?.itemEffect === 'passChoice')
+    : null;
+  // First pending end turn request
+  const firstEndTurnRequest = Object.values(pendingRequests).find(r => r?.type === 'endTurn') || null;
+
+  // Total queued requests behind whatever is currently showing
+  const totalAttackQueue = Object.values(pendingRequests).filter(r => r?.type === 'attack').length;
+  const totalItemQueue   = Object.values(pendingRequests).filter(r => r?.type === 'useItem').length;
+  const totalChoiceQueue = Object.values(pendingRequests).filter(r => r?.type === 'itemChoice').length;
+  // Combined behind-the-current count
+  const queueBehindAttack = totalAttackQueue - 1 + totalItemQueue + totalChoiceQueue;
+  const queueBehindItem   = totalItemQueue - 1 + totalChoiceQueue;
 
   // ── GM: execute an approved item choice from the player ───────────────────
   const handleExecuteItemChoice = (req) => {
@@ -300,7 +330,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, hp: Math.min(u.hp + healAmt, u.maxHp) } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`💚 ${player.playerName}'s ${req.targetUnitLabel} healed ${healAmt}hp`);
+        addLog(`💚 ${player.playerName}'s ${req.targetUnitLabel} healed ${healAmt}hp`, 'combat');
       } else if (effectType === 'maxHP') {
         const boost = item?.effect?.value || 0;
         if (isCommander) {
@@ -309,7 +339,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, maxHp: u.maxHp + boost, hp: u.hp + boost } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`❤️ ${player.playerName}'s ${req.targetUnitLabel} max HP +${boost}`);
+        addLog(`❤️ ${player.playerName}'s ${req.targetUnitLabel} max HP +${boost}`, 'combat');
       } else if (effectType === 'attackBonus' || effectType === 'defenseBonus') {
         const bonus = item?.effect?.value || 1;
         const effectName = effectType === 'attackBonus' ? 'attackBuff' : 'defenseBuff';
@@ -322,7 +352,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [...(u.statusEffects || []), newEffect] } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`${label} ${player.playerName}'s ${req.targetUnitLabel} +${bonus}`);
+        addLog(`${label} ${player.playerName}'s ${req.targetUnitLabel} +${bonus}`, 'combat');
       } else if (effectType === 'shieldWall') {
         const newEffect = { type: 'shieldWall', duration: 1, shieldedPlayerId: player.id };
         if (isCommander) {
@@ -331,7 +361,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [...(u.statusEffects || []), newEffect] } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`🛡️ Shield Wall applied to ${player.playerName}'s ${req.targetUnitLabel}`);
+        addLog(`🛡️ Shield Wall applied to ${player.playerName}'s ${req.targetUnitLabel}`, 'combat');
       } else if (effectType === 'counterStrike') {
         const newEffect = { type: 'counterStrike', duration: item?.effect?.duration || 1 };
         if (isCommander) {
@@ -340,7 +370,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [...(u.statusEffects || []), newEffect] } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`⚡ Counter Strike applied to ${player.playerName}'s ${req.targetUnitLabel}`);
+        addLog(`⚡ Counter Strike applied to ${player.playerName}'s ${req.targetUnitLabel}`, 'combat');
       } else if (effectType === 'cleanse') {
         if (isCommander) {
           const effects = (player.commanderStats.statusEffects || []);
@@ -349,7 +379,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: (u.statusEffects || []).slice(0, -1) } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`✨ ${player.playerName}'s ${req.targetUnitLabel} cleansed one status effect`);
+        addLog(`✨ ${player.playerName}'s ${req.targetUnitLabel} cleansed one status effect`, 'combat');
       } else if (effectType === 'fullCleanse') {
         if (isCommander) {
           updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [] } });
@@ -357,12 +387,12 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, statusEffects: [] } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`✨✨ ${player.playerName}'s ${req.targetUnitLabel} fully cleansed`);
+        addLog(`✨✨ ${player.playerName}'s ${req.targetUnitLabel} fully cleansed`, 'combat');
       } else if (effectType === 'resurrect') {
         const reviveHp = 5;
         const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, hp: reviveHp, livesRemaining: Math.max(0, (u.livesRemaining ?? 0) - 1) } : u);
         updatePlayer(player.id, { subUnits: newSubs });
-        addLog(`💫 ${player.playerName}'s ${req.targetUnitLabel} resurrected at ${reviveHp}hp`);
+        addLog(`💫 ${player.playerName}'s ${req.targetUnitLabel} resurrected at ${reviveHp}hp`, 'combat');
       } else if (effectType === 'extraSlot') {
         if (isCommander) {
           updatePlayer(player.id, { commanderStats: { ...player.commanderStats, bonusSlots: (player.commanderStats.bonusSlots || 0) + 1 } });
@@ -370,7 +400,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, bonusSlots: (u.bonusSlots || 0) + 1 } : u);
           updatePlayer(player.id, { subUnits: newSubs });
         }
-        addLog(`🎒 ${player.playerName}'s ${req.targetUnitLabel} gained an extra item slot`);
+        addLog(`🎒 ${player.playerName}'s ${req.targetUnitLabel} gained an extra item slot`, 'items');
       }
 
       // Remove item after use (unless uses remaining)
@@ -403,19 +433,19 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         const val = item?.effect?.value || item?.effect?.damagePerRound || 1;
         if (effectType === 'poisonVial') {
           applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'poison', value: val, duration: dur }]);
-          addLog(`🧪 ${player.playerName} poisoned ${npc.name}`);
+          addLog(`🧪 ${player.playerName} poisoned ${npc.name}`, 'combat');
         } else if (effectType === 'stunGrenade') {
           applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'stun', duration: 1 }]);
-          addLog(`💣 ${player.playerName} stunned ${npc.name}`);
+          addLog(`💣 ${player.playerName} stunned ${npc.name}`, 'combat');
         } else if (effectType === 'attackDebuffItem') {
           applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'attackDebuff', value: item?.effect?.debuffValue || 1, duration: dur }]);
-          addLog(`⚔️↓ ${player.playerName} debuffed ${npc.name}'s attack`);
+          addLog(`⚔️↓ ${player.playerName} debuffed ${npc.name}'s attack`, 'combat');
         } else if (effectType === 'defenseDebuffItem') {
           applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'defenseDebuff', value: item?.effect?.debuffValue || 1, duration: dur }]);
-          addLog(`🛡️↓ ${player.playerName} debuffed ${npc.name}'s defense`);
+          addLog(`🛡️↓ ${player.playerName} debuffed ${npc.name}'s defense`, 'combat');
         } else if (effectType === 'marked') {
           applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'marked', duration: 1 }]);
-          addLog(`🎯 ${player.playerName} marked ${npc.name}`);
+          addLog(`🎯 ${player.playerName} marked ${npc.name}`, 'combat');
         }
       } else {
         // Apply to enemy player unit
@@ -441,7 +471,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           updatePlayer(targetPlayerId, { subUnits: newSubs });
         }
         const effectLabels = { poisonVial: '🧪 Poisoned', stunGrenade: '💣 Stunned', attackDebuffItem: '⚔️↓ Attack Debuffed', defenseDebuffItem: '🛡️↓ Defense Debuffed', marked: '🎯 Marked' };
-        addLog(`${effectLabels[effectType] || effectType}: ${player.playerName} → ${targetPlayer.playerName}'s ${req.targetUnitLabel}`);
+        addLog(`${effectLabels[effectType] || effectType}: ${player.playerName} → ${targetPlayer.playerName}'s ${req.targetUnitLabel}`, 'combat');
       }
 
       // Remove item after use
@@ -472,7 +502,71 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
       // Remove destroyer's item too
       if (item) updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
-      addLog(`💥 ${player.playerName} destroyed ${targetPlayer.playerName}'s "${req.destroyedItemName}"`);
+      addLog(`💥 ${player.playerName} destroyed ${targetPlayer.playerName}'s "${req.destroyedItemName}"`, 'items');
+    }
+  };
+
+  // ── Execute a DM-approved pass (hand-off) ────────────────────────────────
+  const handleExecutePassChoice = (req) => {
+    resolvePendingRequest(lobbyCode, req.reqId);
+    if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId);
+
+    // Read fresh player state — avoids stale snapshot from when the request was created
+    const freshSource = players.find(p => String(p.id) === String(req.playerId));
+    const freshTarget = players.find(p => String(p.id) === String(req.passTargetPlayerId));
+    if (!freshSource || !freshTarget) return;
+
+    const item = (freshSource.inventory || [])[req.itemIndex];
+    if (!item) return;
+
+    const targetUnitType  = req.passTargetUnitType;
+    const isSamePlayer    = String(freshSource.id) === String(freshTarget.id);
+
+    const sourceUnitLabel = loot.unitNameByType(freshSource, item.heldBy);
+    const targetUnitLabel = loot.unitNameByType(freshTarget, targetUnitType);
+
+    if (req.passMode === 'give') {
+      if (isSamePlayer) {
+        const inv = (freshSource.inventory || [])
+          .filter(it => it.id !== item.id)
+          .concat({ ...item, heldBy: targetUnitType });
+        updatePlayer(freshSource.id, { inventory: inv });
+        addLog(`🔀 ${freshSource.playerName} moved "${item.name}" from ${sourceUnitLabel} to ${targetUnitLabel}`, 'items');
+      } else {
+        const newSourceInv = (freshSource.inventory || []).filter(it => it.id !== item.id);
+        updatePlayer(freshSource.id, { inventory: newSourceInv });
+        const newTargetInv = [...(freshTarget.inventory || []), { ...item, heldBy: targetUnitType }];
+        updatePlayer(freshTarget.id, { inventory: newTargetInv });
+        addLog(`🎁 ${freshSource.playerName}'s ${sourceUnitLabel} gave "${item.name}" to ${freshTarget.playerName}'s ${targetUnitLabel}`, 'items');
+      }
+    } else if (req.passMode === 'trade') {
+      const tradedItem = req.passTradeItemId
+        ? (freshTarget.inventory || []).find(it => it.id === req.passTradeItemId)
+        : null;
+      if (!tradedItem) return;
+
+      if (isSamePlayer) {
+        const inv = (freshSource.inventory || [])
+          .filter(it => it.id !== item.id && it.id !== tradedItem.id)
+          .concat(
+            { ...item,       heldBy: targetUnitType },
+            { ...tradedItem, heldBy: item.heldBy    },
+          );
+        updatePlayer(freshSource.id, { inventory: inv });
+        addLog(`⇄ ${freshSource.playerName} swapped "${item.name}" (${sourceUnitLabel}) with "${tradedItem.name}" (${targetUnitLabel})`, 'items');
+      } else {
+        const newSourceInv = (freshSource.inventory || [])
+          .filter(it => it.id !== item.id)
+          .concat({ ...tradedItem, heldBy: item.heldBy });
+        updatePlayer(freshSource.id, { inventory: newSourceInv });
+
+        const newTargetInv = (freshTarget.inventory || [])
+          .filter(it => it.id !== tradedItem.id)
+          .concat({ ...item, heldBy: targetUnitType });
+        updatePlayer(freshTarget.id, { inventory: newTargetInv });
+
+        addLog(`⇄ ${freshSource.playerName}'s ${sourceUnitLabel} traded "${item.name}" with ${freshTarget.playerName}'s ${targetUnitLabel} for "${tradedItem.name}"`, 'items');
+      }
     }
   };
 
@@ -614,7 +708,211 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       return;
     }
 
-    // For 'pass' and other non-choice 'use' effects — GM applies manually via PlayerCard
+    // 'pass' — send the player a picker so they choose target player + unit
+    if (req.action === 'pass') {
+      const choiceId = `passchoice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      writePendingChoice(lobbyCode, choiceId, {
+        choiceId,
+        type:            'passChoice',
+        targetPlayerUid: player.uid,
+        targetPlayerId:  player.id,
+        playerName:      player.playerName,
+        itemIndex:       req.itemIndex,
+        itemName:        req.itemName,
+        itemEffect:      req.itemEffect,
+        // Snapshot of all players so the picker has data without another Firestore read
+        allPlayers: players.map(p => ({
+          id: p.id, uid: p.uid, playerName: p.playerName, playerColor: p.playerColor,
+          commanderStats: p.commanderStats,
+          subUnits: p.subUnits,
+          inventory: p.inventory,
+          commander: p.commander,
+        })),
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // ── 'use' with no-target / global effects — auto-execute on approval ───
+    if (req.action === 'use') {
+      const item = (player.inventory || [])[req.itemIndex];
+      const ef   = item?.effect;
+      if (!ef) return;
+
+      const dmgPerRound = ef.damagePerRound || 2;
+      const duration    = ef.duration || 3;
+
+      const consumeItem = () => {
+        // Always track this as the last-played item (for Mirror to copy)
+        setLastItemPlayed({ item, sourcePlayerId: player.id });
+        // Re-read fresh player inventory to avoid stale closure
+        const fresh = players.find(p => String(p.id) === String(req.playerId));
+        if (!fresh) return;
+        const uses          = ef.uses ?? 1;
+        const usesRemaining = ef.usesRemaining ?? uses;
+        if (uses === 0) return; // unlimited — keep in inventory, tracking already done above
+        if (usesRemaining <= 1) {
+          updatePlayer(player.id, { inventory: (fresh.inventory || []).filter((_, i) => i !== req.itemIndex) });
+        } else {
+          const newInv = (fresh.inventory || []).map((it, i) =>
+            i === req.itemIndex ? { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } } : it
+          );
+          updatePlayer(player.id, { inventory: newInv });
+        }
+      };
+
+      if (ef.type === 'npcPlague') {
+        const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
+        setNpcs(prev => prev.map(n =>
+          n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), poisonEntry] } : n
+        ));
+        consumeItem();
+        addLog(`☠️ ${player.playerName} unleashed NPC Plague! All active NPCs are poisoned (${dmgPerRound}hp×${duration}r).`, 'items');
+        return;
+      }
+
+      if (ef.type === 'playerPlague') {
+        const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
+        players.forEach(p => {
+          if (String(p.id) === String(player.id)) return;
+          const newCmdStats = { ...p.commanderStats, statusEffects: [...(p.commanderStats.statusEffects || []), poisonEntry] };
+          const newSubs     = (p.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), poisonEntry] } : u);
+          updatePlayer(p.id, { commanderStats: newCmdStats, subUnits: newSubs });
+        });
+        consumeItem();
+        addLog(`☠️ ${player.playerName} unleashed Player Plague! All enemy units are poisoned (${dmgPerRound}hp×${duration}r).`, 'items');
+        return;
+      }
+
+      if (ef.type === 'crownsFavor') {
+        const buffDuration = ef.duration || 1;
+        const buffEntry    = { type: 'attackBuff', value: 1, duration: buffDuration, permanent: false };
+        const freshSrc     = players.find(p => String(p.id) === String(player.id));
+        if (freshSrc) {
+          const newCmdStats = { ...freshSrc.commanderStats, statusEffects: [...(freshSrc.commanderStats.statusEffects || []), buffEntry] };
+          const newSubs     = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), buffEntry] } : u);
+          updatePlayer(freshSrc.id, { commanderStats: newCmdStats, subUnits: newSubs });
+        }
+        consumeItem();
+        addLog(`👑 Crown's Favor! ${player.playerName}'s faction gains +1 to all rolls for ${buffDuration} round(s).`, 'items');
+        return;
+      }
+
+      if (ef.type === 'nullify') {
+        const lastEf = lastItemPlayed?.item?.effect;
+        const effectTypeToRemove = lastEf ? ({
+          poisonVial: 'poison', npcPlague: 'poison', playerPlague: 'poison',
+          stunGrenade: 'stun', attackDebuffItem: 'attackDebuff',
+          defenseDebuffItem: 'defenseDebuff', marked: 'marked',
+          shieldWall: 'shieldWall', counterStrike: 'counterStrike',
+          attackBonus: 'attackBuff', crownsFavor: 'attackBuff',
+          defenseBonus: 'defenseBuff',
+        }[lastEf.type] || null) : null;
+        const removeLastEffect = (effects) => {
+          if (effectTypeToRemove) {
+            const idx = [...effects].reverse().findIndex(e => e.type === effectTypeToRemove);
+            if (idx !== -1) return effects.filter((_, i) => i !== effects.length - 1 - idx);
+          }
+          return effects.length > 0 ? effects.slice(0, -1) : [];
+        };
+        const freshSrc = players.find(p => String(p.id) === String(player.id));
+        if (freshSrc) {
+          const newCmdStats = { ...freshSrc.commanderStats, statusEffects: removeLastEffect(freshSrc.commanderStats.statusEffects || []) };
+          const newSubs     = (freshSrc.subUnits || []).map(u => ({ ...u, statusEffects: removeLastEffect(u.statusEffects || []) }));
+          updatePlayer(freshSrc.id, { commanderStats: newCmdStats, subUnits: newSubs });
+        }
+        consumeItem();
+        const label = effectTypeToRemove ? (lastItemPlayed?.item?.name || 'last effect') : 'last effect';
+        addLog(`🚫 ${player.playerName} used Nullify — ${label} removed from all own units!`, 'items');
+        return;
+      }
+
+      if (ef.type === 'mirror') {
+        if (!lastItemPlayed) {
+          addLog(`🪞 Mirror failed — no item has been played yet.`, 'items');
+          consumeItem();
+          return;
+        }
+        const { item: mirroredItem } = lastItemPlayed;
+        const mef = mirroredItem.effect;
+        if (mef?.type === 'mirror' || mef?.type === 'nullify') {
+          addLog(`🪞 Mirror cannot copy Mirror or Nullify.`, 'items');
+          consumeItem();
+          return;
+        }
+        const enemyTargetTypes = ['poisonVial','stunGrenade','attackDebuffItem','defenseDebuffItem','marked'];
+        const globalTypes      = ['npcPlague','playerPlague','crownsFavor'];
+        const selfTypes        = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'];
+        if (enemyTargetTypes.includes(mef?.type)) {
+          // Need a target — open enemy picker with the mirrored item
+          setEnemyItemModal({ sourcePlayer: player, item: { ...mirroredItem, id: `mirror_${Date.now()}` }, itemIndex: -1, isMirror: true, originalItemIndex: req.itemIndex, mirrorSourcePlayerId: player.id });
+          setEnemyTargetMode(null);
+          updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+          setLastItemPlayed({ item, sourcePlayerId: player.id });
+        } else if (globalTypes.includes(mef?.type)) {
+          const mDmg = mef.damagePerRound || 2;
+          const mDur = mef.duration || 3;
+          const poisonEntry = { type: 'poison', value: mDmg, duration: mDur, permanent: false };
+          if (mef.type === 'npcPlague') {
+            setNpcs(prev => prev.map(n => n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), poisonEntry] } : n));
+            addLog(`🪞 ${player.playerName} mirrored "${mirroredItem.name}" — all active NPCs poisoned (${mDmg}hp×${mDur}r)!`, 'items');
+          } else if (mef.type === 'playerPlague') {
+            players.forEach(p => {
+              if (String(p.id) === String(player.id)) return;
+              const newCmd  = { ...p.commanderStats, statusEffects: [...(p.commanderStats.statusEffects || []), poisonEntry] };
+              const newSubs = (p.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), poisonEntry] } : u);
+              updatePlayer(p.id, { commanderStats: newCmd, subUnits: newSubs });
+            });
+            addLog(`🪞 ${player.playerName} mirrored "${mirroredItem.name}" — all enemy units poisoned (${mDmg}hp×${mDur}r)!`, 'items');
+          } else if (mef.type === 'crownsFavor') {
+            const mBufDur = mef.duration || 1;
+            const buffEntry = { type: 'attackBuff', value: 1, duration: mBufDur, permanent: false };
+            const freshSrc  = players.find(p => String(p.id) === String(player.id));
+            if (freshSrc) {
+              const newCmd  = { ...freshSrc.commanderStats, statusEffects: [...(freshSrc.commanderStats.statusEffects || []), buffEntry] };
+              const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), buffEntry] } : u);
+              updatePlayer(freshSrc.id, { commanderStats: newCmd, subUnits: newSubs });
+            }
+            addLog(`🪞 ${player.playerName} mirrored "${mirroredItem.name}" — faction gains +1 to all rolls for ${mBufDur} round(s)!`, 'items');
+          }
+          consumeItem();
+        } else if (selfTypes.includes(mef?.type)) {
+          const freshSrc = players.find(p => String(p.id) === String(player.id));
+          if (freshSrc) {
+            const mDuration2 = mef.duration || 1;
+            const addEff = (effects, entry) => [...(effects || []), entry];
+            if (mef.type === 'shieldWall') {
+              const entry   = { type: 'shieldWall', shieldedPlayerId: player.id, duration: mDuration2, permanent: false };
+              const newCmd  = { ...freshSrc.commanderStats, statusEffects: addEff(freshSrc.commanderStats.statusEffects, entry) };
+              const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: addEff(u.statusEffects, entry) } : u);
+              updatePlayer(freshSrc.id, { commanderStats: newCmd, subUnits: newSubs });
+              addLog(`🪞 ${player.playerName} mirrored "${mirroredItem.name}" — Shield Wall active!`, 'items');
+            } else if (mef.type === 'counterStrike') {
+              const entry   = { type: 'counterStrike', duration: mDuration2, permanent: false };
+              const newCmd  = { ...freshSrc.commanderStats, statusEffects: addEff(freshSrc.commanderStats.statusEffects, entry) };
+              const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: addEff(u.statusEffects, entry) } : u);
+              updatePlayer(freshSrc.id, { commanderStats: newCmd, subUnits: newSubs });
+              addLog(`🪞 ${player.playerName} mirrored "${mirroredItem.name}" — Counter Strike active!`, 'items');
+            } else {
+              // cleanse, fullCleanse, resurrect need a unit choice — log it for the DM
+              addLog(`🪞 ${player.playerName} mirrored "${mirroredItem.name}" — select a unit on their card.`, 'items');
+            }
+          }
+          consumeItem();
+        } else {
+          consumeItem();
+          addLog(`🪞 ${player.playerName} mirrored "${mirroredItem.name}"!`, 'items');
+        }
+        return;
+      }
+
+      // 'manual' and any unrecognised effect — just consume the item, DM narrates the effect
+      if (ef.type === 'manual' || ef.type === 'none') {
+        consumeItem();
+        addLog(`✦ ${player.playerName} used "${req.itemName}".`, 'items');
+        return;
+      }
+    }
   };
 
   const handleDenyItemRequest = (req) => {
@@ -665,7 +963,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           commanderStats: pCmdChanged ? { ...p.commanderStats, statusEffects: filteredCmd } : p.commanderStats,
           subUnits: filteredSubs,
         });
-        addLog(`🛡️ Shield Wall expired on ${p.playerName}'s units (${player.playerName}'s turn started)`);
+        addLog(`🛡️ Shield Wall expired on ${p.playerName}'s units (${player.playerName}'s turn started)`, 'combat');
       }
     });
 
@@ -676,7 +974,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         if (effect.type === 'poison') {
           const dmg = effect.value || 0;
           newCmdStats.hp = Math.max(0, newCmdStats.hp - dmg);
-          addLog(`🤢 ${player.playerName}'s ${newCmdStats.customName || player.commander} took ${dmg}hp poison damage`);
+          addLog(`🤢 ${player.playerName}'s ${newCmdStats.customName || player.commander} took ${dmg}hp poison damage`, 'combat');
           changed = true;
         }
         const dur = (effect.duration || 1) - 1;
@@ -684,7 +982,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           next.push({ ...effect, duration: dur });
         } else {
           const expireLabel = { shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
-          addLog(`${expireLabel} expired on ${player.playerName}'s ${newCmdStats.customName || player.commander}`);
+          addLog(`${expireLabel} expired on ${player.playerName}'s ${newCmdStats.customName || player.commander}`, 'combat');
           changed = true;
         }
       }
@@ -702,14 +1000,14 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         if (effect.type === 'poison') {
           const dmg = effect.value || 0;
           hp = Math.max(0, hp - dmg);
-          addLog(`🤢 ${player.playerName}'s ${uName} took ${dmg}hp poison damage`);
+          addLog(`🤢 ${player.playerName}'s ${uName} took ${dmg}hp poison damage`, 'combat');
         }
         const dur = (effect.duration || 1) - 1;
         if (dur > 0) {
           next.push({ ...effect, duration: dur });
         } else {
           const expLabel = { shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
-          addLog(`${expLabel} expired on ${player.playerName}'s ${uName}`);
+          addLog(`${expLabel} expired on ${player.playerName}'s ${uName}`, 'combat');
         }
       }
       return { ...unit, hp, statusEffects: next };
@@ -734,7 +1032,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         if (ef.type === 'poison') {
           const dmg = ef.value || 2;
           hp = Math.max(0, hp - dmg);
-          addLog('🤢 NPC "' + npc.name + '" took ' + dmg + 'hp poison damage');
+          addLog('🤢 NPC "' + npc.name + '" took ' + dmg + 'hp poison damage', 'combat');
         }
         // Skip permanent effects
         if (ef.permanent) { next.push(ef); continue; }
@@ -749,11 +1047,11 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             attackBuff: '⚔️↑ Attack Buff', defenseBuff: '🛡️↑ Defense Buff',
             shieldWall: '🛡️ Shield Wall',
           }[ef.type] || ef.type;
-          addLog(expLabel + ' expired on NPC "' + npc.name + '"');
+          addLog(expLabel + ' expired on NPC "' + npc.name + '"', 'combat');
         }
       }
       const justDied = npc.hp > 0 && hp <= 0;
-      if (justDied) addLog('💀 NPC "' + npc.name + '" was killed by poison!');
+      if (justDied) addLog('💀 NPC "' + npc.name + '" was killed by poison!', 'combat');
       return { ...npc, hp, isDead: justDied ? true : npc.isDead, statusEffects: next };
     }));
   };
@@ -889,7 +1187,20 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           if (state.npcs)     setNpcs(state.npcs);
           if (state.lootPool) setLootPool(state.lootPool);
           if (state.chests)   setChests(state.chests);
-          if (state.vpStats)  vp.setVpStats(state.vpStats);
+          if (state.vpStats) {
+            // Restore historical awards but zero live trackers for a fresh session
+            const restoredVp = {};
+            Object.entries(state.vpStats).forEach(([pid, pdata]) => {
+              restoredVp[pid] = {
+                ...pdata,
+                npcDamage: 0, pvpDamage: 0, damageTaken: 0,
+                revivesUsed: 0, finalBossKill: 0, warmonger: 0,
+                firstBlood: 0, itemsObtained: 0, leastDeaths: 0,
+                leastDamageTaken: 0,
+              };
+            });
+            vp.saveVpStats(restoredVp);
+          }
           // Restore session NPC archive from file, or clear if this save doesn't have one
           setPastSessionNPCs(state.pastSessionNPCs || []);
           try { localStorage.setItem('hpCounterPastSessionNPCs', JSON.stringify(state.pastSessionNPCs || [])); } catch {};
@@ -902,7 +1213,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             roomsState.setRooms(state.rooms);
             try { localStorage.setItem('hpCounterRooms', JSON.stringify(state.rooms)); } catch {}
           }
-          addLog(`Game loaded from ${new Date(state.savedAt).toLocaleString()}`);
+          addLog(`Game loaded from ${new Date(state.savedAt).toLocaleString()}`, 'system');
           alert('Game loaded successfully!');
         } catch { alert('Failed to load save file.'); }
       };
@@ -917,10 +1228,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     if (!player) return;
     if (mode === 'absent') {
       updatePlayer(playerId, { isAbsent: true, isManual: true, isLeft: false });
-      addLog(`😴 ${player.playerName} was marked absent by GM`);
+      addLog(`😴 ${player.playerName} was marked absent by GM`, 'system');
     } else if (mode === 'left') {
       updatePlayer(playerId, { isAbsent: true, isLeft: true, isManual: false });
-      addLog(`🚪 ${player.playerName} was kicked — slot available for rejoin`);
+      addLog(`🚪 ${player.playerName} was kicked — slot available for rejoin`, 'system');
       if (isMultiplayer && lobbyCode && player.uid) {
         try { await markPlayerLeft(lobbyCode, player.uid, player.playerName); } catch {}
       }
@@ -1185,7 +1496,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                         const newSubs = (p.subUnits || []).map(u => ({ ...u, statusEffects: removeEffect(u.statusEffects || []) }));
                         updatePlayer(playerId, { commanderStats: newCmdStats, subUnits: newSubs });
                         const label = effectTypeToRemove ? lastItemPlayed.item.name : 'last effect';
-                        addLog('🚫 ' + p.playerName + ' used Nullify — ' + label + ' removed from all units!');
+                        addLog('🚫 ' + p.playerName + ' used Nullify — ' + label + ' removed from all units!', 'items');
                       }}
                       onUseGlobalItem={(srcPlayer, item, itemIndex) => {
                         const ef = item.effect;
@@ -1200,7 +1511,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                           const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
                           setNpcs(prev => prev.map(n => n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), poisonEntry] } : n));
                           consume();
-                          addLog(`☠️ ${srcPlayer.playerName} unleashed NPC Plague! All active NPCs are poisoned (${dmgPerRound}hp×${duration}r).`);
+                          addLog(`☠️ ${srcPlayer.playerName} unleashed NPC Plague! All active NPCs are poisoned (${dmgPerRound}hp×${duration}r).`, 'items');
                         } else if (ef?.type === 'playerPlague') {
                           // Poison all enemy players' units
                           const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
@@ -1211,7 +1522,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                             updatePlayer(p.id, { commanderStats: newCmdStats, subUnits: newSubs });
                           });
                           consume();
-                          addLog(`☠️ ${srcPlayer.playerName} unleashed Player Plague! All enemy units are poisoned (${dmgPerRound}hp×${duration}r).`);
+                          addLog(`☠️ ${srcPlayer.playerName} unleashed Player Plague! All enemy units are poisoned (${dmgPerRound}hp×${duration}r).`, 'items');
                         } else if (ef?.type === 'crownsFavor') {
                           const buffDuration = ef.duration || 1;
                           const buffEntry = { type: 'attackBuff', value: 1, duration: buffDuration, permanent: false };
@@ -1222,17 +1533,17 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                             updatePlayer(freshSrc.id, { commanderStats: newCmdStats, subUnits: newSubs });
                           }
                           consume();
-                          addLog(`👑 Crown's Favor! ${srcPlayer.playerName}'s faction gains +1 to all rolls for ${buffDuration} round(s).`);
+                          addLog(`👑 Crown's Favor! ${srcPlayer.playerName}'s faction gains +1 to all rolls for ${buffDuration} round(s).`, 'items');
                         } else if (ef?.type === 'mirror') {
                           // Mirror — re-fire the last item played
                           if (!lastItemPlayed) {
-                            addLog(`🪞 Mirror failed — no item has been played yet.`);
+                            addLog(`🪞 Mirror failed — no item has been played yet.`, 'items');
                             return;
                           }
                           const { item: mirroredItem } = lastItemPlayed;
                           const mef = mirroredItem.effect;
                           if (mef?.type === 'mirror' || mef?.type === 'nullify') {
-                            addLog(`🪞 Mirror cannot copy Mirror or Nullify.`);
+                            addLog(`🪞 Mirror cannot copy Mirror or Nullify.`, 'items');
                             return;
                           }
                           // For enemy-targeted items, open enemy picker with mirrored item
@@ -1249,7 +1560,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                             const poisonEntry = { type: 'poison', value: mDmgPerRound, duration: mDuration, permanent: false };
                             if (mef.type === 'npcPlague') {
                               setNpcs(prev => prev.map(n => n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), poisonEntry] } : n));
-                              addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — all active NPCs poisoned (${mDmgPerRound}hp×${mDuration}r)!`);
+                              addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — all active NPCs poisoned (${mDmgPerRound}hp×${mDuration}r)!`, 'items');
                             } else if (mef.type === 'playerPlague') {
                               players.forEach(p => {
                                 if (String(p.id) === String(srcPlayer.id)) return;
@@ -1257,7 +1568,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                                 const newSubs = (p.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), poisonEntry] } : u);
                                 updatePlayer(p.id, { commanderStats: newCmdStats, subUnits: newSubs });
                               });
-                              addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — all enemy units poisoned (${mDmgPerRound}hp×${mDuration}r)!`);
+                              addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — all enemy units poisoned (${mDmgPerRound}hp×${mDuration}r)!`, 'items');
                             } else if (mef.type === 'crownsFavor') {
                               const mBufDur = mef.duration || 1;
                               const buffEntry = { type: 'attackBuff', value: 1, duration: mBufDur, permanent: false };
@@ -1267,7 +1578,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                                 const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: [...(u.statusEffects || []), buffEntry] } : u);
                                 updatePlayer(freshSrc.id, { commanderStats: newCmd, subUnits: newSubs });
                               }
-                              addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — faction gains +1 to all rolls for ${mBufDur} round(s)!`);
+                              addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — faction gains +1 to all rolls for ${mBufDur} round(s)!`, 'items');
                             }
                             consume();
                           } else if (selfTypes.includes(mef?.type)) {
@@ -1281,22 +1592,22 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                                 const newCmd = { ...freshSrc.commanderStats, statusEffects: addEffect(freshSrc.commanderStats.statusEffects, entry) };
                                 const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: addEffect(u.statusEffects, entry) } : u);
                                 updatePlayer(freshSrc.id, { commanderStats: newCmd, subUnits: newSubs });
-                                addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — Shield Wall active!`);
+                                addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — Shield Wall active!`, 'items');
                               } else if (mef.type === 'counterStrike') {
                                 const entry = { type: 'counterStrike', duration: mDuration2, permanent: false };
                                 const newCmd = { ...freshSrc.commanderStats, statusEffects: addEffect(freshSrc.commanderStats.statusEffects, entry) };
                                 const newSubs = (freshSrc.subUnits || []).map(u => u.hp > 0 ? { ...u, statusEffects: addEffect(u.statusEffects, entry) } : u);
                                 updatePlayer(freshSrc.id, { commanderStats: newCmd, subUnits: newSubs });
-                                addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — Counter Strike active!`);
+                                addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — Counter Strike active!`, 'items');
                               } else {
                                 // cleanse, fullCleanse, resurrect — open the unit picker for the mirror user
-                                addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — select a unit.`);
+                                addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}" — select a unit.`, 'items');
                               }
                             }
                             consume();
                           } else {
                             consume();
-                            addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}"!`);
+                            addLog(`🪞 ${srcPlayer.playerName} mirrored "${mirroredItem.name}"!`, 'items');
                           }
                         }
                       }}
@@ -1363,7 +1674,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           )}
 
           {isCampaign && activePanel === 'vp' && (
-            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} onUpdateVpStats={vp.setVpStats} />
+            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} onUpdateVpStats={vp.setVpStats} onClearTrackers={vp.resetLiveVPTrackers} />
           )}
 
           {isCampaign && activePanel === 'rooms' && (
@@ -1510,7 +1821,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
               if (anyDmg && !vp.firstBloodAwarded) {
                 vp.trackVP(attackerId, 'firstBlood', 1);
                 vp.setFirstBloodAwarded(true);
-                addLog(`🩸 First Blood! ${players.find(p=>p.id===attackerId)?.playerName||'Unknown'} draws first!`);
+                addLog(`🩸 First Blood! ${players.find(p=>p.id===attackerId)?.playerName||'Unknown'} draws first!`, 'vp');
               }
               calc?.targetSquadMembers?.forEach(target => {
                 if (target.isNPC) return;
@@ -1637,7 +1948,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                   totalSpawned++;
                 }
               }
-              if (totalSpawned > 0) addLog(`🐣 ${totalSpawned} NPC(s) spawned by ${parentName || 'unknown'}!`);
+              if (totalSpawned > 0) addLog(`🐣 ${totalSpawned} NPC(s) spawned by ${parentName || 'unknown'}!`, 'combat');
               setSpawnModal(null);
             }}
             onClose={() => setSpawnModal(null)}
@@ -1689,6 +2000,11 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
               <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
                 Attack Request
               </div>
+              {queueBehindAttack > 0 && (
+                <div style={{ marginTop: '0.4rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.6rem', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '20px' }}>
+                  <span style={{ color: '#fca5a5', fontSize: '0.65rem', fontWeight: '800' }}>+{queueBehindAttack} more pending</span>
+                </div>
+              )}
             </div>
 
             <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
@@ -1747,6 +2063,11 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
               <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
                 Item Request
               </div>
+              {queueBehindItem > 0 && (
+                <div style={{ marginTop: '0.4rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.6rem', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '20px' }}>
+                  <span style={{ color: '#fca5a5', fontSize: '0.65rem', fontWeight: '800' }}>+{queueBehindItem} more pending</span>
+                </div>
+              )}
             </div>
 
             <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
@@ -1772,14 +2093,14 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
               )}
             </div>
 
-            {firstItemRequest.action === 'use' && (
-              <div style={{ background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: colors.textFaint, fontSize: '0.72rem' }}>
-                ℹ️ After approving, apply the effect in the player's card on the GM side.
+            {firstItemRequest.action === 'use' && !['poisonVial','stunGrenade','attackDebuffItem','defenseDebuffItem','marked','destroyItem','heal','maxHP','attackBonus','defenseBonus','shieldWall','counterStrike','cleanse','fullCleanse','resurrect','extraSlot'].includes(firstItemRequest.itemEffect) && (
+              <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: '#86efac', fontSize: '0.72rem' }}>
+                ✓ Approving will automatically apply this effect and remove the item from inventory.
               </div>
             )}
             {firstItemRequest.action === 'pass' && (
-              <div style={{ background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: colors.textFaint, fontSize: '0.72rem' }}>
-                ℹ️ After approving, use the 🤝 PASS button on the player's card to complete the hand-off.
+              <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: '#86efac', fontSize: '0.72rem' }}>
+                ✓ Approving sends the player a picker to choose where to send the item. You'll confirm the final hand-off.
               </div>
             )}
 
@@ -1857,6 +2178,114 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         );
       })()}
 
+      {/* ── GM: Pass Choice Confirmation ── */}
+      {isMultiplayer && firstPassChoice && (() => {
+        const req = firstPassChoice;
+        const sourcePlayer = players.find(p => String(p.id) === String(req.playerId));
+        const targetPlayer = players.find(p => String(p.id) === String(req.passTargetPlayerId));
+        if (!sourcePlayer || !targetPlayer) return null;
+
+        const sourceItem = (sourcePlayer.inventory || [])[req.itemIndex];
+        const tradeItem  = req.passMode === 'trade' && req.passTradeItemId
+          ? (targetPlayer.inventory || []).find(it => it.id === req.passTradeItemId)
+          : null;
+
+        const targetUnitLabel = (() => {
+          const ut = req.passTargetUnitType;
+          if (!ut || ut === 'commander') return targetPlayer.commanderStats?.customName || targetPlayer.commander || 'Commander';
+          if (ut === 'special') return targetPlayer.subUnits?.[0]?.name?.trim() || 'Special';
+          const idx = parseInt(ut.replace('soldier', ''));
+          return targetPlayer.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`;
+        })();
+
+        const sourceUnitLabel = (() => {
+          const ut = sourceItem?.heldBy;
+          if (!ut || ut === 'commander') return sourcePlayer.commanderStats?.customName || sourcePlayer.commander || 'Commander';
+          if (ut === 'special') return sourcePlayer.subUnits?.[0]?.name?.trim() || 'Special';
+          const idx = parseInt(ut.replace('soldier', ''));
+          return sourcePlayer.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`;
+        })();
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1rem' }}>
+            <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '420px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+
+              {/* Header */}
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>{req.passMode === 'trade' ? '⇄' : '🎁'}</div>
+                <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
+                  {req.passMode === 'trade' ? 'Item Trade — Confirm' : 'Item Pass — Confirm'}
+                </div>
+              </div>
+
+              {/* Details */}
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {[
+                  { label: 'From',      value: `${sourcePlayer.playerName} — ${sourceUnitLabel}`, color: colors.gold },
+                  { label: 'Item',      value: sourceItem?.name || req.itemName,                  color: colors.textPrimary },
+                  { label: 'To',        value: `${targetPlayer.playerName} — ${targetUnitLabel}`, color: colors.purpleLight },
+                  req.passMode === 'trade' && tradeItem && { label: 'In Exchange', value: tradeItem.name, color: colors.amber },
+                ].filter(Boolean).map(({ label, value, color }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>{label}</span>
+                    <span style={{ color, fontWeight: '700', fontSize: '0.85rem', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                <button
+                  onClick={() => { resolvePendingRequest(lobbyCode, req.reqId); if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId); }}
+                  style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+                >✕ Deny</button>
+                <button
+                  onClick={() => handleExecutePassChoice(req)}
+                  style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+                >✓ Approve</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── GM: End Turn Request Modal — shows when no higher-priority request is pending ── */}
+      {isMultiplayer && firstEndTurnRequest && !firstRequest && !firstItemRequest && !firstItemChoice && !firstPassChoice && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1rem' }}>
+          <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(16,185,129,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '380px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>⏭️</div>
+              <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
+                End Turn Request
+              </div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Player</span>
+                <span style={{ color: colors.gold, fontWeight: '700', fontSize: '0.9rem' }}>{firstEndTurnRequest.playerName}</span>
+              </div>
+              <div style={{ color: colors.textFaint, fontSize: '0.7rem', marginTop: '0.6rem', lineHeight: 1.4 }}>
+                Wants to end their turn and pass to the next player.
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+              <button
+                onClick={() => handleDenyItemRequest(firstEndTurnRequest)}
+                style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >✕ Deny</button>
+              <button
+                onClick={() => {
+                  resolvePendingRequest(lobbyCode, firstEndTurnRequest.reqId);
+                  addLog(`⏭️ ${firstEndTurnRequest.playerName} ended their turn.`, 'system');
+                  campaign.endCampaignTurn();
+                }}
+                style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(16,185,129,0.2),rgba(5,150,105,0.2))', border: '1px solid rgba(16,185,129,0.4)', borderRadius: '10px', color: '#6ee7b7', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+              >✓ Approve</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loot.npcLootClaim   && <NpcLootModal npc={loot.npcLootClaim.npc} player={loot.npcLootClaim.player} players={players} onConfirm={loot.handleConfirmNpcLoot} onClose={() => loot.setNpcLootClaim(null)} />}
       {loot.chestLootClaim && <NpcLootModal npc={{ name:'📦 Chest Loot', lootTable: loot.chestLootClaim.items }} player={loot.chestLootClaim.player} players={players} onConfirm={loot.handleConfirmChestLoot} onClose={() => loot.setChestLootClaim(null)} />}
       {loot.stealModal     && <StealLootModal {...loot.stealModal} onConfirm={loot.handleConfirmSteal} onClose={() => loot.setStealModal(null)} />}
@@ -1879,7 +2308,13 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           onUpdatePlayer={updatePlayer}
           onAddLog={addLog}
           onCreateTimer={roundTimers.createTimer}
-          onProceed={(updatedData) => { campaign.setNpcDamageDistribution({}); campaign.setNpcAttackData(updatedData); campaign.setShowNPCCalculator(false); campaign.setShowNPCDamageDistribution(true); }}
+          onProceed={(updatedData) => {
+            const seed = updatedData.preSeedDistribution || {};
+            campaign.setNpcDamageDistribution(seed);
+            campaign.setNpcAttackData(updatedData);
+            campaign.setShowNPCCalculator(false);
+            campaign.setShowNPCDamageDistribution(true);
+          }}
         />
       )}
       {campaign.showNPCDamageDistribution && campaign.npcAttackData && (
@@ -1988,12 +2423,12 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                 takenItems.forEach(it => {
                   if (it.droppedItemId) newInv = newInv.filter(inv => inv.id !== it.droppedItemId);
                   newInv.push({ ...it, heldBy: it.unitType || attackerPlayer?.attackerUnitType });
-                  addLog(`⚔️ ${freshAtk.playerName}'s ${loot.unitNameByType(freshAtk, it.unitType)} took "${it.name}" from ${playerName}'s ${unitLabel}`);
+                  addLog(`⚔️ ${freshAtk.playerName}'s ${loot.unitNameByType(freshAtk, it.unitType)} took "${it.name}" from ${playerName}'s ${unitLabel}`, 'items');
                 });
                 updatePlayer(freshAtk.id, { inventory: newInv });
               }
             }
-            droppedItems.forEach(it => addLog(`🗺️ "${it.name}" dropped on the map by ${playerName}'s ${unitLabel}`));
+            droppedItems.forEach(it => addLog(`🗺️ "${it.name}" dropped on the map by ${playerName}'s ${unitLabel}`), 'items');
             setPvpDeathModal(null);
           }}
           onClose={() => setPvpDeathModal(null)}
@@ -2037,7 +2472,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             updatePlayer(target.id, { subUnits: newSubs });
           }
           consume();
-          addLog(`${isMirror ? '🪞 Mirror: ' : ''}${item.name} → ${target.playerName}'s ${unitType}`);
+          addLog(`${isMirror ? '🪞 Mirror: ' : ''}${item.name} → ${target.playerName}'s ${unitType}`, 'items');
           setEnemyItemModal(null);
         };
 
@@ -2052,7 +2487,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           setNpcs(prev => prev.map(n => n.id === npcId ? { ...n, statusEffects: [...(n.statusEffects || []), statusEntry] } : n));
           const npc = npcs.find(n => n.id === npcId);
           consume();
-          addLog(`${isMirror ? '🪞 Mirror: ' : ''}${item.name} → NPC "${npc?.name}"`);
+          addLog(`${isMirror ? '🪞 Mirror: ' : ''}${item.name} → NPC "${npc?.name}"`, 'items');
           setEnemyItemModal(null);
         };
 
@@ -2209,6 +2644,12 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
   );
   const [expandedPlayers, setExpandedPlayers] = React.useState({});
 
+  // ── Per-player split roll state (multi-player targets with numRolls > 1) ──
+  // playerRollIndex: which player we're currently rolling for
+  // playerRolls: { [playerId]: [roll, ...] } — completed rolls per player
+  const [playerRollIndex, setPlayerRollIndex] = React.useState(0);
+  const [playerRolls,     setPlayerRolls]     = React.useState({}); // { playerId: [{ atk, def, dmg }] }
+
   const currentMember = isSquad ? members[squadRollIndex] : null;
   const attack        = isSquad ? currentMember?.attack : npcAttackData.attack;
   const attackBonus   = isSquad ? (currentMember?.attackBonus || 0) : (npcAttackData.attackBonus || 0);
@@ -2222,14 +2663,47 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
   const npcSelfAtkBuff   = (npcSelf?.statusEffects || []).filter(ef => ef.type === 'attackBuff').reduce((s, ef) => s + (ef.value||0), 0);
   const dieMax        = dieType === 'd20' ? 20 : dieType === 'd10' ? 10 : dieType === 'd6' ? 6 : 4;
 
+  // ── Determine if we're in multi-player split mode ─────────────────────────
+  const uniqueTargetPlayerIds = [...new Set(targets.map(t => t.playerId).filter(Boolean))];
+  const isSplitMode = !isSquad && numRolls > 1 && uniqueTargetPlayerIds.length > 1;
+
+  // Allocate dice to players — floor(numRolls / playerCount), remainder to player with most targets
+  const diceAllocation = React.useMemo(() => {
+    if (!isSplitMode) return {};
+    const playerCount = uniqueTargetPlayerIds.length;
+    const base = Math.floor(numRolls / playerCount);
+    const remainder = numRolls - base * playerCount;
+    // Count targets per player to decide who gets the extra dice
+    const targetCounts = {};
+    uniqueTargetPlayerIds.forEach(pid => {
+      targetCounts[pid] = targets.filter(t => t.playerId === pid).length;
+    });
+    // Sort players by target count desc, then by order in uniqueTargetPlayerIds for tie-break
+    const sorted = [...uniqueTargetPlayerIds].sort((a, b) => targetCounts[b] - targetCounts[a]);
+    const alloc = {};
+    uniqueTargetPlayerIds.forEach(pid => { alloc[pid] = base; });
+    for (let i = 0; i < remainder; i++) { alloc[sorted[i]] = (alloc[sorted[i]] || 0) + 1; }
+    return alloc;
+  }, [isSplitMode, targets, numRolls]);
+
+  // Current player being rolled for in split mode
+  const currentSplitPlayerId = isSplitMode ? uniqueTargetPlayerIds[playerRollIndex] : null;
+  const currentSplitPlayer   = currentSplitPlayerId ? players.find(p => String(p.id) === String(currentSplitPlayerId)) : null;
+  const currentSplitDice     = currentSplitPlayerId ? (diceAllocation[currentSplitPlayerId] || 1) : 1;
+  const currentSplitRolls    = currentSplitPlayerId ? (playerRolls[currentSplitPlayerId] || []) : [];
+  const splitDoneForCurrent  = currentSplitRolls.length >= currentSplitDice;
+  const splitAllDone         = isSplitMode && playerRollIndex >= uniqueTargetPlayerIds.length - 1 && splitDoneForCurrent;
+
   const activeRolls       = isSquad ? currentMemberRolls : rolls;
-  const allDoneForCurrent = activeRolls.length >= numRolls;
+  const allDoneForCurrent = isSplitMode ? splitDoneForCurrent : (activeRolls.length >= numRolls);
   const isLastMember      = isSquad ? squadRollIndex >= members.length - 1 : true;
-  const allDone           = isSquad ? (allDoneForCurrent && isLastMember) : allDoneForCurrent;
+  const allDone           = isSplitMode ? splitAllDone : (isSquad ? (allDoneForCurrent && isLastMember) : allDoneForCurrent);
 
   const squadRunningTotal  = memberRolls.reduce((sum, mr) => sum + mr.reduce((s, r) => s + r.dmg, 0), 0);
   const currentMemberTotal = currentMemberRolls.reduce((s, r) => s + r.dmg, 0);
-  const displayTotal       = isSquad ? (squadRunningTotal + currentMemberTotal) : totalDamage;
+  const splitTotal         = Object.values(playerRolls).flat().reduce((s, r) => s + r.dmg, 0)
+                           + currentSplitRolls.reduce((s, r) => s + r.dmg, 0);
+  const displayTotal       = isSplitMode ? splitTotal : (isSquad ? (squadRunningTotal + currentMemberTotal) : totalDamage);
 
   const addRoll = () => {
     const atk = parseInt(atkRoll) || 0;
@@ -2238,8 +2712,23 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
     const finalDef = def + activeDefBonus;
     const dmg = Math.max(0, finalAtk - finalDef);
     const roll = { atk, bonus: attackBonus + activeAtkBonus, atkDebuff: npcSelfAtkDebuff, atkBuff: npcSelfAtkBuff, finalAtk, def: finalDef, dmg };
-    if (isSquad) { setCurrentMemberRolls(prev => [...prev, roll]); }
-    else { setRolls(prev => [...prev, roll]); setTotalDamage(prev => prev + dmg); }
+    if (isSplitMode) {
+      setPlayerRolls(prev => ({
+        ...prev,
+        [currentSplitPlayerId]: [...(prev[currentSplitPlayerId] || []), roll],
+      }));
+    } else if (isSquad) {
+      setCurrentMemberRolls(prev => [...prev, roll]);
+    } else {
+      setRolls(prev => [...prev, roll]);
+      setTotalDamage(prev => prev + dmg);
+    }
+    setAtkRoll(''); setDefRoll('');
+    setActiveAtkBonus(0); setActiveDefBonus(0);
+  };
+
+  const advanceToNextSplitPlayer = () => {
+    setPlayerRollIndex(prev => prev + 1);
     setAtkRoll(''); setDefRoll('');
     setActiveAtkBonus(0); setActiveDefBonus(0);
   };
@@ -2262,6 +2751,30 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
   const handleProceed = () => {
     if (!allDone) { setErrorMsg('Complete all rolls first.'); return; }
     if (targets.length === 0) { setErrorMsg('Select at least one target.'); return; }
+
+    if (isSplitMode) {
+      // Build per-player totals from split rolls
+      const perPlayerDamage = {};
+      uniqueTargetPlayerIds.forEach(pid => {
+        const pRolls = playerRolls[pid] || [];
+        perPlayerDamage[pid] = pRolls.reduce((s, r) => s + r.dmg, 0);
+      });
+      const allSplitRolls = Object.values(playerRolls).flat();
+      const finalTotal = Object.values(perPlayerDamage).reduce((s, d) => s + d, 0);
+      // Pre-seed the damage distribution so each player's units only receive that player's damage
+      // DamageDistribution will still let DM adjust within each player's pool
+      const preSeedDist = {};
+      targets.forEach(t => {
+        const playerTotal = perPlayerDamage[t.playerId] || 0;
+        const playerTargets = targets.filter(pt => pt.playerId === t.playerId);
+        // Spread player's damage evenly across their units as a starting point
+        const perUnit = playerTargets.length > 0 ? Math.floor(playerTotal / playerTargets.length) : 0;
+        preSeedDist[`${t.playerId}-${t.unitType}`] = perUnit;
+      });
+      onProceed({ ...npcAttackData, totalDamage: finalTotal, d20Rolls: allSplitRolls, targetSquadMembers: targets, perPlayerDamage, preSeedDistribution: preSeedDist });
+      return;
+    }
+
     let finalRolls, finalTotal;
     if (isSquad) {
       const allRolls = [...memberRolls, currentMemberRolls];
@@ -2474,9 +2987,53 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
           })}
         </div>
 
+        {/* ── Split mode: per-player roll progress strip ── */}
+        {isSplitMode && (
+          <div style={{ marginBottom: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '0.6rem 0.85rem' }}>
+            <div style={{ color: '#a78bfa', fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
+              🎲 {numRolls} dice split across {uniqueTargetPlayerIds.length} players
+            </div>
+            <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+              {uniqueTargetPlayerIds.map((pid, idx) => {
+                const p = players.find(pl => String(pl.id) === String(pid));
+                const alloc = diceAllocation[pid] || 1;
+                const done  = (playerRolls[pid] || []).length >= alloc;
+                const isCurr = idx === playerRollIndex;
+                const pRollDmg = (playerRolls[pid] || []).reduce((s, r) => s + r.dmg, 0);
+                return (
+                  <div key={pid} style={{
+                    padding: '0.25rem 0.6rem', borderRadius: '20px',
+                    background: done ? 'rgba(34,197,94,0.12)' : isCurr ? 'rgba(167,139,250,0.15)' : 'rgba(0,0,0,0.3)',
+                    border: `1px solid ${done ? 'rgba(34,197,94,0.4)' : isCurr ? 'rgba(167,139,250,0.5)' : 'rgba(90,74,58,0.3)'}`,
+                  }}>
+                    <span style={{ color: done ? '#4ade80' : isCurr ? '#c4b5fd' : colors.textFaint, fontSize: '0.65rem', fontWeight: '800' }}>
+                      {done ? '✓ ' : isCurr ? '▶ ' : ''}{p?.playerName || pid}
+                    </span>
+                    <span style={{ color: colors.textFaint, fontSize: '0.6rem', marginLeft: '0.3rem' }}>
+                      {alloc}{dieType} {done ? `· ${pRollDmg} dmg` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* VS header + side pills + roll inputs */}
         {!allDoneForCurrent && (
-          <div style={{ background: '#0a0503', padding: '1rem', borderRadius: '8px', border: `2px solid ${colors.gold}`, marginBottom: '1rem' }}>
+          <div style={{ background: '#0a0503', padding: '1rem', borderRadius: '8px', border: `2px solid ${isSplitMode ? '#a78bfa' : colors.gold}`, marginBottom: '1rem' }}>
+
+            {/* Split mode player label */}
+            {isSplitMode && currentSplitPlayer && (
+              <div style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
+                <span style={{ color: currentSplitPlayer.playerColor || '#a78bfa', fontWeight: '900', fontSize: '0.85rem', fontFamily: '"Cinzel",Georgia,serif' }}>
+                  {currentSplitPlayer.playerName}
+                </span>
+                <span style={{ color: colors.textFaint, fontSize: '0.68rem', marginLeft: '0.4rem' }}>
+                  — Roll {currentSplitRolls.length + 1} of {currentSplitDice}
+                </span>
+              </div>
+            )}
 
             {/* VS matchup row — mirrors PvP */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', marginBottom: '0.75rem', gap: '0.5rem' }}>
@@ -2562,6 +3119,13 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
           </div>
         )}
 
+        {/* Split mode: Next Player button — outside !allDoneForCurrent so it shows after rolls complete */}
+        {isSplitMode && splitDoneForCurrent && playerRollIndex < uniqueTargetPlayerIds.length - 1 && (
+          <button onClick={advanceToNextSplitPlayer} style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', background: 'linear-gradient(135deg,rgba(167,139,250,0.25),rgba(139,92,246,0.25))', border: '2px solid #a78bfa', borderRadius: '8px', color: '#e9d5ff', cursor: 'pointer', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            ▶ Next Player →
+          </button>
+        )}
+
         {/* NPC self attack debuff/buff badges */}
         {(npcSelfAtkDebuff > 0 || npcSelfAtkBuff > 0) && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem', justifyContent: 'center' }}>
@@ -2571,7 +3135,43 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
         )}
 
         {/* Roll history — with hit/miss like PvP */}
-        {activeRolls.length > 0 && (
+        {/* Split mode: per-player completed + current. Standard: activeRolls */}
+        {isSplitMode ? (
+          <>
+            {Object.entries(playerRolls).map(([pid, pRolls]) => {
+              if (!pRolls.length) return null;
+              const p = players.find(pl => String(pl.id) === String(pid));
+              const pTotal = pRolls.reduce((s, r) => s + r.dmg, 0);
+              return (
+                <div key={pid} style={{ background: 'rgba(74,222,128,0.06)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.2)', marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: '#4ade80', fontSize: '0.68rem', fontWeight: '800' }}>✓ {p?.playerName || pid}</span>
+                  <span style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '700' }}>{pTotal}hp ({pRolls.length} roll{pRolls.length !== 1 ? 's' : ''})</span>
+                </div>
+              );
+            })}
+            {currentSplitRolls.length > 0 && (
+              <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.3)', marginBottom: '0.75rem' }}>
+                <div style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>{currentSplitPlayer?.playerName}</div>
+                {currentSplitRolls.map((r, i) => {
+                  const hit = r.dmg > 0;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: i < currentSplitRolls.length - 1 ? '1px solid rgba(90,74,58,0.2)' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span style={{ color: '#fca5a5', fontWeight: '700', fontSize: '0.82rem' }}>⚔️ {r.atk}{r.bonus > 0 && <span style={{ color: '#fbbf24' }}>+{r.bonus}</span>}</span>
+                        <span style={{ color: colors.textFaint, fontSize: '0.72rem' }}>vs</span>
+                        <span style={{ color: '#86efac', fontWeight: '700', fontSize: '0.82rem' }}>🛡️ {r.def}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span style={{ color: hit ? '#fbbf24' : '#4ade80', fontSize: '0.65rem', fontWeight: '700' }}>{hit ? '💥 HIT' : '🛡️ BLOCKED'}</span>
+                        <span style={{ color: hit ? '#fecaca' : '#4ade80', fontWeight: '900', fontSize: '0.9rem', fontFamily: '"Cinzel",Georgia,serif', minWidth: '48px', textAlign: 'right' }}>{hit ? `${r.dmg}hp` : '0hp'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        ) : activeRolls.length > 0 && (
           <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(90,74,58,0.4)', marginBottom: '0.75rem' }}>
             {isSquad && <div style={{ color: '#f87171', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>{npcName}</div>}
             {activeRolls.map((r, i) => {

@@ -19,7 +19,12 @@ export const getSlotCount = (p, unitType) => {
 
 export const getHeldCount = (p, unitType) => {
   if (!p) return 0;
-  return (p.inventory || []).filter(it => it.heldBy === unitType && !it.isQuestItem).length;
+  // Keys and quest items are slot-free — they never count against the unit's item limit
+  return (p.inventory || []).filter(it =>
+    it.heldBy === unitType &&
+    !it.isQuestItem &&
+    it.effect?.type !== 'key'
+  ).length;
 };
 
 export const unitIsFull = (p, unitType) =>

@@ -27,8 +27,8 @@ const blankChest = () => ({
 
 // ── Chest Creator ─────────────────────────────────────────────────────────────
 
-const ChestCreator = ({ onSave, onCancel, lootPool }) => {
-  const [chest, setChest] = useState(blankChest());
+const ChestCreator = ({ onSave, onCancel, lootPool, initialChest = null }) => {
+  const [chest, setChest] = useState(() => initialChest ? { ...initialChest } : blankChest());
 
   const set = (field, value) => setChest(prev => ({ ...prev, [field]: value }));
   const setWeight = (tier, value) => setChest(prev => ({
@@ -414,7 +414,7 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
 
 // ── Chest Card ────────────────────────────────────────────────────────────────
 
-const ChestCard = ({ chest, onOpen, onDelete }) => {
+const ChestCard = ({ chest, onOpen, onDelete, onDuplicate, onEdit }) => {
   return (
     <div style={{
       background: surfaces.insetDeep,
@@ -485,6 +485,16 @@ const ChestCard = ({ chest, onOpen, onDelete }) => {
               fontFamily: fonts.body, fontWeight: '800', fontSize: '0.72rem',
             }}>🔓 Open</button>
           )}
+          <button onClick={() => onEdit(chest)} title="Edit chest" style={{
+            background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.4)',
+            borderRadius: '4px', color: '#c4b5fd', fontSize: '0.65rem',
+            fontWeight: '900', padding: '0.2rem 0.45rem', cursor: 'pointer',
+          }}>✏️</button>
+          <button onClick={() => onDuplicate(chest)} title="Duplicate chest" style={{
+            background: 'rgba(14,116,144,0.2)', border: '1px solid rgba(6,182,212,0.35)',
+            borderRadius: '4px', color: '#67e8f9', fontSize: '0.65rem',
+            fontWeight: '900', padding: '0.2rem 0.45rem', cursor: 'pointer',
+          }}>⧉</button>
           <button onClick={() => onDelete(chest.id)} style={{
             background: 'rgba(127,29,29,0.3)', border: '1px solid #7f1d1d',
             borderRadius: '4px', color: '#fca5a5', fontSize: '0.65rem',
@@ -500,15 +510,34 @@ const ChestCard = ({ chest, onOpen, onDelete }) => {
 
 const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsumeKey }) => {
   const [showCreator, setShowCreator] = useState(false);
+  const [editingChest, setEditingChest] = useState(null);
   const [openingChest, setOpeningChest] = useState(null);
 
   const handleSave = (chest) => {
-    setChests(prev => [...prev, chest]);
+    if (editingChest) {
+      // Editing existing chest — replace in place, preserve opened state
+      setChests(prev => prev.map(c => c.id === chest.id ? { ...chest, isOpened: c.isOpened, openedBy: c.openedBy, droppedItems: c.droppedItems } : c));
+      setEditingChest(null);
+    } else {
+      setChests(prev => [...prev, chest]);
+    }
     setShowCreator(false);
   };
 
   const handleDelete = (chestId) => {
     setChests(prev => prev.filter(c => c.id !== chestId));
+  };
+
+  const handleDuplicate = (chest) => {
+    const copy = {
+      ...JSON.parse(JSON.stringify(chest)),
+      id: `chest_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      name: `${chest.name} (Copy)`,
+      isOpened: false,
+      openedBy: null,
+      droppedItems: [],
+    };
+    setChests(prev => [...prev, copy]);
   };
 
   const handleConfirmOpen = (chestId, playerId, droppedItems) => {
@@ -555,8 +584,9 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
       {showCreator && (
         <ChestCreator
           onSave={handleSave}
-          onCancel={() => setShowCreator(false)}
+          onCancel={() => { setShowCreator(false); setEditingChest(null); }}
           lootPool={lootPool}
+          initialChest={editingChest}
         />
       )}
 
@@ -582,7 +612,7 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
           </div>
           {unopened.map(chest => (
             <ChestCard key={chest.id} chest={chest}
-              onOpen={setOpeningChest} onDelete={handleDelete} />
+              onOpen={setOpeningChest} onDelete={handleDelete} onDuplicate={handleDuplicate} onEdit={chest => { setEditingChest(chest); setShowCreator(true); }} />
           ))}
         </>
       )}
@@ -596,7 +626,7 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
           </div>
           {opened.map(chest => (
             <ChestCard key={chest.id} chest={chest}
-              onOpen={setOpeningChest} onDelete={handleDelete} />
+              onOpen={setOpeningChest} onDelete={handleDelete} onDuplicate={handleDuplicate} onEdit={chest => { setEditingChest(chest); setShowCreator(true); }} />
           ))}
         </>
       )}

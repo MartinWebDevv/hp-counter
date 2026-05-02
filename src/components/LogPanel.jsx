@@ -21,15 +21,21 @@ const LogPanel = ({ battleLog = [], onClearLog }) => {
   const [showLog,    setShowLog]    = useState(false);
   const [activeFilter, setFilter]  = useState('all');
   const logEndRef = useRef(null);
+  const scrollRef = useRef(null);
+
+  const handleFilterChange = (id) => {
+    setFilter(id);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
 
   const filtered = activeFilter === 'all'
     ? battleLog
     : battleLog.filter(e => (e.category || 'system') === activeFilter);
 
-  // Scroll to top (newest) when filter changes
+  // Also reset as safety net after render
   useEffect(() => {
-    if (showLog && logEndRef.current) {
-      logEndRef.current.scrollTop = 0;
+    if (showLog && scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
     }
   }, [activeFilter, showLog]);
 
@@ -92,7 +98,7 @@ const LogPanel = ({ battleLog = [], onClearLog }) => {
               return (
                 <button
                   key={f.id}
-                  onClick={() => setFilter(f.id)}
+                  onClick={() => handleFilterChange(f.id)}
                   style={{
                     padding: '0.2rem 0.6rem',
                     borderRadius: '20px',
@@ -113,7 +119,7 @@ const LogPanel = ({ battleLog = [], onClearLog }) => {
 
           {/* Log entries */}
           <div
-            ref={logEndRef}
+            ref={scrollRef}
             style={{ maxHeight: '260px', overflowY: 'auto' }}
           >
             {filtered.length === 0 ? (

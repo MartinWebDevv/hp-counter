@@ -35,6 +35,11 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     setShowCalculator(true);
   };
 
+  const setCalculatorDataDirect = (data) => {
+    setCalculatorData(data);
+    setShowCalculator(true);
+  };
+
   const closeCalculator = () => {
     setShowCalculator(false);
     setShowDamageDistribution(false);
@@ -71,8 +76,10 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     return [...queue, unitIndex];
   };
 
-  const applyDamage = (onPlayersUpdate) => {
+  const applyDamage = (onPlayersUpdate, distributionOverride = null, onGuyCloseCall = null) => {
     if (!calculatorData) return;
+
+    const dist = distributionOverride || damageDistribution;
 
     let totalAvailable;
     if (calculatorData.totalDamage !== undefined) {
@@ -111,12 +118,32 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
         };
       }
 
+      // ── Close Call (The Guy Legendary 3) — auto-triggers on PvP damage ────
+      // Check if this player is being targeted and has closeCall status on their commander
+      const isTargeted = calculatorData.targetSquadMembers.some(t => t.playerId === player.id);
+      if (isTargeted) {
+        const totalIncomingForPlayer = calculatorData.targetSquadMembers
+          .filter(t => t.playerId === player.id)
+          .reduce((sum, t) => sum + (dist[`${t.playerId}-${t.unitType}`] || 0), 0);
+        const hasCloseCall = (playerUpdates.commanderStats?.statusEffects || []).some(ef => ef.type === 'closeCall');
+        if (hasCloseCall && totalIncomingForPlayer > 0) {
+          // Consume the closeCall effect and negate all damage for this player
+          playerUpdates.commanderStats = {
+            ...playerUpdates.commanderStats,
+            statusEffects: (playerUpdates.commanderStats.statusEffects || []).filter(ef => ef.type !== 'closeCall'),
+          };
+          if (onGuyCloseCall) onGuyCloseCall({ playerName: player.playerName, damage: totalIncomingForPlayer });
+          hasChanges = true;
+          return playerUpdates; // skip all damage for this player
+        }
+      }
+
       // Apply damage to targeted units
       calculatorData.targetSquadMembers.forEach((target) => {
         if (target.playerId !== player.id) return;
 
         const damageKey = `${target.playerId}-${target.unitType}`;
-        const damageAmount = damageDistribution[damageKey] || 0;
+        const damageAmount = dist[damageKey] || 0;
 
         if (damageAmount > 0) {
           hasChanges = true;
@@ -181,7 +208,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
       return p.subUnits?.[idx]?.statusEffects || [];
     };
     calculatorData.targetSquadMembers.forEach(target => {
-      const dmg = damageDistribution[`${target.playerId}-${target.unitType}`] || 0;
+      const dmg = dist[`${target.playerId}-${target.unitType}`] || 0;
       if (dmg <= 0) return;
       const targetPlayerUpdated = updatedPlayers.find(p => String(p.id) === String(target.playerId));
       if (!targetPlayerUpdated) return;
@@ -207,7 +234,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
         }
       });
       counterStrikeLog.forEach(({ reflect }) => {
-        addLog('⚡ Counter Strike! Reflected ' + reflect + 'hp back to ' + (attackerPlayer.playerName || 'attacker'));
+        addLog('⚡ Counter Strike! Reflected ' + reflect + 'hp back to ' + (attackerPlayer.playerName || 'attacker'), 'combat');
       });
     }
 
@@ -240,10 +267,10 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
 
     // Player targets
     calculatorData.targetSquadMembers
-      .filter((m) => !m.isNPC && damageDistribution[`${m.playerId}-${m.unitType}`] > 0)
+      .filter((m) => !m.isNPC && dist[`${m.playerId}-${m.unitType}`] > 0)
       .forEach((m) => {
         const target = players.find((p) => String(p.id) === String(m.playerId));
-        const damage = damageDistribution[`${m.playerId}-${m.unitType}`];
+        const damage = dist[`${m.playerId}-${m.unitType}`];
         let unitName = '';
         if (m.unitType === 'commander') {
           unitName = target?.commanderStats?.customName || target?.commander || 'Commander';
@@ -258,15 +285,15 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
 
     // NPC targets
     calculatorData.targetSquadMembers
-      .filter((m) => m.isNPC && damageDistribution[`npc-${m.npcId}`] > 0)
+      .filter((m) => m.isNPC && dist[`npc-${m.npcId}`] > 0)
       .forEach((m) => {
         const npc = (calculatorData.npcs || []).find(n => n.id === m.npcId);
-        const damage = damageDistribution[`npc-${m.npcId}`];
+        const damage = dist[`npc-${m.npcId}`];
         allTargetDetails.push(`${npc?.name || 'NPC'} for ${damage}hp`);
       });
 
     const targetDetails = allTargetDetails.join(', ') || 'no targets';
-    addLog(`${attacker?.playerName || 'Unknown'}'s ${attackerName} ${actionVerb} ${targetDetails}`);
+    addLog(`${attacker?.playerName || 'Unknown'}'s ${attackerName} ${actionVerb} ${targetDetails}`, 'combat');
 
     closeCalculator();
   };
@@ -277,6 +304,7 @@ export const useDamageCalculation = (players, addLog, npcs = []) => {
     calculatorData,
     damageDistribution,
     openCalculator,
+    setCalculatorDataDirect,
     closeCalculator,
     closeCalculatorKeepDistribution,
     updateCalculatorHits,

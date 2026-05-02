@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { id: 'loot',    label: 'Loot',    icon: '🎁', color: colors.purpleLight,  activeBg: 'rgba(76,29,149,0.5)',  activeBorder: colors.purple },
   { id: 'chests',  label: 'Chests',  icon: '📦', color: '#fde68a',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#eab308'     },
   { id: 'vp',      label: 'Victory', icon: '🏆', color: colors.amber,        activeBg: 'rgba(30,58,138,0.5)',  activeBorder: colors.blue   },
-  { id: 'rooms',   label: 'Rooms',   icon: '🚪', color: '#fcd34d',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#d97706'     },
+  { id: 'rooms',   label: 'DM Tools', icon: '🛠️', color: '#fcd34d',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#d97706'     },
   { id: 'timers',  label: 'Timers',  icon: '⏱️', color: colors.purpleLight,  activeBg: 'rgba(76,29,149,0.5)',  activeBorder: colors.purple },
 ];
 
@@ -27,7 +27,7 @@ const DMSidebar = ({ activePanel, setActivePanel, activeNPCsCount = 0, unopenedC
     if (id === 'dm'     && activeNPCsCount    > 0) return activeNPCsCount;
     if (id === 'chests' && unopenedChestCount > 0) return unopenedChestCount;
     if (id === 'timers' && activeTimersCount  > 0) return activeTimersCount;
-    if (id === 'rooms'  && activeRoomsCount   > 0) return activeRoomsCount;
+    if (id === 'rooms') return null;
     return null;
   };
 

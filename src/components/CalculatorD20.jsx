@@ -187,6 +187,10 @@ const CalculatorD20 = ({
   // Soldier vs anything:D10 v D10
 
   const getAttackerDiceType = () => {
+    // The Guy attack — use specified die type
+    if (calculatorData.isGuyAttack) {
+      return (calculatorData.guyDieType || 'd10').toUpperCase();
+    }
     // NPC target — follows attacker unit type
     if (calculatorData.targetNPCId) {
       return calculatorData.attackingUnitType === 'commander' ? 'D20' : 'D10';
@@ -210,6 +214,10 @@ const CalculatorD20 = ({
   };
 
   const getDefenderDiceType = () => {
+    // The Guy attack — unblockable, defender doesn't roll (only armor floor applies)
+    if (calculatorData.isGuyAttack) {
+      return (calculatorData.guyDieType || 'd10').toUpperCase();
+    }
     // NPC target — mirrors attacker
     if (calculatorData.targetNPCId) {
       return calculatorData.attackingUnitType === 'commander' ? 'D20' : 'D10';
@@ -232,6 +240,9 @@ const CalculatorD20 = ({
     return 'D10'; // Soldier vs anything → D10
   };
 
+  // Is this a Guy unblockable attack — defender roll locked to 0
+  const isGuyAttack = !!calculatorData.isGuyAttack;
+
   // Check if attacker is special unit (gets +1)
   const isAttackerSpecial = () => {
     return calculatorData.attackingUnitType === 'special';
@@ -239,6 +250,9 @@ const CalculatorD20 = ({
 
   // Get number of attacks
   const getNumAttacks = () => {
+    // The Guy attack — override with specified roll count
+    if (calculatorData.isGuyAttack) return calculatorData.guyNumRolls || 1;
+
     if (calculatorData.attackerIsSquad) {
       // For squad attacks, each member gets their attacksPerHit
       let totalAttacks = 0;
@@ -268,7 +282,8 @@ const CalculatorD20 = ({
   // Calculate damage for current roll
   const calculateRollDamage = () => {
     const atkRoll = parseInt(attackerRoll) || 0;
-    const defRoll = parseInt(defenderRoll) || 0;
+    // Guy unblockable — defender can't roll, only armor floor applies
+    const defRoll = isGuyAttack ? 0 : (parseInt(defenderRoll) || 0);
     
     // Apply +1 bonus logic:
     // - Commander using special action: EVERY roll gets +1
@@ -381,7 +396,9 @@ const CalculatorD20 = ({
 
     // Check target selection
     if (calculatorData.targetNPCIds?.length > 0) {
-      // NPC target — valid, proceed
+      // Multiple NPC targets — valid
+    } else if (calculatorData.targetNPCId) {
+      // Single NPC target (e.g. Guy attack) — valid
     } else if (calculatorData.targetIsSquad) {
       if (!calculatorData.targetSquadMembers || calculatorData.targetSquadMembers.length === 0) {
         setErrorMsg('Select at least one squad member to target.');
@@ -421,7 +438,7 @@ const CalculatorD20 = ({
     onProceedToDistribution(updatedData);
   };
 
-  const canAddRoll = attackerRoll && defenderRoll && currentAttackIndex < numAttacks;
+  const canAddRoll = attackerRoll && (isGuyAttack || defenderRoll) && currentAttackIndex < numAttacks;
 
   // Consume one use of a reroll item and clear the appropriate roll input
   const consumeRerollItem = (item, owner, clearRoll) => {
@@ -1255,6 +1272,13 @@ const CalculatorD20 = ({
                 <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
                   Defender Roll ({defenderDice}):
                 </label>
+                {/* Guy unblockable — no defender roll, show label instead */}
+                {isGuyAttack ? (
+                  <div style={{ width: '100%', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', color: '#f97316', fontWeight: '900', fontSize: '0.85rem', letterSpacing: '0.05em' }}>
+                    🎯 UNBLOCKABLE — Armor floor only
+                  </div>
+                ) : (
+                  <>
                 {/* Defender reroll buttons — always shown when items exist, before typing */}
                 {(() => {
                   const allDefRerolls = [
@@ -1305,6 +1329,8 @@ const CalculatorD20 = ({
                     fontWeight: 'bold'
                   }}
                 />
+                  </>
+                )}
               </div>
             </div>
 

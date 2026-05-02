@@ -47,6 +47,7 @@ const PlayerCharacterSelect = ({ lobbyCode, myUid, onClaimCharacter, onCreateNew
       const updates = {
         [`saveSlots.${selected.playerId}.claimedByUid`]: myUid,
         [`saveSlots.${selected.playerId}.isLeft`]:        false,
+        [`saveSlots.${selected.playerId}.lockedInAt`]:    Date.now(),
       };
 
       // If game already running, patch the live player record and write a rejoin notice

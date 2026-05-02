@@ -18,6 +18,7 @@ import GameModeSelector    from './GameModeSelector';
 import SquadReviveModal    from './SquadReviveModal';
 import DMPanel             from './DMPanel';
 import DMSidebar           from './DMSidebar';
+import NPCCard             from './NPCCard';
 import LootPanel           from './LootPanel';
 import ChestPanel          from './ChestPanel';
 import VictoryPanel        from './VictoryPanel';
@@ -26,8 +27,7 @@ import { NpcLootModal, StealLootModal, DestroyItemModal } from './LootModals';
 import { getSlotCount, getHeldCount } from './lootUtils';
 import { getModeConfig }   from '../data/gameModes';
 import { useRoundTimers }       from '../hooks/useRoundTimers';
-import { useRooms }             from '../hooks/useRooms';
-import RoomsPanel              from './RoomsPanel';
+import DMToolsPanel            from './DMToolsPanel';
 import { useCommanderTokens }  from '../hooks/useCommanderTokens';
 import RoundTimerPanel         from './RoundTimerPanel';
 import CommanderTokenPanel     from './CommanderTokenPanel';
@@ -51,10 +51,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     setPlayers, addPlayer, removePlayer, reorderPlayers, updatePlayer,
     toggleSquad, useRevive: useReviveBase, changeGameMode, getModeValues, startGame,
     endTurn, undo, addLog, clearLog, loadGameState, processSquadRevive,
-    lootPool, setLootPool, startNewSession,
+    lootPool, setLootPool, startNewSession, setCurrentRound,
   } = useGameState(
     () => { roundTimers.onRoundAdvance(); },
-    (playerId) => { roundTimers.onPlayerTurnEnd(playerId); tokensOnRoundRef.current?.(playerId); tickStatusForPlayerRef.current?.(playerId); }
+    (playerId) => { roundTimers.onPlayerTurnEnd(playerId); tokensOnRoundRef.current?.(playerId); tickNPCEffectsForPlayer(playerId); }
   );
 
   // Keep addLogRef current each render
@@ -68,7 +68,6 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
 
   // ── Rooms ────────────────────────────────────────────────────────────────
-  const roomsState = useRooms();
 
   // ── Commander tokens (after addLog is available) ──────────────────────────
   const tokens = useCommanderTokens((...args) => addLogRef.current(...args));
@@ -188,6 +187,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       if (initialGameState.npcs?.length) setNpcs(initialGameState.npcs);
       // Restore vpStats from save file — overrides stale localStorage data
       // Also zero out live session trackers so npcDamage etc don't bleed in
+      if (initialGameState.dmNotes) setDmNotes(initialGameState.dmNotes);
       if (initialGameState.vpStats) {
         const restoredVp = {};
         Object.entries(initialGameState.vpStats).forEach(([pid, pdata]) => {
@@ -207,6 +207,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   }, [isMultiplayer, initialGameState]);
 
   // ── Firestore sync — GM writes full state on every change ────────────────
+  // ── DM Notes — persisted in save file, not localStorage ─────────────────
+  const [dmNotes, setDmNotes] = React.useState([]);
+
   // Use a ref so campaign turn data can be included without hoisting issues
   const campaignPlayerIdRef = React.useRef(null);
   useFirestoreSync({
@@ -218,10 +221,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       playersWhoActedThisRound,
       currentCampaignPlayerId: campaignPlayerIdRef.current,
       npcs, chests,
-      rooms:          roomsState.rooms,
       roundTimers:    roundTimers.timers,
       commanderTokens: tokens.tokens,
       vpStats:        vp.vpStats,
+      dmNotes,
     } : null,
   });
 
@@ -314,6 +317,53 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
     const item = (player.inventory || [])[req.itemIndex];
     const effectType = req.itemEffect;
+
+    // ── The Guy unblockable attack — player attacks target ─────────────────
+    if (effectType === 'guyAttack') {
+      const numRolls = req.guyNumRolls || 1;
+      const dieType  = req.guyDieType  || 'd10';
+      const targetLabel = req.targetName || req.targetUnitLabel || 'Target';
+      const npcId = req.targetNpcId || null;
+
+      addLog(`🎲 The Guy — ${player.playerName} rolls ${numRolls}${dieType} unblockable vs ${targetLabel}`, 'combat');
+
+      // Open the player-direction calculator (attacker = player, target = NPC or player unit)
+      // openCalculator sets up the base data, then we patch in the target and Guy-specific fields
+      openCalculator(player.id, 'attack', 'commander');
+
+      // Patch calculatorData with target and Guy-specific overrides
+      // We do this via setCalculatorData which is exposed from useDamageCalculation
+      const hasPlayerTarget = !!(req.targetPlayerId && req.targetUnitKey);
+      const guyAttackData = {
+        attackerId: player.id,
+        attackerName: player.playerName,
+        attackingUnitType: 'commander',
+        attackerIsSquad: false,
+        attackerSquadMembers: [],
+        action: 'attack',
+        npcs,
+        // Guy-specific
+        isGuyAttack: true,
+        unblockable: true,
+        guyNumRolls: numRolls,
+        guyDieType: dieType,
+        // Target — NPC path
+        targetNPCId: npcId || null,
+        targetNPCIds: npcId ? [npcId] : [],
+        // Target — player path
+        targetId: hasPlayerTarget
+          ? { playerId: req.targetPlayerId, unitType: req.targetUnitKey }
+          : null,
+        targetSquadMembers: hasPlayerTarget
+          ? [{ playerId: req.targetPlayerId, unitType: req.targetUnitKey }]
+          : [],
+        targetIsSquad: hasPlayerTarget,
+        squadMemberHits: {},
+        soloHits: 0,
+      };
+      setCalculatorDataDirect(guyAttackData);
+      return;
+    }
 
     // ── Own-unit targeting effects ──────────────────────────────────────────
     if (req.targetType === 'self') {
@@ -416,6 +466,20 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           updatePlayer(player.id, { inventory: newInv });
         }
       }
+
+      // Guy Legendary 1 — player picked an item, assign it to their chosen unit
+      if (effectType === 'theGuyLegendary1' && req.guyPickedItem) {
+        const pickedItem = { ...req.guyPickedItem, id: `guy_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, heldBy: req.targetUnitKey, effect: { ...req.guyPickedItem.effect, usesRemaining: req.guyPickedItem.effect?.uses ?? 1 } };
+        const freshPlayer = players.find(p => String(p.id) === String(req.playerId));
+        if (freshPlayer) {
+          let newInv = [...(freshPlayer.inventory || [])];
+          if (req.swapItemId) newInv = newInv.filter(it => it.id !== req.swapItemId);
+          newInv = [...newInv, pickedItem];
+          updatePlayer(req.playerId, { inventory: newInv });
+          addLog(`🎲 The Guy (Legendary) — ${player.playerName} received ${pickedItem.name}`, 'items');
+        }
+        return;
+      }
     }
 
     // ── Enemy targeting effects ─────────────────────────────────────────────
@@ -426,27 +490,32 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       const isNPC          = !!targetNpcId;
 
       if (isNPC) {
-        // Apply to NPC
+        // Apply status effect directly to NPC (applyDamageToNPC doesn't support effects)
         const npc = npcs.find(n => n.id === targetNpcId);
         if (!npc) return;
         const dur = item?.effect?.duration || 2;
         const val = item?.effect?.value || item?.effect?.damagePerRound || 1;
+        let statusEntry = null;
+        let logMsg = '';
         if (effectType === 'poisonVial') {
-          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'poison', value: val, duration: dur }]);
-          addLog(`🧪 ${player.playerName} poisoned ${npc.name}`, 'combat');
+          statusEntry = { type: 'poison', value: val, duration: dur, permanent: false, sourcePlayerId: player.id };
+          logMsg = `🧪 ${player.playerName} poisoned ${npc.name} (${val}hp×${dur}r)`;
         } else if (effectType === 'stunGrenade') {
-          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'stun', duration: 1 }]);
-          addLog(`💣 ${player.playerName} stunned ${npc.name}`, 'combat');
+          statusEntry = { type: 'stun', duration: 1, permanent: false, sourcePlayerId: player.id };
+          logMsg = `💣 ${player.playerName} stunned ${npc.name}`;
         } else if (effectType === 'attackDebuffItem') {
-          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'attackDebuff', value: item?.effect?.debuffValue || 1, duration: dur }]);
-          addLog(`⚔️↓ ${player.playerName} debuffed ${npc.name}'s attack`, 'combat');
+          statusEntry = { type: 'attackDebuff', value: item?.effect?.debuffValue || 1, duration: dur, permanent: false, sourcePlayerId: player.id };
+          logMsg = `⚔️↓ ${player.playerName} debuffed ${npc.name}'s attack`;
         } else if (effectType === 'defenseDebuffItem') {
-          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'defenseDebuff', value: item?.effect?.debuffValue || 1, duration: dur }]);
-          addLog(`🛡️↓ ${player.playerName} debuffed ${npc.name}'s defense`, 'combat');
+          statusEntry = { type: 'defenseDebuff', value: item?.effect?.debuffValue || 1, duration: dur, permanent: false, sourcePlayerId: player.id };
+          logMsg = `🛡️↓ ${player.playerName} debuffed ${npc.name}'s defense`;
         } else if (effectType === 'marked') {
-          applyDamageToNPC(targetNpcId, 0, player.playerName, req.targetUnitLabel, `Round ${currentRound}`, [{ type: 'marked', duration: 1 }]);
-          addLog(`🎯 ${player.playerName} marked ${npc.name}`, 'combat');
+          statusEntry = { type: 'marked', duration: 1, permanent: false, sourcePlayerId: player.id };
+          logMsg = `🎯 ${player.playerName} marked ${npc.name}`;
         }
+        if (!statusEntry) return;
+        setNpcs(prev => prev.map(n => n.id === targetNpcId ? { ...n, statusEffects: [...(n.statusEffects || []), statusEntry] } : n));
+        addLog(logMsg, 'combat');
       } else {
         // Apply to enemy player unit
         const targetPlayer = players.find(p => String(p.id) === String(targetPlayerId));
@@ -683,6 +752,13 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       return;
     }
 
+    // The Guy — open specialized DM confirm modal
+    if (req.action === 'use' && req.itemEffect === 'theGuy') {
+      setGuyTargetUnit(null);
+      setGuyConfirmModal({ req, player });
+      return;
+    }
+
     // For 'use' — check if this effect needs a player-side choice
     if (req.action === 'use' && PLAYER_CHOICE_EFFECTS.includes(req.itemEffect)) {
       const choiceId = `choice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -762,7 +838,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       };
 
       if (ef.type === 'npcPlague') {
-        const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false };
+        const poisonEntry = { type: 'poison', value: dmgPerRound, duration, permanent: false, sourcePlayerId: player.id };
         setNpcs(prev => prev.map(n =>
           n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), poisonEntry] } : n
         ));
@@ -915,6 +991,155 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     }
   };
 
+  // ── The Guy — execute the rolled outcome ──────────────────────────────────
+  const handleExecuteGuy = (req, player, extraData = {}) => {
+    const { guyRoll, itemTier, itemIndex } = req;
+    const tier = itemTier || 'Common';
+
+    // Remove the item from inventory first (one-time use)
+    const removeItem = (p) => {
+      updatePlayer(p.id, { inventory: (p.inventory || []).filter((_, i) => i !== itemIndex) });
+    };
+
+    if (tier === 'Common') {
+      if (guyRoll === 1) {
+        // +2 attack buff on commander (consumed on next calculator roll)
+        const newEffect = { type: 'attackBuff', value: 2, duration: 1, permanent: false };
+        const existing = player.commanderStats.statusEffects || [];
+        updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [...existing, newEffect] } });
+        addLog(`🎲 The Guy (Common) — ${player.playerName} gets +2 to next attack roll`, 'combat');
+        removeItem(player);
+      } else if (guyRoll === 2) {
+        // Heal 2HP — DM picks unit via guyUnitTarget passed in extraData
+        const { targetUnitKey, targetUnitLabel } = extraData;
+        if (!targetUnitKey) return; // needs unit selection first
+        const isCommander = targetUnitKey === 'commander';
+        const unitIdx = targetUnitKey === 'special' ? 0 : parseInt((targetUnitKey || '').replace('soldier', ''));
+        if (isCommander) {
+          const newHp = Math.min(player.commanderStats.hp + 2, player.commanderStats.maxHp);
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, hp: newHp } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, hp: Math.min(u.hp + 2, u.maxHp) } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`🎲 The Guy (Common) — healed ${player.playerName}'s ${targetUnitLabel} 2hp`, 'combat');
+        removeItem(player);
+      } else if (guyRoll === 3) {
+        // Send player a target picker — they choose NPC or player unit, then DM gets calculator
+        addLog(`🎲 The Guy (Common) — ${player.playerName} picks a target for 1d10 unblockable damage`, 'combat');
+        removeItem(player);
+        setGuyConfirmModal(null);
+        const choiceId = `choice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        writePendingChoice(lobbyCode, choiceId, {
+          choiceId, type: 'guyTargetPick',
+          targetPlayerUid: player.uid,
+          targetPlayerId: player.id,
+          playerName: player.playerName,
+          dice: '1d10', numRolls: 1, dieType: 'd10',
+          timestamp: Date.now(),
+        });
+        return;
+      } else if (guyRoll === 4) {
+        // Cleanse squad units of poison, burn, stun
+        const cleansedSubs = (player.subUnits || []).map(u => ({
+          ...u,
+          statusEffects: (u.statusEffects || []).filter(ef => !['poison','burn','stun'].includes(ef.type)),
+        }));
+        updatePlayer(player.id, { subUnits: cleansedSubs });
+        addLog(`🎲 The Guy (Common) — ${player.playerName}'s squad cleansed of poison, burn & stun`, 'combat');
+        removeItem(player);
+      }
+    } else if (tier === 'Rare') {
+      if (guyRoll === 1) {
+        // Heal 5HP — needs unit selection
+        const { targetUnitKey, targetUnitLabel } = extraData;
+        if (!targetUnitKey) return;
+        const isCommander = targetUnitKey === 'commander';
+        const unitIdx = targetUnitKey === 'special' ? 0 : parseInt((targetUnitKey || '').replace('soldier', ''));
+        if (isCommander) {
+          const newHp = Math.min(player.commanderStats.hp + 5, player.commanderStats.maxHp);
+          updatePlayer(player.id, { commanderStats: { ...player.commanderStats, hp: newHp } });
+        } else {
+          const newSubs = (player.subUnits || []).map((u, i) => i === unitIdx ? { ...u, hp: Math.min(u.hp + 5, u.maxHp) } : u);
+          updatePlayer(player.id, { subUnits: newSubs });
+        }
+        addLog(`🎲 The Guy (Rare) — healed ${player.playerName}'s ${targetUnitLabel} 5hp`, 'combat');
+        removeItem(player);
+      } else if (guyRoll === 2) {
+        // Extra 10" movement — visual status badge on commander, DM removes manually
+        const newEffect = { type: 'movementBoost', value: 10, duration: 999, permanent: true };
+        const existing = player.commanderStats.statusEffects || [];
+        updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [...existing, newEffect] } });
+        addLog(`🎲 The Guy (Rare) — ${player.playerName} gets +10″ movement`, 'combat');
+        removeItem(player);
+      } else if (guyRoll === 3) {
+        // Send player a target picker — they choose NPC or player unit, then DM gets calculator
+        addLog(`🎲 The Guy (Rare) — ${player.playerName} picks a target for 2d10 unblockable damage`, 'combat');
+        removeItem(player);
+        setGuyConfirmModal(null);
+        const choiceId = `choice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        writePendingChoice(lobbyCode, choiceId, {
+          choiceId, type: 'guyTargetPick',
+          targetPlayerUid: player.uid,
+          targetPlayerId: player.id,
+          playerName: player.playerName,
+          dice: '2d10', numRolls: 2, dieType: 'd10',
+          timestamp: Date.now(),
+        });
+        return;
+      } else if (guyRoll === 4) {
+        // +5 defense buff on commander
+        const newEffect = { type: 'defenseBuff', value: 5, duration: 1, permanent: false };
+        const existing = player.commanderStats.statusEffects || [];
+        updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [...existing, newEffect] } });
+        addLog(`🎲 The Guy (Rare) — ${player.playerName} gets +5 to next defense roll`, 'combat');
+        removeItem(player);
+      }
+    } else if (tier === 'Legendary') {
+      if (guyRoll === 1) {
+        // Send player a loot picker (Common + Rare items from pool)
+        removeItem(player);
+        const choiceId = `choice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        writePendingChoice(lobbyCode, choiceId, {
+          choiceId,
+          type: 'guyItemPick',
+          targetPlayerUid: player.uid,
+          targetPlayerId: player.id,
+          playerName: player.playerName,
+          lootPool: lootPool.filter(it => ['Common','Rare'].includes(it.tier)),
+          timestamp: Date.now(),
+        });
+        addLog(`🎲 The Guy (Legendary) — ${player.playerName} picks a Common or Rare item`, 'items');
+      } else if (guyRoll === 2) {
+        // Poison all NPCs (npcPlague)
+        const poisonEntry = { type: 'poison', value: 2, duration: 2, permanent: false, sourcePlayerId: player.id };
+        setNpcs(prev => prev.map(n => n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), poisonEntry] } : n));
+        addLog(`🎲 The Guy (Legendary) — ${player.playerName} poisoned all NPCs`, 'combat');
+        removeItem(player);
+      } else if (guyRoll === 3) {
+        // Close Call — absorb next damage instance
+        const newEffect = { type: 'closeCall', duration: 999, permanent: true };
+        const existing = player.commanderStats.statusEffects || [];
+        updatePlayer(player.id, { commanderStats: { ...player.commanderStats, statusEffects: [...existing, newEffect] } });
+        addLog(`🎲 The Guy (Legendary) — ${player.playerName} will absorb their next hit`, 'combat');
+        removeItem(player);
+      } else if (guyRoll === 4) {
+        // Revive — needs unit selection from extraData
+        const { targetUnitKey, targetUnitLabel } = extraData;
+        if (!targetUnitKey) return;
+        const unitIdx = targetUnitKey === 'special' ? 0 : parseInt((targetUnitKey || '').replace('soldier', ''));
+        const newSubs = (player.subUnits || []).map((u, i) => {
+          if (i !== unitIdx) return u;
+          return { ...u, hp: u.maxHp, livesRemaining: 0 };
+        });
+        updatePlayer(player.id, { subUnits: newSubs });
+        addLog(`🎲 The Guy (Legendary) — ${player.playerName}'s ${targetUnitLabel} revived at full HP`, 'combat');
+        removeItem(player);
+      }
+    }
+    setGuyConfirmModal(null);
+  };
+
   const handleDenyItemRequest = (req) => {
     resolvePendingRequest(lobbyCode, req.reqId);
     import('../services/gameStateService').then(({ writePendingRequest }) => {
@@ -977,11 +1202,17 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           addLog(`🤢 ${player.playerName}'s ${newCmdStats.customName || player.commander} took ${dmg}hp poison damage`, 'combat');
           changed = true;
         }
+        if (effect.type === 'burn') {
+          const dmg = effect.value || 0;
+          newCmdStats.hp = Math.max(0, newCmdStats.hp - dmg);
+          addLog(`🔥 ${player.playerName}'s ${newCmdStats.customName || player.commander} took ${dmg}hp burn damage`, 'combat');
+          changed = true;
+        }
         const dur = (effect.duration || 1) - 1;
         if (dur > 0) {
           next.push({ ...effect, duration: dur });
         } else {
-          const expireLabel = { shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
+          const expireLabel = { poison: '🤢 Poison', burn: '🔥 Burn', shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
           addLog(`${expireLabel} expired on ${player.playerName}'s ${newCmdStats.customName || player.commander}`, 'combat');
           changed = true;
         }
@@ -1002,11 +1233,16 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           hp = Math.max(0, hp - dmg);
           addLog(`🤢 ${player.playerName}'s ${uName} took ${dmg}hp poison damage`, 'combat');
         }
+        if (effect.type === 'burn') {
+          const dmg = effect.value || 0;
+          hp = Math.max(0, hp - dmg);
+          addLog(`🔥 ${player.playerName}'s ${uName} took ${dmg}hp burn damage`, 'combat');
+        }
         const dur = (effect.duration || 1) - 1;
         if (dur > 0) {
           next.push({ ...effect, duration: dur });
         } else {
-          const expLabel = { shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
+          const expLabel = { poison: '🤢 Poison', burn: '🔥 Burn', shieldWall: '🛡️ Shield Wall', counterStrike: '⚡ Counter Strike', marked: '🎯 Marked', stun: '💫 Stun', attackBuff: '⚔️↑ Atk Buff', defenseBuff: '🛡️↑ Def Buff', attackDebuff: '⚔️↓ Atk Debuff', defenseDebuff: '🛡️↓ Def Debuff' }[effect.type] || effect.type;
           addLog(`${expLabel} expired on ${player.playerName}'s ${uName}`, 'combat');
         }
       }
@@ -1018,40 +1254,60 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     }
   };
 
-  // ── Tick NPC status effects each round ──────────────────────────────────
+  // ── Tick NPC status effects ──────────────────────────────────────────────
+  // Effects with sourcePlayerId tick at end of that player's turn (same as player effects)
+  // Effects without sourcePlayerId (NPC-sourced) tick once per round
+
+  const tickNPCEffectsForPlayer = React.useCallback((playerId) => {
+    setNpcs(prev => prev.map(npc => {
+      if (!npc.active || npc.isDead) return npc;
+      const effects = npc.statusEffects || [];
+      const hasPlayerEffects = effects.some(ef => String(ef.sourcePlayerId) === String(playerId));
+      if (!hasPlayerEffects) return npc;
+      let hp = npc.hp;
+      const next = [];
+      for (const ef of effects) {
+        if (String(ef.sourcePlayerId) !== String(playerId)) { next.push(ef); continue; }
+        if (ef.type === 'poison') { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); addLog(`🤢 NPC "${npc.name}" took ${dmg}hp poison damage`, 'combat'); }
+        if (ef.type === 'burn')   { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); addLog(`🔥 NPC "${npc.name}" took ${dmg}hp burn damage`, 'combat'); }
+        if (ef.permanent) { next.push(ef); continue; }
+        const dur = (ef.duration || 1) - 1;
+        if (dur > 0) { next.push({ ...ef, duration: dur }); }
+        else {
+          const expLabel = { poison:'🤢 Poison', burn:'🔥 Burn', stun:'💫 Stun', marked:'🎯 Marked', attackDebuff:'⚔️↓ Atk Debuff', defenseDebuff:'🛡️↓ Def Debuff', attackBuff:'⚔️↑ Atk Buff', defenseBuff:'🛡️↑ Def Buff' }[ef.type] || ef.type;
+          addLog(`${expLabel} expired on NPC "${npc.name}"`, 'combat');
+        }
+      }
+      const justDied = npc.hp > 0 && hp <= 0;
+      if (justDied) addLog(`💀 NPC "${npc.name}" was killed by a status effect!`, 'combat');
+      return { ...npc, hp, isDead: justDied ? true : npc.isDead, statusEffects: next };
+    }));
+  }, [addLog]);
+
+  // Global tick at round advance — only for effects with no sourcePlayerId (NPC-originated effects)
   const tickNPCStatusRef = React.useRef(null);
   tickNPCStatusRef.current = () => {
     setNpcs(prev => prev.map(npc => {
       if (!npc.active || npc.isDead) return npc;
       const effects = npc.statusEffects || [];
-      if (effects.length === 0) return npc;
+      const hasGlobal = effects.some(ef => !ef.sourcePlayerId);
+      if (!hasGlobal) return npc;
       let hp = npc.hp;
       const next = [];
       for (const ef of effects) {
-        // Apply per-round damage
-        if (ef.type === 'poison') {
-          const dmg = ef.value || 2;
-          hp = Math.max(0, hp - dmg);
-          addLog('🤢 NPC "' + npc.name + '" took ' + dmg + 'hp poison damage', 'combat');
-        }
-        // Skip permanent effects
+        if (ef.sourcePlayerId) { next.push(ef); continue; }
+        if (ef.type === 'poison') { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); addLog(`🤢 NPC "${npc.name}" took ${dmg}hp poison damage`, 'combat'); }
+        if (ef.type === 'burn')   { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); addLog(`🔥 NPC "${npc.name}" took ${dmg}hp burn damage`, 'combat'); }
         if (ef.permanent) { next.push(ef); continue; }
-        // Tick duration
         const dur = (ef.duration || 1) - 1;
-        if (dur > 0) {
-          next.push({ ...ef, duration: dur });
-        } else {
-          const expLabel = {
-            poison: '🤢 Poison', stun: '💫 Stun', marked: '🎯 Marked',
-            attackDebuff: '⚔️↓ Attack Debuff', defenseDebuff: '🛡️↓ Defense Debuff',
-            attackBuff: '⚔️↑ Attack Buff', defenseBuff: '🛡️↑ Defense Buff',
-            shieldWall: '🛡️ Shield Wall',
-          }[ef.type] || ef.type;
-          addLog(expLabel + ' expired on NPC "' + npc.name + '"', 'combat');
+        if (dur > 0) { next.push({ ...ef, duration: dur }); }
+        else {
+          const expLabel = { poison:'🤢 Poison', burn:'🔥 Burn', stun:'💫 Stun', marked:'🎯 Marked', attackDebuff:'⚔️↓ Atk Debuff', defenseDebuff:'🛡️↓ Def Debuff', attackBuff:'⚔️↑ Atk Buff', defenseBuff:'🛡️↑ Def Buff' }[ef.type] || ef.type;
+          addLog(`${expLabel} expired on NPC "${npc.name}"`, 'combat');
         }
       }
       const justDied = npc.hp > 0 && hp <= 0;
-      if (justDied) addLog('💀 NPC "' + npc.name + '" was killed by poison!', 'combat');
+      if (justDied) addLog(`💀 NPC "${npc.name}" was killed by a status effect!`, 'combat');
       return { ...npc, hp, isDead: justDied ? true : npc.isDead, statusEffects: next };
     }));
   };
@@ -1060,7 +1316,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     players, activeNPCs, getNPCById, playersWhoActedThisRound, currentRound,
     endTurn, addLog, updatePlayer, setNpcs, applyDamageToNPC, vp.trackVP,
     () => { roundTimers.onRoundAdvance(); tickNPCStatusRef.current?.(); },
-    (deathData) => setDeathLootModal(deathData)
+    (deathData) => setDeathLootModal(deathData),
+    null, // onCreateTimer — passed per-call not globally
+    (playerId) => { tickStatusForPlayerRef.current?.(playerId); }, // onTurnStart
+    (data) => setGuyCloseCallModal(data) // onGuyCloseCall
   );
 
   // archiveNPCsRef — snapshot all current NPCs then clear for new session
@@ -1081,24 +1340,15 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       }));
       setPastSessionChests(prev => [...prev, { sessionName, chests: chestSnapshot }]);
     }
-    // Archive rooms snapshot
-    if (roomsState.rooms.length > 0) {
-      const roomSnapshot = roomsState.rooms.map(r => ({
-        id: r.id, name: r.name, description: r.description,
-        status: r.status || 'Idle',
-      }));
-      setPastSessionRooms(prev => [...prev, { sessionName, rooms: roomSnapshot }]);
-    }
     setNpcs([]);
     setChests([]);
-    roomsState.setRooms([]);
   };
 
   // ── Damage calculation ────────────────────────────────────────────────────
   const {
     showCalculator, showDamageDistribution, calculatorData, damageDistribution,
     openCalculator, closeCalculator, updateDamageDistribution,
-    setShowDamageDistribution, closeCalculatorKeepDistribution, setCalculatorData, applyDamage,
+    setShowDamageDistribution, closeCalculatorKeepDistribution, setCalculatorData, setCalculatorDataDirect, applyDamage,
   } = useDamageCalculation(players, addLog, npcs);
 
   // ── Squad revive ──────────────────────────────────────────────────────────
@@ -1106,6 +1356,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const [deathLootModal, setDeathLootModal] = React.useState(null); // { unitLabel, playerName, items, playerId } — NPC killed player unit
   const [pvpDeathModal,  setPvpDeathModal]  = React.useState(null); // { unitLabel, playerName, items, playerId, attackerPlayer, attackerUnitType }
   const [spawnModal, setSpawnModal] = React.useState(null);
+  const [guyConfirmModal, setGuyConfirmModal] = React.useState(null); // { req, player } — The Guy DM confirm
+  const [guyTargetUnit, setGuyTargetUnit] = React.useState(null); // { unitKey, label } — unit picked in Guy modal
+  const [guyCloseCallModal, setGuyCloseCallModal] = React.useState(null); // { playerName, damage } — The Guy absorbed hit
   const [enemyItemModal, setEnemyItemModal] = React.useState(null); // { sourcePlayer, item, itemIndex }
   const [lastItemPlayed, setLastItemPlayed] = React.useState(null); // { item, sourcePlayerId }
   const [enemyTargetMode, setEnemyTargetMode] = React.useState(null); // 'npc' | 'player' // { attack } — confirm before creating NPC
@@ -1133,6 +1386,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const campaignTurnOrder       = isCampaign ? campaign.buildTurnOrder() : [];
   const currentCampaignTurn     = campaignTurnOrder[campaign.campaignTurnIndex] || null;
   const currentCampaignPlayerId = currentCampaignTurn?.type === 'player' ? currentCampaignTurn.id : null;
+  const currentNonRebuttalNPC   = (currentCampaignTurn?.type === 'npc' && currentCampaignTurn.isRebuttal === false)
+    ? getNPCById(currentCampaignTurn.id) : null;
   const currentCampaignNPCId    = null; // NPCs are visual-only in turn order — they never hold the active turn
 
   // Keep ref in sync so the main useFirestoreSync always has the latest value
@@ -1161,7 +1416,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
   // ── Save / Load ───────────────────────────────────────────────────────────
   const saveGameToFile = () => {
-    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, chests, vpStats: vp.vpStats, rooms: roomsState.rooms, pastSessionNPCs, pastSessionChests, pastSessionRooms, savedAt: new Date().toISOString() };
+    const state = { players, currentRound, combatLog, gameMode, customModeSettings, currentPlayerIndex, playersWhoActedThisRound, gameStarted, npcs, lootPool, chests, vpStats: vp.vpStats, pastSessionNPCs, pastSessionChests, pastSessionRooms, dmNotes, savedAt: new Date().toISOString() };
     const blob  = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url   = URL.createObjectURL(blob);
     const a     = document.createElement('a');
@@ -1210,9 +1465,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           setPastSessionRooms(state.pastSessionRooms || []);
           try { localStorage.setItem('hpCounterPastSessionRooms', JSON.stringify(state.pastSessionRooms || [])); } catch {};
           if (state.rooms) {
-            roomsState.setRooms(state.rooms);
-            try { localStorage.setItem('hpCounterRooms', JSON.stringify(state.rooms)); } catch {}
+                  try { localStorage.setItem('hpCounterRooms', JSON.stringify(state.rooms)); } catch {}
           }
+          if (state.dmNotes) setDmNotes(state.dmNotes);
           addLog(`Game loaded from ${new Date(state.savedAt).toLocaleString()}`, 'system');
           alert('Game loaded successfully!');
         } catch { alert('Failed to load save file.'); }
@@ -1244,7 +1499,6 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     vp.resetLiveVPTrackers();
     tokens.resetAllTokens();
     roundTimers.resetAllTimers();
-    roomsState.newSessionReset();
   };
 
   const handleEndSessionFromFileUI = () => {
@@ -1354,7 +1608,6 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             activeNPCsCount={activeNPCs.length}
             unopenedChestCount={chests.filter(c => !c.isOpened).length}
             activeTimersCount={roundTimers.timers.length}
-            activeRoomsCount={roomsState.activeRooms.length}
           />
         )}
 
@@ -1387,19 +1640,32 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           <div style={{ ...styles.sidebar, top: 0 }}>
             <h3 style={styles.sidebarTitle}>⚔️ TURN ORDER</h3>
             {campaignTurnOrder.map((entry, index) => {
-              const isPlayer = entry.type === 'player';
-              const isCurr   = isPlayer && index === campaign.campaignTurnIndex; // NPCs never hold the active turn
-              const entity   = isPlayer ? players.find(p => p.id === entry.id) : getNPCById(entry.id);
+              const isPlayer    = entry.type === 'player';
+              const isNonReb    = entry.type === 'npc' && entry.isRebuttal === false;
+              const isRebuttal  = entry.type === 'npc' && entry.isRebuttal !== false;
+              const isCurr      = index === campaign.campaignTurnIndex;
+              const entity      = isPlayer ? players.find(p => p.id === entry.id) : getNPCById(entry.id);
               if (!entity) return null;
-              const hasActed = isPlayer ? playersWhoActedThisRound.includes(entity.id) : false;
+              const hasActed    = isPlayer ? playersWhoActedThisRound.includes(entity.id) : false;
 
-              if (!isPlayer) {
-                // NPCs are visual markers only — show as a retaliation window indicator
+              if (isRebuttal) {
                 return (
-                  <div key={`npc-${entry.id}`} style={{ ...styles.sidebarPlayer, background: 'rgba(239,68,68,0.05)', borderLeft: '4px solid rgba(239,68,68,0.3)', opacity: 0.75 }}>
+                  <div key={`npc-reb-${entry.id}`} style={{ ...styles.sidebarPlayer, background: 'rgba(239,68,68,0.05)', borderLeft: '4px solid rgba(239,68,68,0.3)', opacity: 0.75 }}>
                     <div style={styles.sidebarPlayerHeader}>
                       <span style={{ ...styles.sidebarPlayerName, color: colors.textSecondary, fontSize: '0.72rem' }}>👾 {entity.name}</span>
                       <span style={{ color: colors.textFaint, fontSize: '0.6rem' }}>⚔️ retaliate</span>
+                    </div>
+                    <div style={{ ...styles.sidebarPlayerInfo, color: colors.textFaint }}>{entity.hp}/{entity.maxHp}hp • 🛡️{entity.armor}+</div>
+                  </div>
+                );
+              }
+
+              if (isNonReb) {
+                return (
+                  <div key={`npc-nr-${entry.id}`} style={{ ...styles.sidebarPlayer, background: isCurr ? 'linear-gradient(135deg,rgba(239,68,68,0.2),rgba(185,28,28,0.2))' : 'rgba(239,68,68,0.05)', borderLeft: `4px solid ${isCurr ? '#f87171' : 'rgba(239,68,68,0.35)'}` }}>
+                    <div style={styles.sidebarPlayerHeader}>
+                      <span style={{ ...styles.sidebarPlayerName, color: isCurr ? '#fca5a5' : colors.textSecondary, fontSize: '0.75rem' }}>👾 {entity.name}</span>
+                      {isCurr && <span style={{ color: '#f87171' }}>▶</span>}
                     </div>
                     <div style={{ ...styles.sidebarPlayerInfo, color: colors.textFaint }}>{entity.hp}/{entity.maxHp}hp • 🛡️{entity.armor}+</div>
                   </div>
@@ -1429,7 +1695,38 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
               <button onClick={addPlayer} style={styles.addPlayerBtn}>+ ADD PLAYER</button>
             </div>
           )}
-          {(!isCampaign || activePanel === 'players') && (
+
+          {/* Non-rebuttal NPC turn — show enlarged NPC card in focus mode */}
+          {isCampaign && viewMode === 'current' && activePanel === 'players' && currentNonRebuttalNPC && (
+            <div style={{ padding: '0.5rem', maxWidth: '640px', margin: '0 auto', width: '100%' }}>
+              <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
+                <span style={{ color: '#f87171', fontWeight: '900', fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', fontFamily: fonts.display }}>
+                  👾 NPC TURN — {currentNonRebuttalNPC.name}
+                </span>
+              </div>
+              <NPCCard
+                npc={currentNonRebuttalNPC}
+                isCurrentTurn={true}
+                hasActedThisRound={campaign.npcsWhoActedThisRound?.includes(currentNonRebuttalNPC.id)}
+                onActivate={(id) => campaign.handleActivateNPC(id)}
+                onDeactivate={(id) => deactivateNPC(id)}
+                onEdit={() => {}}
+                onRemove={() => {}}
+                onHPChange={(id, hp) => { setNPCHP(id, hp); }}
+                onTriggerPhase={(id) => triggerNextPhase(id)}
+                onOpenNPCAttack={(npcId, attackIndex, opts) => campaign.openNPCAttack(npcId, attackIndex, opts)}
+                onSpawnAttack={(attack, parentName) => setSpawnModal({ attack, parentNPCName: parentName })}
+                onIncrementAttack={(npcId, reset) => campaign.handleIncrementAttack(npcId, reset)}
+                players={players}
+                onDropLoot={(npc) => loot.setDeathLootModal({ ...npc, lootTable: npc.lootTable })}
+                getTimersForNPC={roundTimers.getTimersForNPC || (() => [])}
+                onUpdateNPC={(id, updates) => setNpcs(prev => prev.map(n => n.id === id ? { ...n, ...updates } : n))}
+                onDuplicate={() => {}}
+              />
+            </div>
+          )}
+
+          {(!isCampaign || activePanel === 'players') && !(isCampaign && viewMode === 'current' && currentNonRebuttalNPC) && (
             <div style={{ display: players.length === 0 ? 'block' : 'grid', gridTemplateColumns: players.length === 1 ? '1fr' : viewMode === 'current' ? '1fr' : '48% 48%', gap: '1%', padding: '0 0.5%', maxWidth: players.length === 1 ? '50%' : '100%', margin: players.length === 1 ? '0 auto' : '0' }}>
               {players.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '4rem 2rem', color: colors.textFaint }}>
@@ -1678,37 +1975,27 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           )}
 
           {isCampaign && activePanel === 'rooms' && (
-            <RoomsPanel
-              rooms={roomsState.rooms}
-              visibleRooms={roomsState.visibleRooms}
+            <DMToolsPanel
               players={players}
-              lootPool={lootPool}
-              showRoomCreator={roomsState.showRoomCreator}
-              editingRoomId={roomsState.editingRoomId}
-              blankRoom={roomsState.blankRoom}
-              openCreator={roomsState.openCreator}
-              closeCreator={roomsState.closeCreator}
-              saveRoom={roomsState.saveRoom}
-              onDeleteRoom={roomsState.deleteRoom}
-              onArchiveRoom={roomsState.archiveRoom}
-              onPassRoom={roomsState.passRoom}
-              onFailRoom={roomsState.failRoom}
-              onSetStatus={roomsState.onSetStatus}
-              onUpdateRoom={roomsState.updateRoom}
-              onGiveLoot={loot.handleDropLoot}
+              npcs={activeNPCs}
+              currentRound={currentRound}
+              updatePlayer={updatePlayer}
+              setNpcs={setNpcs}
+              addLog={addLog}
+              dmNotes={dmNotes}
+              setDmNotes={setDmNotes}
+              onSetRound={(n) => {
+                setCurrentRound(n);
+                addLog(`📋 DM set round to ${n}`, 'system');
+              }}
+              onAdvanceRound={() => {
+                setCurrentRound(prev => prev + 1);
+                addLog(`----- Round ${currentRound + 1} -----`, 'system');
+                if (roundTimers.onRoundAdvance) roundTimers.onRoundAdvance();
+              }}
             />
           )}
 
-          {isCampaign && activePanel === 'rooms' && pastSessionRooms.length > 0 && (
-            <div style={{ width: '100%', marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <div style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
-                📅 Past Sessions
-              </div>
-              {[...pastSessionRooms].reverse().map((session, si) => (
-                <SessionRoomArchiveEntry key={si} session={session} />
-              ))}
-            </div>
-          )}
 
           {isCampaign && activePanel === 'timers' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -1874,7 +2161,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                   }
                 });
               }
-            }, distributionOverride);
+            }, distributionOverride, (data) => {
+              addLog(`🛡️ The Guy took ${data.damage}hp damage for ${data.playerName}!`, 'combat');
+              setGuyCloseCallModal(data);
+            });
           }}
           onClose={() => setShowDamageDistribution(false)}
         />
@@ -2118,6 +2408,122 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                 ✓ Approve
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GM: The Guy Confirm Modal ── */}
+      {guyConfirmModal && isMultiplayer && (() => {
+        const { req, player } = guyConfirmModal;
+        const tier = req.itemTier || 'Common';
+        const roll = req.guyRoll;
+        const tierColor = { Common: colors.gold, Rare: '#a78bfa', Legendary: '#fbbf24' }[tier] || colors.gold;
+        const tierBorder = { Common: 'rgba(201,169,97,0.4)', Rare: 'rgba(139,92,246,0.4)', Legendary: 'rgba(251,191,36,0.4)' }[tier] || 'rgba(201,169,97,0.4)';
+
+        // Outcomes that need a unit picker on the DM side
+        const needsUnitPicker = (tier === 'Common' && roll === 2) || (tier === 'Rare' && roll === 1) || (tier === 'Legendary' && roll === 4);
+        // For revive, only show dead units with 0 revives
+        const isRevive = tier === 'Legendary' && roll === 4;
+
+        const unitOptions = (() => {
+          if (!needsUnitPicker) return [];
+          const units = [];
+          if (!isRevive) {
+            units.push({ key: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander', hp: player.commanderStats?.hp, maxHp: player.commanderStats?.maxHp });
+          }
+          (player.subUnits || []).forEach((u, i) => {
+            const key = i === 0 ? 'special' : `soldier${i}`;
+            if (isRevive) {
+              if (u.hp <= 0 && (u.livesRemaining ?? 1) <= 0) units.push({ key, label: u.name || key, hp: u.hp, maxHp: u.maxHp });
+            } else {
+              units.push({ key, label: u.name || key, hp: u.hp, maxHp: u.maxHp });
+            }
+          });
+          return units;
+        })();
+
+        const canExecute = !needsUnitPicker || !!guyTargetUnit;
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3500, padding: '1rem' }}>
+            <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: `2px solid ${tierBorder}`, borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🎲</div>
+                <div style={{ color: tierColor, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.05rem', letterSpacing: '0.08em' }}>The Guy — {tier}</div>
+              </div>
+
+              {/* Info rows */}
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {[
+                  { label: 'Player', value: player.playerName, color: colors.gold },
+                  { label: 'Item', value: req.itemName, color: colors.textPrimary },
+                  { label: 'Tier', value: tier, color: tierColor },
+                  { label: 'Rolled', value: `${roll} / 4`, color: tierColor },
+                  { label: 'Effect', value: req.guyOutcomeLabel, color: '#86efac' },
+                ].filter(Boolean).map(({ label, value, color }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                    <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>{label}</span>
+                    <span style={{ color, fontWeight: '700', fontSize: '0.82rem', textAlign: 'right', flex: 1 }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Unit picker for heal/revive outcomes */}
+              {needsUnitPicker && (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+                    {isRevive ? 'Choose unit to revive (0hp, 0 revives):' : 'Choose unit to heal:'}
+                  </div>
+                  {unitOptions.length === 0 && (
+                    <div style={{ color: '#f87171', fontSize: '0.72rem' }}>No eligible units found.</div>
+                  )}
+                  {unitOptions.map(u => (
+                    <div key={u.key} onClick={() => setGuyTargetUnit({ unitKey: u.key, label: u.label })} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '0.45rem 0.7rem', borderRadius: '7px', cursor: 'pointer', marginBottom: '0.3rem',
+                      background: guyTargetUnit?.unitKey === u.key ? 'rgba(34,197,94,0.1)' : 'rgba(0,0,0,0.3)',
+                      border: `2px solid ${guyTargetUnit?.unitKey === u.key ? 'rgba(34,197,94,0.5)' : 'rgba(90,74,58,0.3)'}`,
+                    }}>
+                      <span style={{ color: guyTargetUnit?.unitKey === u.key ? '#86efac' : colors.textSecondary, fontWeight: '800', fontSize: '0.8rem' }}>{u.label}</span>
+                      <span style={{ color: colors.textFaint, fontSize: '0.68rem' }}>{u.hp}/{u.maxHp}hp</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                <button onClick={() => setGuyConfirmModal(null)} style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✕ Deny</button>
+                <button disabled={!canExecute} onClick={() => handleExecuteGuy(req, player, guyTargetUnit ? { targetUnitKey: guyTargetUnit.unitKey, targetUnitLabel: guyTargetUnit.label } : {})} style={{ padding: '0.85rem', background: canExecute ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${canExecute ? 'rgba(34,197,94,0.4)' : 'rgba(90,74,58,0.3)'}`, borderRadius: '10px', color: canExecute ? '#86efac' : colors.textDisabled, cursor: canExecute ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✓ Execute</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── The Guy Close Call epic modal ── */}
+      {guyCloseCallModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'radial-gradient(ellipse at center, rgba(10,7,0,0.97) 0%, rgba(0,0,0,0.99) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ textAlign: 'center', padding: '2rem', maxWidth: '400px' }}>
+            <div style={{ fontSize: '4rem', marginBottom: '0.75rem', lineHeight: 1 }}>🎲</div>
+            <div style={{ fontSize: '2.2rem', fontWeight: '900', letterSpacing: '0.15em', fontFamily: '"Cinzel", Georgia, serif', background: 'linear-gradient(135deg, #fde68a, #d97706)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.5rem' }}>
+              THE GUY
+            </div>
+            <div style={{ color: '#fbbf24', fontSize: '1rem', fontWeight: '700', marginBottom: '0.35rem', letterSpacing: '0.08em' }}>
+              Legendary Protection
+            </div>
+            <div style={{ color: '#fde68a', fontSize: '1.1rem', fontWeight: '800', marginBottom: '0.5rem' }}>
+              The Guy took {guyCloseCallModal.damage}hp damage for {guyCloseCallModal.playerName}
+            </div>
+            <div style={{ color: colors.textMuted, fontSize: '0.82rem', marginBottom: '2rem', lineHeight: 1.5 }}>
+              The attack is completely negated.<br/>No damage. No effect. He handled it.
+            </div>
+            <div style={{ display: 'inline-block', padding: '0.4rem 1.5rem', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: '8px', color: '#fbbf24', fontSize: '0.72rem', fontWeight: '800', letterSpacing: '0.1em', marginBottom: '2rem' }}>
+              DAMAGE NEGATED
+            </div>
+            <br/>
+            <button onClick={() => setGuyCloseCallModal(null)} style={{ padding: '0.75rem 2.5rem', background: 'linear-gradient(135deg, #78350f, #92400e)', border: '2px solid #d97706', borderRadius: '10px', color: '#fde68a', fontFamily: fonts.body, fontWeight: '900', fontSize: '0.95rem', cursor: 'pointer', letterSpacing: '0.1em' }}>
+              ✕ Close
+            </button>
           </div>
         </div>
       )}
@@ -2644,11 +3050,15 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
   );
   const [expandedPlayers, setExpandedPlayers] = React.useState({});
 
-  // ── Per-player split roll state (multi-player targets with numRolls > 1) ──
-  // playerRollIndex: which player we're currently rolling for
-  // playerRolls: { [playerId]: [roll, ...] } — completed rolls per player
-  const [playerRollIndex, setPlayerRollIndex] = React.useState(0);
-  const [playerRolls,     setPlayerRolls]     = React.useState({}); // { playerId: [{ atk, def, dmg }] }
+  // ── Interaction-based multi-player state ─────────────────────────────────
+  // isInteractionMode: triggers whenever targets span multiple players (replaces old isSplitMode)
+  // Each interaction = full dice pool against one group:
+  //   - commander alone if targeted
+  //   - all squad units together if any targeted
+  // Order: player by player, commander first then squad within each player
+  // interactionRolls[i] = array of roll objects for interaction i
+  const [interactionIndex, setInteractionIndex] = React.useState(0);
+  const [interactionRolls, setInteractionRolls] = React.useState([]); // [[roll,...], ...]
 
   const currentMember = isSquad ? members[squadRollIndex] : null;
   const attack        = isSquad ? currentMember?.attack : npcAttackData.attack;
@@ -2657,66 +3067,68 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
   const numRolls      = attack?.numRolls || 1;
   const dieType       = attack?.dieType || 'd20';
 
-  // NPC's own status-based attack debuff/buff (applied to its own rolls)
+  // NPC's own status-based attack debuff/buff
   const npcSelf          = !isSquad ? npcs.find(n => n.id === npcAttackData.npcId) : null;
   const npcSelfAtkDebuff = (npcSelf?.statusEffects || []).filter(ef => ef.type === 'attackDebuff').reduce((s, ef) => s + (ef.value||0), 0);
   const npcSelfAtkBuff   = (npcSelf?.statusEffects || []).filter(ef => ef.type === 'attackBuff').reduce((s, ef) => s + (ef.value||0), 0);
   const dieMax        = dieType === 'd20' ? 20 : dieType === 'd10' ? 10 : dieType === 'd6' ? 6 : 4;
 
-  // ── Determine if we're in multi-player split mode ─────────────────────────
-  const uniqueTargetPlayerIds = [...new Set(targets.map(t => t.playerId).filter(Boolean))];
-  const isSplitMode = !isSquad && numRolls > 1 && uniqueTargetPlayerIds.length > 1;
-
-  // Allocate dice to players — floor(numRolls / playerCount), remainder to player with most targets
-  const diceAllocation = React.useMemo(() => {
-    if (!isSplitMode) return {};
-    const playerCount = uniqueTargetPlayerIds.length;
-    const base = Math.floor(numRolls / playerCount);
-    const remainder = numRolls - base * playerCount;
-    // Count targets per player to decide who gets the extra dice
-    const targetCounts = {};
-    uniqueTargetPlayerIds.forEach(pid => {
-      targetCounts[pid] = targets.filter(t => t.playerId === pid).length;
+  // Build ordered interaction list from current targets
+  // Each player gets: commander interaction (if targeted), then squad interaction (if any squad targeted)
+  const buildInteractions = (targetList) => {
+    const uniquePids = [...new Set(targetList.map(t => t.playerId).filter(Boolean))];
+    const interactions = [];
+    uniquePids.forEach(pid => {
+      const pTargets = targetList.filter(t => t.playerId === pid);
+      const cmdTarget = pTargets.find(t => t.unitType === 'commander');
+      const squadTargets = pTargets.filter(t => t.unitType !== 'commander');
+      if (cmdTarget) interactions.push({ playerId: pid, targets: [cmdTarget], isCommander: true });
+      if (squadTargets.length > 0) interactions.push({ playerId: pid, targets: squadTargets, isCommander: false });
     });
-    // Sort players by target count desc, then by order in uniqueTargetPlayerIds for tie-break
-    const sorted = [...uniqueTargetPlayerIds].sort((a, b) => targetCounts[b] - targetCounts[a]);
-    const alloc = {};
-    uniqueTargetPlayerIds.forEach(pid => { alloc[pid] = base; });
-    for (let i = 0; i < remainder; i++) { alloc[sorted[i]] = (alloc[sorted[i]] || 0) + 1; }
-    return alloc;
-  }, [isSplitMode, targets, numRolls]);
+    return interactions;
+  };
 
-  // Current player being rolled for in split mode
-  const currentSplitPlayerId = isSplitMode ? uniqueTargetPlayerIds[playerRollIndex] : null;
-  const currentSplitPlayer   = currentSplitPlayerId ? players.find(p => String(p.id) === String(currentSplitPlayerId)) : null;
-  const currentSplitDice     = currentSplitPlayerId ? (diceAllocation[currentSplitPlayerId] || 1) : 1;
-  const currentSplitRolls    = currentSplitPlayerId ? (playerRolls[currentSplitPlayerId] || []) : [];
-  const splitDoneForCurrent  = currentSplitRolls.length >= currentSplitDice;
-  const splitAllDone         = isSplitMode && playerRollIndex >= uniqueTargetPlayerIds.length - 1 && splitDoneForCurrent;
+  const uniqueTargetPlayerIds = [...new Set(targets.map(t => t.playerId).filter(Boolean))];
+  const isInteractionMode = !isSquad && uniqueTargetPlayerIds.length > 1;
+  const interactions      = isInteractionMode ? buildInteractions(targets) : [];
+  const currentInteraction = isInteractionMode ? (interactions[interactionIndex] || null) : null;
+  const currentInteractionRolls = isInteractionMode ? (interactionRolls[interactionIndex] || []) : [];
+  const interactionDoneForCurrent = currentInteractionRolls.length >= numRolls;
+  const interactionAllDone = isInteractionMode && interactionIndex >= interactions.length - 1 && interactionDoneForCurrent;
 
   const activeRolls       = isSquad ? currentMemberRolls : rolls;
-  const allDoneForCurrent = isSplitMode ? splitDoneForCurrent : (activeRolls.length >= numRolls);
+  const allDoneForCurrent = isInteractionMode ? interactionDoneForCurrent : (activeRolls.length >= numRolls);
   const isLastMember      = isSquad ? squadRollIndex >= members.length - 1 : true;
-  const allDone           = isSplitMode ? splitAllDone : (isSquad ? (allDoneForCurrent && isLastMember) : allDoneForCurrent);
+  const allDone           = isInteractionMode ? interactionAllDone : (isSquad ? (allDoneForCurrent && isLastMember) : allDoneForCurrent);
 
   const squadRunningTotal  = memberRolls.reduce((sum, mr) => sum + mr.reduce((s, r) => s + r.dmg, 0), 0);
   const currentMemberTotal = currentMemberRolls.reduce((s, r) => s + r.dmg, 0);
-  const splitTotal         = Object.values(playerRolls).flat().reduce((s, r) => s + r.dmg, 0)
-                           + currentSplitRolls.reduce((s, r) => s + r.dmg, 0);
-  const displayTotal       = isSplitMode ? splitTotal : (isSquad ? (squadRunningTotal + currentMemberTotal) : totalDamage);
+  const interactionTotal   = [...interactionRolls, currentInteractionRolls].flat().reduce((s, r) => s + r.dmg, 0);
+  const displayTotal       = isInteractionMode ? interactionTotal : (isSquad ? (squadRunningTotal + currentMemberTotal) : totalDamage);
 
   const addRoll = () => {
     const atk = parseInt(atkRoll) || 0;
     const def = parseInt(defRoll) || 0;
     const finalAtk = atk + attackBonus + activeAtkBonus + npcSelfAtkBuff - npcSelfAtkDebuff;
-    const finalDef = def + activeDefBonus;
+
+    // Auto-apply defenseBuff status effect from targeted player's commander
+    // Reads from the first targeted player — consumed after first roll (duration: 1)
+    const firstTargetPlayerId = targets.length > 0 ? targets[0].playerId : null;
+    const firstTargetPlayer = firstTargetPlayerId ? players.find(p => String(p.id) === String(firstTargetPlayerId)) : null;
+    const targetDefBuffVal = (firstTargetPlayer?.commanderStats?.statusEffects || [])
+      .filter(ef => ef.type === 'defenseBuff')
+      .reduce((s, ef) => s + (ef.value || 0), 0);
+
+    const finalDef = def + activeDefBonus + targetDefBuffVal;
     const dmg = Math.max(0, finalAtk - finalDef);
     const roll = { atk, bonus: attackBonus + activeAtkBonus, atkDebuff: npcSelfAtkDebuff, atkBuff: npcSelfAtkBuff, finalAtk, def: finalDef, dmg };
-    if (isSplitMode) {
-      setPlayerRolls(prev => ({
-        ...prev,
-        [currentSplitPlayerId]: [...(prev[currentSplitPlayerId] || []), roll],
-      }));
+    if (isInteractionMode) {
+      setInteractionRolls(prev => {
+        const next = [...prev];
+        if (!next[interactionIndex]) next[interactionIndex] = [];
+        next[interactionIndex] = [...next[interactionIndex], roll];
+        return next;
+      });
     } else if (isSquad) {
       setCurrentMemberRolls(prev => [...prev, roll]);
     } else {
@@ -2725,10 +3137,22 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
     }
     setAtkRoll(''); setDefRoll('');
     setActiveAtkBonus(0); setActiveDefBonus(0);
+
+    // Consume defenseBuff status effect after it's been applied to this roll
+    if (targetDefBuffVal > 0 && firstTargetPlayer) {
+      const newEffects = (firstTargetPlayer.commanderStats.statusEffects || []).reduce((acc, ef) => {
+        if (ef.type !== 'defenseBuff') { acc.push(ef); return acc; }
+        const newDur = (ef.duration || 1) - 1;
+        if (newDur > 0) acc.push({ ...ef, duration: newDur });
+        return acc;
+      }, []);
+      onUpdatePlayer(firstTargetPlayer.id, { commanderStats: { ...firstTargetPlayer.commanderStats, statusEffects: newEffects } });
+      onAddLog(`🛡️↑ ${firstTargetPlayer.playerName}'s +${targetDefBuffVal} defense buff consumed`, 'combat');
+    }
   };
 
-  const advanceToNextSplitPlayer = () => {
-    setPlayerRollIndex(prev => prev + 1);
+  const advanceToNextInteraction = () => {
+    setInteractionIndex(prev => prev + 1);
     setAtkRoll(''); setDefRoll('');
     setActiveAtkBonus(0); setActiveDefBonus(0);
   };
@@ -2752,26 +3176,31 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
     if (!allDone) { setErrorMsg('Complete all rolls first.'); return; }
     if (targets.length === 0) { setErrorMsg('Select at least one target.'); return; }
 
-    if (isSplitMode) {
-      // Build per-player totals from split rolls
+    if (isInteractionMode) {
+      // Build per-player damage totals from all interactions
       const perPlayerDamage = {};
-      uniqueTargetPlayerIds.forEach(pid => {
-        const pRolls = playerRolls[pid] || [];
-        perPlayerDamage[pid] = pRolls.reduce((s, r) => s + r.dmg, 0);
+      const allInteractionRolls = [...interactionRolls];
+      // include current interaction rolls if they exist
+      if (currentInteractionRolls.length > 0 && !allInteractionRolls[interactionIndex]) {
+        allInteractionRolls[interactionIndex] = currentInteractionRolls;
+      }
+      interactions.forEach((interaction, idx) => {
+        const pid = interaction.playerId;
+        const iRolls = allInteractionRolls[idx] || [];
+        const dmg = iRolls.reduce((s, r) => s + r.dmg, 0);
+        perPlayerDamage[pid] = (perPlayerDamage[pid] || 0) + dmg;
       });
-      const allSplitRolls = Object.values(playerRolls).flat();
       const finalTotal = Object.values(perPlayerDamage).reduce((s, d) => s + d, 0);
-      // Pre-seed the damage distribution so each player's units only receive that player's damage
-      // DamageDistribution will still let DM adjust within each player's pool
+      const allRollsFlat = allInteractionRolls.flat();
+      // Pre-seed distribution: each player's pool spread evenly across their targets
       const preSeedDist = {};
       targets.forEach(t => {
         const playerTotal = perPlayerDamage[t.playerId] || 0;
         const playerTargets = targets.filter(pt => pt.playerId === t.playerId);
-        // Spread player's damage evenly across their units as a starting point
         const perUnit = playerTargets.length > 0 ? Math.floor(playerTotal / playerTargets.length) : 0;
         preSeedDist[`${t.playerId}-${t.unitType}`] = perUnit;
       });
-      onProceed({ ...npcAttackData, totalDamage: finalTotal, d20Rolls: allSplitRolls, targetSquadMembers: targets, perPlayerDamage, preSeedDistribution: preSeedDist });
+      onProceed({ ...npcAttackData, totalDamage: finalTotal, d20Rolls: allRollsFlat, targetSquadMembers: targets, perPlayerDamage, preSeedDistribution: preSeedDist });
       return;
     }
 
@@ -2987,31 +3416,32 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
           })}
         </div>
 
-        {/* ── Split mode: per-player roll progress strip ── */}
-        {isSplitMode && (
+        {/* ── Interaction mode: progress strip ── */}
+        {isInteractionMode && (
           <div style={{ marginBottom: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '0.6rem 0.85rem' }}>
-            <div style={{ color: '#a78bfa', fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
-              🎲 {numRolls} dice split across {uniqueTargetPlayerIds.length} players
+            <div style={{ color: '#a78bfa', fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+              ⚔️ {interactions.length} interaction{interactions.length !== 1 ? 's' : ''} · {dieType.toUpperCase()} × {numRolls} each
             </div>
-            <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-              {uniqueTargetPlayerIds.map((pid, idx) => {
-                const p = players.find(pl => String(pl.id) === String(pid));
-                const alloc = diceAllocation[pid] || 1;
-                const done  = (playerRolls[pid] || []).length >= alloc;
-                const isCurr = idx === playerRollIndex;
-                const pRollDmg = (playerRolls[pid] || []).reduce((s, r) => s + r.dmg, 0);
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              {interactions.map((interaction, idx) => {
+                const p = players.find(pl => String(pl.id) === String(interaction.playerId));
+                const iRolls = interactionRolls[idx] || [];
+                const done   = iRolls.length >= numRolls;
+                const isCurr = idx === interactionIndex && !interactionAllDone;
+                const dmgTotal = iRolls.reduce((s, r) => s + r.dmg, 0);
+                const label = interaction.isCommander ? `${p?.playerName} — Commander` : `${p?.playerName} — Squad (${interaction.targets.length} unit${interaction.targets.length !== 1 ? 's' : ''})`;
                 return (
-                  <div key={pid} style={{
-                    padding: '0.25rem 0.6rem', borderRadius: '20px',
-                    background: done ? 'rgba(34,197,94,0.12)' : isCurr ? 'rgba(167,139,250,0.15)' : 'rgba(0,0,0,0.3)',
-                    border: `1px solid ${done ? 'rgba(34,197,94,0.4)' : isCurr ? 'rgba(167,139,250,0.5)' : 'rgba(90,74,58,0.3)'}`,
+                  <div key={idx} style={{
+                    padding: '0.25rem 0.6rem', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    background: done ? 'rgba(34,197,94,0.08)' : isCurr ? 'rgba(167,139,250,0.12)' : 'rgba(0,0,0,0.2)',
+                    border: `1px solid ${done ? 'rgba(34,197,94,0.3)' : isCurr ? 'rgba(167,139,250,0.4)' : 'rgba(90,74,58,0.2)'}`,
                   }}>
-                    <span style={{ color: done ? '#4ade80' : isCurr ? '#c4b5fd' : colors.textFaint, fontSize: '0.65rem', fontWeight: '800' }}>
-                      {done ? '✓ ' : isCurr ? '▶ ' : ''}{p?.playerName || pid}
+                    <span style={{ color: done ? '#4ade80' : isCurr ? '#c4b5fd' : colors.textFaint, fontSize: '0.6rem', fontWeight: '900', minWidth: '0.8rem' }}>
+                      {done ? '✓' : isCurr ? '▶' : `${idx + 1}`}
                     </span>
-                    <span style={{ color: colors.textFaint, fontSize: '0.6rem', marginLeft: '0.3rem' }}>
-                      {alloc}{dieType} {done ? `· ${pRollDmg} dmg` : ''}
-                    </span>
+                    <span style={{ color: done ? '#86efac' : isCurr ? '#e9d5ff' : colors.textMuted, fontSize: '0.65rem', fontWeight: '800', flex: 1 }}>{label}</span>
+                    {done && <span style={{ color: '#86efac', fontSize: '0.62rem', fontWeight: '700' }}>{dmgTotal}hp</span>}
+                    {!done && isCurr && <span style={{ color: '#a78bfa', fontSize: '0.6rem' }}>Roll {(interactionRolls[idx] || []).length + 1}/{numRolls}</span>}
                   </div>
                 );
               })}
@@ -3021,19 +3451,25 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
 
         {/* VS header + side pills + roll inputs */}
         {!allDoneForCurrent && (
-          <div style={{ background: '#0a0503', padding: '1rem', borderRadius: '8px', border: `2px solid ${isSplitMode ? '#a78bfa' : colors.gold}`, marginBottom: '1rem' }}>
+          <div style={{ background: '#0a0503', padding: '1rem', borderRadius: '8px', border: `2px solid ${isInteractionMode ? '#a78bfa' : colors.gold}`, marginBottom: '1rem' }}>
 
-            {/* Split mode player label */}
-            {isSplitMode && currentSplitPlayer && (
-              <div style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
-                <span style={{ color: currentSplitPlayer.playerColor || '#a78bfa', fontWeight: '900', fontSize: '0.85rem', fontFamily: '"Cinzel",Georgia,serif' }}>
-                  {currentSplitPlayer.playerName}
-                </span>
-                <span style={{ color: colors.textFaint, fontSize: '0.68rem', marginLeft: '0.4rem' }}>
-                  — Roll {currentSplitRolls.length + 1} of {currentSplitDice}
-                </span>
-              </div>
-            )}
+            {/* Interaction mode label */}
+            {isInteractionMode && currentInteraction && (() => {
+              const p = players.find(pl => String(pl.id) === String(currentInteraction.playerId));
+              const label = currentInteraction.isCommander
+                ? `${p?.playerName || ''} — Commander`
+                : `${p?.playerName || ''} — Squad (${currentInteraction.targets.length} unit${currentInteraction.targets.length !== 1 ? 's' : ''})`;
+              return (
+                <div style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
+                  <span style={{ color: p?.playerColor || '#a78bfa', fontWeight: '900', fontSize: '0.85rem', fontFamily: '"Cinzel",Georgia,serif' }}>
+                    {label}
+                  </span>
+                  <span style={{ color: colors.textFaint, fontSize: '0.68rem', marginLeft: '0.4rem' }}>
+                    · Roll {currentInteractionRolls.length + 1} of {numRolls}
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* VS matchup row — mirrors PvP */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', marginBottom: '0.75rem', gap: '0.5rem' }}>
@@ -3046,7 +3482,7 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '700', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>
-                  {isSquad ? `Roll ${Math.min(activeRolls.length + 1, numRolls)} of ${numRolls}` : numRolls > 1 ? `Roll ${Math.min(activeRolls.length + 1, numRolls)} of ${numRolls}` : 'Roll 1 of 1'}
+                  {isInteractionMode ? `Roll ${currentInteractionRolls.length + 1} of ${numRolls}` : isSquad ? `Roll ${Math.min(activeRolls.length + 1, numRolls)} of ${numRolls}` : numRolls > 1 ? `Roll ${Math.min(activeRolls.length + 1, numRolls)} of ${numRolls}` : 'Roll 1 of 1'}
                 </div>
                 <div style={{ color: '#5a4a3a', fontSize: '1.6rem', fontWeight: '900', fontFamily: '"Cinzel",Georgia,serif', lineHeight: 1 }}>VS</div>
               </div>
@@ -3119,10 +3555,10 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
           </div>
         )}
 
-        {/* Split mode: Next Player button — outside !allDoneForCurrent so it shows after rolls complete */}
-        {isSplitMode && splitDoneForCurrent && playerRollIndex < uniqueTargetPlayerIds.length - 1 && (
-          <button onClick={advanceToNextSplitPlayer} style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', background: 'linear-gradient(135deg,rgba(167,139,250,0.25),rgba(139,92,246,0.25))', border: '2px solid #a78bfa', borderRadius: '8px', color: '#e9d5ff', cursor: 'pointer', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            ▶ Next Player →
+        {/* Interaction mode: Next button — shows after current interaction's rolls are done */}
+        {isInteractionMode && interactionDoneForCurrent && interactionIndex < interactions.length - 1 && (
+          <button onClick={advanceToNextInteraction} style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', background: 'linear-gradient(135deg,rgba(167,139,250,0.25),rgba(139,92,246,0.25))', border: '2px solid #a78bfa', borderRadius: '8px', color: '#e9d5ff', cursor: 'pointer', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            ▶ Next →
           </button>
         )}
 
@@ -3134,42 +3570,67 @@ const NPCCalculator = ({ npcAttackData, players, npcs = [], onClose, onProceed, 
           </div>
         )}
 
-        {/* Roll history — with hit/miss like PvP */}
-        {/* Split mode: per-player completed + current. Standard: activeRolls */}
-        {isSplitMode ? (
+
+        {/* Roll history — interaction mode shows completed interactions + live current; standard shows activeRolls */}
+        {isInteractionMode ? (
           <>
-            {Object.entries(playerRolls).map(([pid, pRolls]) => {
-              if (!pRolls.length) return null;
-              const p = players.find(pl => String(pl.id) === String(pid));
-              const pTotal = pRolls.reduce((s, r) => s + r.dmg, 0);
+            {interactionRolls.map((iRolls, idx) => {
+              if (!iRolls || !iRolls.length) return null;
+              const interaction = interactions[idx];
+              if (!interaction) return null;
+              const p = players.find(pl => String(pl.id) === String(interaction.playerId));
+              const label = interaction.isCommander ? `${p?.playerName} — Commander` : `${p?.playerName} — Squad`;
+              const dmgTotal = iRolls.reduce((s, r) => s + r.dmg, 0);
               return (
-                <div key={pid} style={{ background: 'rgba(74,222,128,0.06)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.2)', marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: '#4ade80', fontSize: '0.68rem', fontWeight: '800' }}>✓ {p?.playerName || pid}</span>
-                  <span style={{ color: '#86efac', fontSize: '0.72rem', fontWeight: '700' }}>{pTotal}hp ({pRolls.length} roll{pRolls.length !== 1 ? 's' : ''})</span>
+                <div key={idx} style={{ background: 'rgba(74,222,128,0.06)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.2)', marginBottom: '0.4rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: iRolls.length > 0 ? '0.3rem' : 0 }}>
+                    <span style={{ color: '#4ade80', fontSize: '0.65rem', fontWeight: '800' }}>✓ {label}</span>
+                    <span style={{ color: '#86efac', fontSize: '0.65rem', fontWeight: '700' }}>{dmgTotal}hp</span>
+                  </div>
+                  {iRolls.map((r, i) => {
+                    const hit = r.dmg > 0;
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.2rem 0', borderTop: '1px solid rgba(90,74,58,0.15)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ color: '#fca5a5', fontWeight: '700', fontSize: '0.78rem' }}>⚔️ {r.atk}{r.bonus > 0 && <span style={{ color: '#fbbf24' }}>+{r.bonus}</span>}</span>
+                          <span style={{ color: colors.textFaint, fontSize: '0.68rem' }}>vs</span>
+                          <span style={{ color: '#86efac', fontWeight: '700', fontSize: '0.78rem' }}>🛡️ {r.def}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ color: hit ? '#fbbf24' : '#4ade80', fontSize: '0.6rem', fontWeight: '700' }}>{hit ? '💥 HIT' : '🛡️ BLOCKED'}</span>
+                          <span style={{ color: hit ? '#fecaca' : '#4ade80', fontWeight: '900', fontSize: '0.85rem', fontFamily: '"Cinzel",Georgia,serif', minWidth: '40px', textAlign: 'right' }}>{hit ? `${r.dmg}hp` : '0hp'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
-            {currentSplitRolls.length > 0 && (
-              <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.3)', marginBottom: '0.75rem' }}>
-                <div style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>{currentSplitPlayer?.playerName}</div>
-                {currentSplitRolls.map((r, i) => {
-                  const hit = r.dmg > 0;
-                  return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: i < currentSplitRolls.length - 1 ? '1px solid rgba(90,74,58,0.2)' : 'none' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span style={{ color: '#fca5a5', fontWeight: '700', fontSize: '0.82rem' }}>⚔️ {r.atk}{r.bonus > 0 && <span style={{ color: '#fbbf24' }}>+{r.bonus}</span>}</span>
-                        <span style={{ color: colors.textFaint, fontSize: '0.72rem' }}>vs</span>
-                        <span style={{ color: '#86efac', fontWeight: '700', fontSize: '0.82rem' }}>🛡️ {r.def}</span>
+            {currentInteractionRolls.length > 0 && !interactionAllDone && (() => {
+              const p = players.find(pl => String(pl.id) === String(currentInteraction?.playerId));
+              const label = currentInteraction?.isCommander ? `${p?.playerName} — Commander` : `${p?.playerName} — Squad`;
+              return (
+                <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.3)', marginBottom: '0.75rem' }}>
+                  <div style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>{label}</div>
+                  {currentInteractionRolls.map((r, i) => {
+                    const hit = r.dmg > 0;
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0', borderBottom: i < currentInteractionRolls.length - 1 ? '1px solid rgba(90,74,58,0.2)' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ color: '#fca5a5', fontWeight: '700', fontSize: '0.82rem' }}>⚔️ {r.atk}{r.bonus > 0 && <span style={{ color: '#fbbf24' }}>+{r.bonus}</span>}</span>
+                          <span style={{ color: colors.textFaint, fontSize: '0.72rem' }}>vs</span>
+                          <span style={{ color: '#86efac', fontWeight: '700', fontSize: '0.82rem' }}>🛡️ {r.def}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ color: hit ? '#fbbf24' : '#4ade80', fontSize: '0.65rem', fontWeight: '700' }}>{hit ? '💥 HIT' : '🛡️ BLOCKED'}</span>
+                          <span style={{ color: hit ? '#fecaca' : '#4ade80', fontWeight: '900', fontSize: '0.9rem', fontFamily: '"Cinzel",Georgia,serif', minWidth: '48px', textAlign: 'right' }}>{hit ? `${r.dmg}hp` : '0hp'}</span>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span style={{ color: hit ? '#fbbf24' : '#4ade80', fontSize: '0.65rem', fontWeight: '700' }}>{hit ? '💥 HIT' : '🛡️ BLOCKED'}</span>
-                        <span style={{ color: hit ? '#fecaca' : '#4ade80', fontWeight: '900', fontSize: '0.9rem', fontFamily: '"Cinzel",Georgia,serif', minWidth: '48px', textAlign: 'right' }}>{hit ? `${r.dmg}hp` : '0hp'}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </>
         ) : activeRolls.length > 0 && (
           <div style={{ background: 'rgba(0,0,0,0.4)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(90,74,58,0.4)', marginBottom: '0.75rem' }}>

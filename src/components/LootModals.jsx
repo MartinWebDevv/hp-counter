@@ -92,11 +92,18 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
     return heldCount + (pending[unitType] || 0) >= slotCount;
   };
 
-  const assign = (itemIndex, unitType) => {
+  const [swapPickerOpen, setSwapPickerOpen] = React.useState(null); // `${itemIndex}-${unitType}`
+
+  const assign = (itemIndex, unitType, droppedItemId = null) => {
     const isQuestItem = lootTable[itemIndex]?.isQuestItem;
     const isFull = isUnitFullWithPending(unitType, itemIndex, isQuestItem);
-    const dropped = isFull ? (player?.inventory || []).find(it => it.heldBy === unitType && !it.isQuestItem) : null;
-    setAssignments(prev => { const next = [...prev]; next[itemIndex] = { unitType, droppedItemId: dropped?.id || null }; return next; });
+    if (isFull && droppedItemId === null) {
+      // Unit is full — open the swap picker instead of auto-assigning
+      setSwapPickerOpen(`${itemIndex}-${unitType}`);
+      return;
+    }
+    setSwapPickerOpen(null);
+    setAssignments(prev => { const next = [...prev]; next[itemIndex] = { unitType, droppedItemId: droppedItemId || null }; return next; });
     setExpandedItem(null);
   };
 
@@ -163,26 +170,38 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
                     const full = isUnitFullWithPending(u.unitType, i, item.isQuestItem);
                     const disabled = u.isDead;
                     const isSwap = full && !u.isDead;
-                    const currentItem = isSwap ? (player.inventory || []).find(it => it.heldBy === u.unitType && !it.isQuestItem) : null;
+                    const heldItems = isSwap ? (player.inventory || []).filter(it => it.heldBy === u.unitType && !it.isQuestItem) : [];
+                    const swapKey = `${i}-${u.unitType}`;
+                    const isPickerOpen = swapPickerOpen === swapKey;
                     return (
                       <div key={u.unitType}>
-                        <div onClick={() => !disabled && assign(i, u.unitType)} style={{
+                        <div onClick={() => !disabled && (isSwap ? setSwapPickerOpen(isPickerOpen ? null : swapKey) : assign(i, u.unitType))} style={{
                           display: 'flex', alignItems: 'center', gap: '0.55rem',
-                          padding: '0.45rem 0.7rem', marginBottom: currentItem ? 0 : '0.25rem',
+                          padding: '0.45rem 0.7rem',
                           background: disabled ? 'rgba(0,0,0,0.15)' : isSwap ? 'rgba(249,115,22,0.06)' : 'rgba(0,0,0,0.35)',
                           border: `1px solid ${disabled ? colors.textDisabled : isSwap ? 'rgba(249,115,22,0.35)' : colors.goldBorder}`,
-                          borderRadius: currentItem ? '6px 6px 0 0' : '6px',
+                          borderRadius: isPickerOpen ? '6px 6px 0 0' : '6px',
                           cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
+                          marginBottom: isPickerOpen ? 0 : '0.25rem',
                         }}>
                           <span style={{ color: disabled ? colors.textFaint : isSwap ? '#f97316' : colors.textSecondary, fontWeight: '800', fontSize: '0.8rem', flex: 1 }}>{u.label}</span>
                           {hpBar(u.hp, u.maxHp, u.isDead)}
-                          {isSwap && <span style={{ color: '#f97316', fontSize: '0.58rem', fontWeight: '800' }}>↕ SWAP</span>}
+                          {isSwap && <span style={{ color: '#f97316', fontSize: '0.58rem', fontWeight: '800' }}>↕ SWAP {isPickerOpen ? '▲' : '▼'}</span>}
                           {u.isDead && <span style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800' }}>DEAD</span>}
                         </div>
-                        {currentItem && (
-                          <div style={{ background: 'rgba(249,115,22,0.05)', border: '1px solid rgba(249,115,22,0.25)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.25rem 0.7rem', marginBottom: '0.25rem' }}>
-                            <span style={{ color: colors.textMuted, fontSize: '0.6rem' }}>Drops: </span>
-                            <span style={{ color: colors.amber, fontSize: '0.6rem', fontWeight: '800' }}>{currentItem.name}</span>
+                        {isPickerOpen && heldItems.length > 0 && (
+                          <div style={{ background: 'rgba(249,115,22,0.04)', border: '1px solid rgba(249,115,22,0.25)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: '0.4rem 0.5rem', marginBottom: '0.25rem' }}>
+                            <div style={{ color: '#f97316', fontSize: '0.58rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Choose item to drop:</div>
+                            {heldItems.map(heldItem => (
+                              <div key={heldItem.id} onClick={() => assign(i, u.unitType, heldItem.id)} style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '0.3rem 0.5rem', borderRadius: '5px', cursor: 'pointer', marginBottom: '0.2rem',
+                                background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(249,115,22,0.2)',
+                              }}>
+                                <span style={{ color: colors.amber, fontWeight: '800', fontSize: '0.72rem' }}>{heldItem.name}</span>
+                                <span style={{ color: colors.textFaint, fontSize: '0.6rem' }}>{heldItem.tier || 'Common'} · drop</span>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>

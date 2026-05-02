@@ -7,6 +7,13 @@ import {
   cardShell, insetSection, pill, inputStyle, selectStyle, tierColors,
 } from '../theme';
 
+const TIER_ORDER = { Common: 0, Rare: 1, Legendary: 2 };
+const sortItems = (items) => [...(items || [])].sort((a, b) => {
+  if (a.isQuestItem && !b.isQuestItem) return 1;
+  if (!a.isQuestItem && b.isQuestItem) return -1;
+  return (TIER_ORDER[a.tier] ?? 0) - (TIER_ORDER[b.tier] ?? 0);
+});
+
 const PlayerCard = ({
   player,
   onUpdate,
@@ -69,7 +76,7 @@ const PlayerCard = ({
       },
     });
     if (justDied) {
-      const cmdItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
+      const cmdItems = sortItems((player.inventory || []).filter(it => it.heldBy === 'commander'));
       if (cmdItems.length > 0) {
         const label = player.commanderStats?.customName || player.commander || 'Commander';
         setDeathLootModal({ unitLabel: label, items: cmdItems });
@@ -90,7 +97,7 @@ const PlayerCard = ({
     }
     if (justDied) {
       const unitType = index === 0 ? 'special' : `soldier${index}`;
-      const unitItems = (player.inventory || []).filter(it => it.heldBy === unitType);
+      const unitItems = sortItems((player.inventory || []).filter(it => it.heldBy === unitType));
       if (unitItems.length > 0) {
         const label = unit.name?.trim() || (index === 0 ? 'Special' : `Soldier ${index}`);
         setDeathLootModal({ unitLabel: label, items: unitItems });
@@ -296,20 +303,22 @@ const PlayerCard = ({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.35rem' }}>
             {(player.commanderStats.statusEffects || []).map((effect, ei) => {
               const dur = effect.permanent ? '∞' : `${effect.duration}r`;
-              const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp×${dur}`
+              const label = effect.type === 'poison' ? `🤢 Poison ${effect.value}hp×${dur}` : effect.type === 'burn' ? `🔥 Burn ${effect.value}hp×${dur}`
                 : effect.type === 'stun'          ? `💫 Stun ${dur}`
                 : effect.type === 'attackBuff'    ? `⚔️↑ +${effect.value} Atk ${dur}`
                 : effect.type === 'defenseBuff'   ? `🛡️↑ +${effect.value} Def ${dur}`
                 : effect.type === 'attackDebuff'  ? `⚔️↓ -${effect.value} Atk ${dur}`
                 : effect.type === 'defenseDebuff' ? `🛡️↓ -${effect.value} Def ${dur}`
                 : effect.type === 'shieldWall'    ? `🛡️ Shield Wall ${dur}`
-                : effect.type === 'counterStrike' ? `⚡ Counter Strike ${dur}`
+                : effect.type === 'counterStrike' ? `⚡ Counter Strike ${dur}` : effect.type === 'movementBoost' ? '🏃 +10″ Move' : effect.type === 'closeCall' ? '🛡️ Close Call'
                 : effect.type === 'marked'        ? `🎯 Marked ${dur}`
                 : `⚡ ${effect.type}`;
-              const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
+              const c = effect.type === 'burn' ? { color: '#fb923c', bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.4)' } : effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
                 : effect.type === 'stun' ? { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder }
                 : effect.type === 'shieldWall' ? { color: '#93c5fd', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.4)' }
                 : effect.type === 'counterStrike' ? { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.4)' }
+                : effect.type === 'movementBoost' ? { color: '#34d399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.4)' }
+                : effect.type === 'closeCall' ? { color: '#f9a8d4', bg: 'rgba(236,72,153,0.1)', border: 'rgba(236,72,153,0.4)' }
                 : effect.type === 'marked' ? { color: '#f87171', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.5)' }
                 : effect.type.includes('Buff')   ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
                 : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
@@ -327,7 +336,7 @@ const PlayerCard = ({
 
         {/* Commander slot indicator + held items */}
         {(() => {
-          const heldItems = (player.inventory || []).filter(it => it.heldBy === 'commander');
+          const heldItems = sortItems((player.inventory || []).filter(it => it.heldBy === 'commander'));
           const slotCount = getSlotCount(player, 'commander');
           const heldCount = getHeldCount(player, 'commander');
           return (
@@ -498,7 +507,7 @@ const PlayerCard = ({
                   {/* Status effects */}
                   {!isDead && (unit.statusEffects || []).map((effect, ei) => {
                     const dur = effect.permanent ? '∞' : `${effect.duration}r`;
-                    const label = effect.type === 'poison' ? `🤢 ${effect.value}×${dur}`
+                    const label = effect.type === 'poison' ? `🤢 ${effect.value}×${dur}` : effect.type === 'burn' ? `🔥 ${effect.value}×${dur}`
                       : effect.type === 'stun'          ? `💫 ${dur}`
                       : effect.type === 'attackBuff'    ? `⚔️↑+${effect.value} ${dur}`
                       : effect.type === 'defenseBuff'   ? `🛡️↑+${effect.value} ${dur}`
@@ -508,10 +517,12 @@ const PlayerCard = ({
                       : effect.type === 'counterStrike' ? `⚡ Counter ${dur}`
                       : effect.type === 'marked'        ? `🎯 Marked ${dur}`
                       : `⚡`;
-                    const c = effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
+                    const c = effect.type === 'burn' ? { color: '#fb923c', bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.4)' } : effect.type === 'poison' ? { color: colors.greenLight, bg: colors.greenSubtle, border: colors.greenBorder }
                       : effect.type === 'stun' ? { color: colors.amber, bg: colors.amberSubtle, border: colors.amberBorder }
                       : effect.type === 'shieldWall' ? { color: '#93c5fd', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.4)' }
                       : effect.type === 'counterStrike' ? { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.4)' }
+                : effect.type === 'movementBoost' ? { color: '#34d399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.4)' }
+                : effect.type === 'closeCall' ? { color: '#f9a8d4', bg: 'rgba(236,72,153,0.1)', border: 'rgba(236,72,153,0.4)' }
                       : effect.type === 'marked' ? { color: '#f87171', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.5)' }
                       : effect.type.includes('Buff')   ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.4)' }
                       : { color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.4)' };
@@ -568,7 +579,7 @@ const PlayerCard = ({
                 {/* Unit slot indicator + held items */}
                 {(() => {
                   const unitType = index === 0 ? 'special' : `soldier${index}`;
-                  const heldItems = (player.inventory || []).filter(it => it.heldBy === unitType);
+                  const heldItems = sortItems((player.inventory || []).filter(it => it.heldBy === unitType));
                   const slotCount = getSlotCount(player, unitType);
                   const heldCount = getHeldCount(player, unitType);
                   return (
@@ -646,7 +657,7 @@ const PlayerCard = ({
               </div>
             ));
           })()}
-          {(player.inventory || []).map((item, i, arr) => {
+          {sortItems(player.inventory || []).map((item, i, arr) => {
             const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
             const usesLeft = item.effect?.uses === 0 ? Infinity : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
             const canUse = !item.effect || item.effect.type === 'manual' || usesLeft > 0;

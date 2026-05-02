@@ -611,5 +611,6 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
     loadGameState,
     processSquadRevive,
     checkSquadWipe,
+    setCurrentRound,
   };
 };

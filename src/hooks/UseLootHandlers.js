@@ -118,21 +118,20 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
 
   // ── Chest loot ────────────────────────────────────────────────────────────
 
-  const handleChestLoot = (item, playerId, requiredKeyName) => {
+  // Called with ALL items from a chest at once to avoid React batch-update race
+  const handleChestLoot = (items, playerId, requiredKeyName) => {
     const player = players.find(p => String(p.id) === String(playerId));
     if (!player) return;
-    setChestLootClaim(prev => {
-      const existingItems = prev?.player?.id === playerId ? (prev.items || []) : [];
-      const newItem = {
-        id: `loot_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-        name: item.name,
-        description: item.description,
-        tier: item.tier || 'Common',
-        isQuestItem: item.isQuestItem || false,
-        effect: { ...item.effect, usesRemaining: item.effect?.uses ?? 1 },
-      };
-      return { player, items: [...existingItems, newItem], requiredKeyName: requiredKeyName || prev?.requiredKeyName || null };
-    });
+    const itemArray = Array.isArray(items) ? items : [items];
+    const lootItems = itemArray.map(item => ({
+      id: `loot_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      name: item.name,
+      description: item.description,
+      tier: item.tier || 'Common',
+      isQuestItem: item.isQuestItem || false,
+      effect: { ...item.effect, usesRemaining: item.effect?.uses ?? 1 },
+    }));
+    setChestLootClaim({ player, items: lootItems, requiredKeyName: requiredKeyName || null });
   };
 
   const handleConfirmChestLoot = (assignedItems) => {

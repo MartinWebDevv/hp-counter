@@ -77,7 +77,7 @@ export const useVPState = (players, addLog) => {
       return next;
     });
     const player = players.find(p => p.id == playerId);
-    addLog(`🏅 ${player?.playerName || 'Player'} awarded ${points} VP — ${reason}`);
+    addLog(`🏅 ${player?.playerName || 'Player'} awarded ${points} VP — ${reason}`, 'vp');
   };
 
   // ── Awards engine ──────────────────────────────────────────────────────────
@@ -86,8 +86,11 @@ export const useVPState = (players, addLog) => {
     const awards = [];
     const newVpStats = JSON.parse(JSON.stringify(vpStats));
 
+    // Absent players never receive VP awards
+    const eligiblePlayers = sourcePlayers.filter(p => !p.isAbsent);
+
     AWARD_CATS.forEach(cat => {
-      const scores = sourcePlayers.map(p => {
+      const scores = eligiblePlayers.map(p => {
         const s = sourceVpStats[p.id] || {};
         return { player: p, val: s[cat.statKey] || 0 };
       });
@@ -119,8 +122,8 @@ export const useVPState = (players, addLog) => {
       });
     });
 
-    // Manual awards
-    sourcePlayers.forEach(p => {
+    // Manual awards — also skip absent players
+    eligiblePlayers.forEach(p => {
       (sourceVpStats[p.id]?.manualAwards || []).forEach(a => {
         awards.push({ categoryId: a.categoryId, label: a.reason, icon: '🏅', pts: a.points, playerId: p.id, playerName: p.playerName, playerColor: p.playerColor, value: a.points, sessionName, isManual: true });
         const pid = p.id;

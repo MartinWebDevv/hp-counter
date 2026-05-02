@@ -1046,6 +1046,7 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
             {[
               { value: null,            label: 'None',            defaults: null },
               { value: 'poison',        label: '🤢 Poison',       defaults: { value: 2, duration: 2, permanent: false } },
+              { value: 'burn',          label: '🔥 Burn',         defaults: { value: 2, duration: 2, permanent: false } },
               { value: 'stun',          label: '💫 Stun',         defaults: { value: 0, duration: 1, permanent: false } },
               { value: 'attackDebuff',  label: '⚔️↓ Atk Debuff',  defaults: { value: 2, duration: 2, permanent: false } },
               { value: 'defenseDebuff', label: '🛡️↓ Def Debuff',  defaults: { value: 2, duration: 2, permanent: false } },
@@ -1065,7 +1066,7 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
           {/* Effect config — shared value + duration + permanent toggle */}
           {attack.attackEffect && (() => {
             const ef = attack.attackEffect;
-            const isPoison = ef.type === 'poison';
+            const isPoison = ef.type === 'poison' || ef.type === 'burn';
             const isStun   = ef.type === 'stun';
             const isBuff   = ['attackDebuff','defenseDebuff'].includes(ef.type);
             return (

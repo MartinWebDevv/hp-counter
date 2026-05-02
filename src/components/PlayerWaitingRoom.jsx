@@ -55,8 +55,8 @@ const PlayerWaitingRoom = ({ lobbyCode, playerData, onGameStart }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: playerData.playerColor, boxShadow: `0 0 8px ${playerData.playerColor}`, flexShrink: 0 }} />
             <div>
-              <div style={{ color: colors.gold, fontWeight: '800', fontSize: '1rem' }}>{playerData.commanderName}</div>
-              <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.1rem' }}>{playerData.faction} · {playerData.commander}</div>
+              <div style={{ color: colors.gold, fontWeight: '800', fontSize: '1rem' }}>{playerData.playerName || playerData.commanderName}</div>
+              <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.1rem' }}>{playerData.commander} · {playerData.faction}</div>
             </div>
           </div>
         </div>
@@ -72,8 +72,8 @@ const PlayerWaitingRoom = ({ lobbyCode, playerData, onGameStart }) => {
             playerList.map((p, i) => (
               <div key={p.uid || i} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0', borderBottom: i < playerList.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: p.playerColor || '#4ade80', flexShrink: 0 }} />
-                <div style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.85rem', flex: 1 }}>{p.commanderName || 'Unknown'}</div>
-                <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>{p.faction}</div>
+                <div style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.85rem', flex: 1 }}>{p.playerName || p.commanderName || 'Unknown'}</div>
+                <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>{p.commander} · {p.faction}</div>
               </div>
             ))
           )}

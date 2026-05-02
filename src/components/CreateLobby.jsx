@@ -165,10 +165,10 @@ const CreateLobby = ({ onGameStart, onBack }) => {
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 6px #4ade80' }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.88rem' }}>
-                    {p.commanderName || p.playerName || 'Unnamed Player'}
+                    {p.playerName || p.commanderName || 'Unnamed Player'}
                   </div>
-                  {p.faction && (
-                    <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.1rem' }}>{p.faction}</div>
+                  {(p.commander || p.faction) && (
+                    <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.1rem' }}>{p.commander} · {p.faction}</div>
                   )}
                 </div>
                 <div style={{ color: '#4ade80', fontSize: '0.65rem', fontWeight: '700' }}>JOINED</div>

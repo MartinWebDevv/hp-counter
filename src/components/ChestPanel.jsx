@@ -549,10 +549,12 @@ const ChestPanel = ({ players, lootPool, chests, setChests, onGiveLoot, onConsum
       openedBy: player?.playerName || 'Unknown',
       droppedItems,
     }));
-    // Give each dropped item to the player, passing the requiredKeyName so it gets consumed on confirm
+    // Give all dropped items to the player at once (single call avoids React batch-update race)
     const chest = chests.find(c => c.id === chestId);
     const requiredKeyName = chest?.requiredKeyName?.trim() || null;
-    droppedItems.forEach(item => onGiveLoot(item, playerId, requiredKeyName));
+    if (droppedItems.length > 0) {
+      onGiveLoot(droppedItems, playerId, requiredKeyName);
+    }
     // If no items dropped (empty chest), still need to consume the key
     if (droppedItems.length === 0 && requiredKeyName && player) {
       if (onConsumeKey) onConsumeKey(playerId, (player.inventory || []).filter(

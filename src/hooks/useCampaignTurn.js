@@ -18,13 +18,19 @@ export const useCampaignTurn = (
   trackVP,
   onRoundAdvance = null,
   onUnitDied = null,
-  onCreateTimer = null
+  onCreateTimer = null,
+  onTurnStart = null,   // fires with playerId when a player's turn begins
+  onGuyCloseCall = null // fires with { playerName, damage } when The Guy absorbs a hit
 ) => {
   // Store callbacks in refs so closures always call the latest version
   const onRoundAdvanceRef = useRef(onRoundAdvance);
   onRoundAdvanceRef.current = onRoundAdvance;
   const onUnitDiedRef = useRef(onUnitDied);
   onUnitDiedRef.current = onUnitDied;
+  const onTurnStartRef = useRef(onTurnStart);
+  onTurnStartRef.current = onTurnStart;
+  const onGuyCloseCallRef = useRef(onGuyCloseCall);
+  onGuyCloseCallRef.current = onGuyCloseCall;
 
   const [campaignTurnIndex,     setCampaignTurnIndex]     = useState(0);
   const [npcsWhoActedThisRound, setNpcsWhoActedThisRound] = useState([]);
@@ -77,17 +83,39 @@ export const useCampaignTurn = (
       order.push({ type: 'player', id: p.id });
     });
 
-    // Only include NPCs that have been aggroed — insert after their last aggressor
+    const rebuttalNPCs    = [];
+    const nonRebuttalNPCs = [];
+
     activeNPCs.forEach(npc => {
       const aggressorId = lastAggressors[npc.id];
-      if (!aggressorId) return; // not yet aggroed — hidden from turn order
-      const idx = order.findIndex(e => e.type === 'player' && e.id === aggressorId);
-      if (idx !== -1) {
-        order.splice(idx + 1, 0, { type: 'npc', id: npc.id });
+      if (!aggressorId) return; // not yet aggroed or activated — hidden from turn order
+      if (npc.hasRebuttal === false) {
+        nonRebuttalNPCs.push(npc);
       } else {
-        order.push({ type: 'npc', id: npc.id });
+        rebuttalNPCs.push({ npc, aggressorId });
       }
     });
+
+    // Rebuttal NPCs: insert after their last aggressor (visual-only, skipped in endCampaignTurn)
+    rebuttalNPCs.forEach(({ npc, aggressorId }) => {
+      // '__activated__' sentinel means no specific aggressor — append at end among players
+      if (aggressorId === '__activated__') {
+        order.push({ type: 'npc', id: npc.id, isRebuttal: true });
+        return;
+      }
+      const idx = order.findIndex(e => e.type === 'player' && e.id === aggressorId);
+      if (idx !== -1) {
+        order.splice(idx + 1, 0, { type: 'npc', id: npc.id, isRebuttal: true });
+      } else {
+        order.push({ type: 'npc', id: npc.id, isRebuttal: true });
+      }
+    });
+
+    // Non-rebuttal NPCs: always appended after all players, in order of activation/aggro
+    nonRebuttalNPCs.forEach(npc => {
+      order.push({ type: 'npc', id: npc.id, isRebuttal: false });
+    });
+
     return order;
   };
 
@@ -98,21 +126,43 @@ export const useCampaignTurn = (
     const current = campaignTurnOrder[campaignTurnIndex];
     if (!current) return;
 
-    // NPCs never hold the active turn — only players advance the turn counter
-    // NPC slots are just visual markers showing the DM their retaliation window
+    // NPCs: rebuttal NPCs are visual-only markers — skip them automatically.
+    // Non-rebuttal NPCs hold the active turn — the DM manually advances past them.
     if (current.type === 'npc') {
-      // Skip past this NPC slot automatically
-      const freshOrder = buildTurnOrder();
-      let nextIndex = (campaignTurnIndex + 1) % Math.max(freshOrder.length, 1);
-      let attempts = 0;
-      while (attempts < freshOrder.length) {
-        const candidate = freshOrder[nextIndex];
-        if (!candidate || candidate.type === 'player') break;
-        nextIndex = (nextIndex + 1) % freshOrder.length;
-        attempts++;
+      if (current.isRebuttal !== false) {
+        // Rebuttal NPC — skip automatically
+        const freshOrder = buildTurnOrder();
+        let nextIndex = (campaignTurnIndex + 1) % Math.max(freshOrder.length, 1);
+        let attempts = 0;
+        while (attempts < freshOrder.length) {
+          const candidate = freshOrder[nextIndex];
+          if (!candidate || candidate.type === 'player' || candidate.isRebuttal === false) break;
+          nextIndex = (nextIndex + 1) % freshOrder.length;
+          attempts++;
+        }
+        setCampaignTurnIndex(nextIndex);
+        return;
+      } else {
+        // Non-rebuttal NPC — check if more non-rebuttal NPCs remain after this one
+        const freshOrder = buildTurnOrder();
+        const pendingNonRebuttalNPCs = freshOrder
+          .map((e, i) => ({ ...e, idx: i }))
+          .filter(e => e.type === 'npc' && e.isRebuttal === false && e.idx > campaignTurnIndex);
+
+        if (pendingNonRebuttalNPCs.length > 0) {
+          // More non-rebuttal NPCs — advance to the next one
+          setCampaignTurnIndex(pendingNonRebuttalNPCs[0].idx);
+        } else {
+          // All non-rebuttal NPCs done — reset round
+          setCampaignTurnIndex(0);
+          setNpcsWhoActedThisRound([]);
+          addLog(`----- Round ${currentRound + 1} -----`, 'system');
+          if (onRoundAdvanceRef.current) onRoundAdvanceRef.current();
+          const firstPlayer = freshOrder.find(e => e.type === 'player');
+          if (firstPlayer && onTurnStartRef.current) onTurnStartRef.current(firstPlayer.id);
+        }
+        return;
       }
-      setCampaignTurnIndex(nextIndex);
-      return;
     }
 
     // current is a player — normal flow
@@ -126,24 +176,42 @@ export const useCampaignTurn = (
     let nextIndex = (campaignTurnIndex + 1) % Math.max(freshOrder.length, 1);
 
     if (allPlayersActed) {
-      setCampaignTurnIndex(0);
-      setNpcsWhoActedThisRound([]);
-      addLog(`----- Round ${currentRound + 1} -----`);
-      if (onRoundAdvanceRef.current) onRoundAdvanceRef.current();
+      // Check if there are non-rebuttal NPCs after the current index that haven't gone yet
+      const pendingNonRebuttalNPCs = freshOrder
+        .map((e, i) => ({ ...e, idx: i }))
+        .filter(e => e.type === 'npc' && e.isRebuttal === false && e.idx > campaignTurnIndex);
+
+      if (pendingNonRebuttalNPCs.length > 0) {
+        // Stop at the first pending non-rebuttal NPC — round doesn't reset yet
+        setCampaignTurnIndex(pendingNonRebuttalNPCs[0].idx);
+      } else {
+        // All players AND all non-rebuttal NPCs done — reset round
+        setCampaignTurnIndex(0);
+        setNpcsWhoActedThisRound([]);
+        addLog(`----- Round ${currentRound + 1} -----`, 'system');
+        if (onRoundAdvanceRef.current) onRoundAdvanceRef.current();
+        const firstPlayer = freshOrder.find(e => e.type === 'player');
+        if (firstPlayer && onTurnStartRef.current) onTurnStartRef.current(firstPlayer.id);
+      }
     } else {
-      // Skip NPC slots and already-acted players
+      // Skip rebuttal NPC slots and already-acted players — stop at non-rebuttal NPCs too
       let attempts = 0;
       while (attempts < freshOrder.length) {
         const candidate = freshOrder[nextIndex];
         if (!candidate) break;
+        // Stop at: unacted player OR non-rebuttal NPC (they hold real turns)
         if (candidate.type === 'player' && !playersWhoActedThisRound.includes(candidate.id)) break;
+        if (candidate.type === 'npc' && candidate.isRebuttal === false) break;
         nextIndex = (nextIndex + 1) % freshOrder.length;
         attempts++;
       }
       setCampaignTurnIndex(nextIndex);
+      // Tick status for the incoming player at the start of their turn
+      const nextPlayer = freshOrder[nextIndex];
+      if (nextPlayer?.type === 'player' && onTurnStartRef.current) onTurnStartRef.current(nextPlayer.id);
     }
 
-    endTurn(); // fires onPlayerTurnEnd → status ticks for this player
+    endTurn(); // fires onPlayerTurnEnd (round timers, tokens) — status tick moved to onTurnStart
   };
 
   // ── NPC Attack ────────────────────────────────────────────────────────────
@@ -172,8 +240,12 @@ export const useCampaignTurn = (
     setShowNPCCalculator(true);
   };
 
+  const setNpcAttackDataDirect = (data) => {
+    setNpcAttackData(data);
+    setShowNPCCalculator(true);
+  };
+
   const closeNPCCalculator = () => {
-    setShowNPCCalculator(false);
     setShowNPCDamageDistribution(false);
     setNpcAttackData(null);
     setNpcDamageDistribution({});
@@ -220,8 +292,8 @@ export const useCampaignTurn = (
     const targetsByPlayer = {};
     (npcAttackData.targetSquadMembers || []).forEach(target => {
       const dmg = dist[`${target.playerId}-${target.unitType}`] || 0;
-      if (dmg <= 0) return;
       if (!targetsByPlayer[target.playerId]) targetsByPlayer[target.playerId] = [];
+      // Include all targets (even 0 dmg) so closeCall check can fire
       targetsByPlayer[target.playerId].push({ ...target, dmg });
     });
 
@@ -229,10 +301,30 @@ export const useCampaignTurn = (
       const player = players.find(p => String(p.id) === playerIdStr);
       if (!player) return;
 
+      // Skip entirely if no actual damage is being dealt to this player
+      const totalIncoming = targets.reduce((sum, t) => sum + (t.dmg || 0), 0);
+
       let newCmdStats = { ...player.commanderStats };
       let newSubs = [...(player.subUnits || [])];
       let newReviveQueue = [...(player.reviveQueue || [])];
       let cmdUpdated = false;
+
+      // ── Close Call (The Guy Legendary 3) — auto-triggers on NPC damage ────
+      // Fires whenever this player is targeted, regardless of dmg distribution amount
+      const hasCloseCall = (newCmdStats.statusEffects || []).some(ef => ef.type === 'closeCall');
+      if (hasCloseCall && totalIncoming > 0) {
+        newCmdStats = {
+          ...newCmdStats,
+          statusEffects: (newCmdStats.statusEffects || []).filter(ef => ef.type !== 'closeCall'),
+        };
+        addLog(`🛡️ The Guy took ${totalIncoming}hp damage for ${player.playerName}!`, 'combat');
+        updatePlayer(player.id, { commanderStats: newCmdStats });
+        if (onGuyCloseCallRef.current) onGuyCloseCallRef.current({ playerName: player.playerName, damage: totalIncoming });
+        return;
+      }
+
+      // Skip if no damage after closeCall check
+      if (totalIncoming <= 0) return;
 
       targets.forEach(({ unitType, dmg: rawDmg }) => {
         // Shield Wall — unit takes 0 damage this round
@@ -252,6 +344,10 @@ export const useCampaignTurn = (
               newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
               if (onCreateTimer) onCreateTimer(`🤢 Poison — ${newCmdStats?.customName || player.commander}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
             }
+            if (attackEffect.type === 'burn') {
+              newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), { type: 'burn', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
+              if (onCreateTimer) onCreateTimer(`🔥 Burn — ${newCmdStats?.customName || player.commander}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
+            }
             if (attackEffect.type === 'stun') {
               newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), { type: 'stun', duration: attackEffect.duration || 1 }];
               if (onCreateTimer) onCreateTimer(`💫 Stun — ${newCmdStats?.customName || player.commander}`, attackEffect.duration || 1, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
@@ -261,12 +357,12 @@ export const useCampaignTurn = (
               const buffEntry = { type: attackEffect.type, value: attackEffect.value || 2, duration: attackEffect.permanent ? null : (attackEffect.duration || 2), permanent: !!attackEffect.permanent };
               newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), buffEntry];
               if (!attackEffect.permanent && onCreateTimer) onCreateTimer(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${attackEffect.type} — ${cmdLabel}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
-              addLog(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${player.playerName}'s ${cmdLabel} ${attackEffect.type} ${attackEffect.type.includes('Debuff') ? 'reduced' : 'boosted'} by ${attackEffect.value || 2}${attackEffect.permanent ? ' (permanent)' : ` for ${attackEffect.duration || 2} rounds`}`);
+              addLog(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${player.playerName}'s ${cmdLabel} ${attackEffect.type} ${attackEffect.type.includes('Debuff') ? 'reduced' : 'boosted'} by ${attackEffect.value || 2}${attackEffect.permanent ? ' (permanent)' : ` for ${attackEffect.duration || 2} rounds`}`, 'combat');
             }
           }
           if (newHp === 0 && player.commanderStats.hp > 0) {
             const cmdLabel = newCmdStats.customName || player.commander || 'Commander';
-            addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${cmdLabel}. Damage dealt: ${dmg}hp.`);
+            addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${cmdLabel}. Damage dealt: ${dmg}hp.`, 'combat');
           }
         } else {
           const idx = unitType === 'special' ? 0 : parseInt(unitType.replace('soldier', ''));
@@ -280,6 +376,10 @@ export const useCampaignTurn = (
               updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
               if (onCreateTimer) onCreateTimer(`🤢 Poison — ${player.playerName}'s ${uLabel}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType }]);
             }
+            if (attackEffect.type === 'burn') {
+              updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'burn', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
+              if (onCreateTimer) onCreateTimer(`🔥 Burn — ${player.playerName}'s ${uLabel}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType }]);
+            }
             if (attackEffect.type === 'stun') {
               updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'stun', duration: attackEffect.duration || 1 }];
               if (onCreateTimer) onCreateTimer(`💫 Stun — ${player.playerName}'s ${uLabel}`, attackEffect.duration || 1, [{ type: 'player', playerId: player.id, unitType }]);
@@ -288,13 +388,13 @@ export const useCampaignTurn = (
               const buffEntry = { type: attackEffect.type, value: attackEffect.value || 2, duration: attackEffect.permanent ? null : (attackEffect.duration || 2), permanent: !!attackEffect.permanent };
               updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), buffEntry];
               if (!attackEffect.permanent && onCreateTimer) onCreateTimer(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${attackEffect.type} — ${player.playerName}'s ${uLabel}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType }]);
-              addLog(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${player.playerName}'s ${uLabel} ${attackEffect.type} ${attackEffect.type.includes('Debuff') ? 'reduced' : 'boosted'} by ${attackEffect.value || 2}${attackEffect.permanent ? ' (permanent)' : ` for ${attackEffect.duration || 2} rounds`}`);
+              addLog(`${attackEffect.type.includes('Debuff') ? '↓' : '↑'} ${player.playerName}'s ${uLabel} ${attackEffect.type} ${attackEffect.type.includes('Debuff') ? 'reduced' : 'boosted'} by ${attackEffect.value || 2}${attackEffect.permanent ? ' (permanent)' : ` for ${attackEffect.duration || 2} rounds`}`, 'combat');
             }
           }
           newSubs = newSubs.map((u, i) => i === idx ? updatedUnit : u);
           if (justDied) {
             const unitLabel = unit.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`);
-            addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${unitLabel}. Damage dealt: ${dmg}hp.`);
+            addLog(`💀 ${killerLabel} has killed ${player.playerName}'s ${unitLabel}. Damage dealt: ${dmg}hp.`, 'combat');
             const unitItems = (player.inventory || []).filter(it => it.heldBy === unitType);
             if (unitItems.length > 0 && onUnitDiedRef.current) {
               onUnitDiedRef.current({ unitLabel, items: unitItems, playerId: player.id });
@@ -349,7 +449,7 @@ export const useCampaignTurn = (
 
     if (npcAttackData.isSquad) {
       const names = (npcAttackData.squadMembers || []).map(m => m.npcName).join(', ');
-      addLog(`👾 Squad [${names}] attacked → ${targets}`);
+      addLog(`👾 Squad [${names}] attacked → ${targets}`, 'combat');
     } else {
       const npc = getNPCById(npcAttackData.npcId);
       addLog(`👾 "${npc?.name}" used "${npcAttackData.attack?.name}" → ${targets}`);
@@ -406,7 +506,7 @@ export const useCampaignTurn = (
       if (!selectedNpcIds.includes(n.id)) return n;
       const entry = { type: effectType, value: absValue, duration: ef.permanent ? null : (ef.duration ?? 2), permanent: !!ef.permanent };
       const updated = { ...n, statusEffects: [...(n.statusEffects || []), entry] };
-      addLog(`${isBuff ? '↑' : '↓'} ${sourceNpcName} applied ${label} to "${n.name}" ${isBuff ? '+' : '-'}${absValue}${ef.permanent ? ' (permanent)' : ` for ${ef.duration ?? 2}r`}`);
+      addLog(`${isBuff ? '↑' : '↓'} ${sourceNpcName} applied ${label} to "${n.name}" ${isBuff ? '+' : '-'}${absValue}${ef.permanent ? ' (permanent)' : ` for ${ef.duration ?? 2}r`}`, 'combat');
       if (!ef.permanent && onCreateTimer) onCreateTimer(`${label} — ${n.name}`, ef.duration ?? 2, []);
       return updated;
     }));
@@ -428,13 +528,28 @@ export const useCampaignTurn = (
 
   const confirmActivation = (activateNPCFn, awardFirstStrike) => {
     if (!firstStrikeModal) return;
-    activateNPCFn(firstStrikeModal.npcId);
+    const npcId = firstStrikeModal.npcId;
+    activateNPCFn(npcId);
+
+    // Determine if this NPC has rebuttal — check activeNPCs + players list
+    // We read from activeNPCs which is passed in; the NPC may not be active yet so
+    // also check all npcs via getNPCById
+    const npc = getNPCById(npcId);
+    const hasRebuttal = npc?.hasRebuttal !== false; // default true unless explicitly false
+
+    if (!hasRebuttal) {
+      // Non-rebuttal: lock to bottom of turn order immediately on activation
+      // Use '__activated__' as sentinel — buildTurnOrder appends these after last player
+      setLastAggressors(prev => ({ ...prev, [npcId]: '__activated__' }));
+      addLog(`👾 ${npc?.name || 'NPC'} activated — placed at end of turn order (no rebuttal).`, 'system');
+    }
+
     if (awardFirstStrike && firstStrikeSelected.length > 0) {
       firstStrikeSelected.forEach(playerId => updatePlayer(playerId, { firstStrike: true }));
       const names = firstStrikeSelected
         .map(id => players.find(p => String(p.id) === String(id))?.playerName || 'Unknown')
         .join(', ');
-      addLog(`⚡ First Strike awarded to: ${names}!`);
+      addLog(`⚡ First Strike awarded to: ${names}!`, 'combat');
     }
     setFirstStrikeModal(null);
     setFirstStrikeSelected([]);
@@ -445,7 +560,7 @@ export const useCampaignTurn = (
     const targetsNPC = attackData?.targetSquadMembers?.some(t => t.isNPC);
     if (attacker?.firstStrike && targetsNPC) {
       updatePlayer(attacker.id, { firstStrike: false });
-      addLog(`⚡ ${attacker.playerName} used their First Strike bonus!`);
+      addLog(`⚡ ${attacker.playerName} used their First Strike bonus!`, 'combat');
     }
     // Track last aggressor for each targeted NPC (#9)
     if (attackData?.attackerId && targetsNPC) {
@@ -482,6 +597,7 @@ export const useCampaignTurn = (
     buildTurnOrder,
     endCampaignTurn,
     openNPCAttack,
+    setNpcAttackDataDirect,
     openNPCSquadAttack,
     isSquadAttack,
     closeNPCCalculator,

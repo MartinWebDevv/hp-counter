@@ -164,3 +164,15 @@ export const subscribePendingChoices = (lobbyCode, callback) => {
     }
   });
 };
+// ── Player Notes — stored per UID, separate from game state (DM cannot see) ─
+export const writePlayerNotes = async (uid, notes) => {
+  const ref = doc(db, 'playerNotes', uid);
+  await setDoc(ref, { notes, updatedAt: new Date().toISOString() }, { merge: true });
+};
+
+export const subscribePlayerNotes = (uid, callback) => {
+  const ref = doc(db, 'playerNotes', uid);
+  return onSnapshot(ref, (snap) => {
+    callback(snap.exists() ? (snap.data().notes || []) : []);
+  });
+};

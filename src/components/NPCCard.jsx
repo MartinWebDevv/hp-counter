@@ -223,6 +223,7 @@ const NPCCard = ({
           {(npc.statusEffects || []).map((ef, ei) => {
             const dur = ef.permanent ? '∞' : (ef.duration ? ef.duration + 'r' : '');
             const label = ef.type === 'poison'        ? '🤢 Poison ' + (ef.value || 2) + 'hp×' + dur
+                        : ef.type === 'burn'          ? '🔥 Burn ' + (ef.value || 2) + 'hp×' + dur
                         : ef.type === 'stun'          ? '💫 Stun ' + dur
                         : ef.type === 'attackDebuff'  ? '⚔️↓ -' + (ef.value || 2) + ' Atk ' + dur
                         : ef.type === 'defenseDebuff' ? '🛡️↓ -' + (ef.value || 2) + ' Def ' + dur
@@ -231,6 +232,7 @@ const NPCCard = ({
                         : ef.type === 'marked'        ? '🎯 Marked ' + dur
                         : ef.type;
             const col = ef.type === 'poison'        ? { color: '#4ade80', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.35)' }
+                      : ef.type === 'burn'          ? { color: '#fb923c', bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.4)' }
                       : ef.type === 'stun'          ? { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.35)' }
                       : ef.type === 'marked'        ? { color: '#f87171', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.4)' }
                       : ef.type.includes('Debuff')  ? { color: '#f87171', bg: 'rgba(239,68,68,0.1)',  border: 'rgba(239,68,68,0.35)' }

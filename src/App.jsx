@@ -198,7 +198,12 @@ function App() {
   if (screen === 'create') {
     return (
       <CreateLobby
-        onBack={() => setScreen('home')}
+        onBack={async () => {
+          if (lobbyCode) {
+            try { const { endGame } = await import('./services/lobbyService'); await endGame(lobbyCode); } catch {}
+          }
+          goHome();
+        }}
         onGameStart={({ lobbyCode: code, gmUid: uid, initialState: state }) => {
           setLobbyCode(code); setGmUid(uid); setInitialState(state);
           saveSession({ screen: 'gm-game', lobbyCode: code, gmUid: uid });
@@ -211,7 +216,12 @@ function App() {
   if (screen === 'load-game') {
     return (
       <LoadGameLobby
-        onBack={() => setScreen('home')}
+        onBack={async () => {
+          if (lobbyCode) {
+            try { const { endGame } = await import('./services/lobbyService'); await endGame(lobbyCode); } catch {}
+          }
+          goHome();
+        }}
         onGameStart={({ lobbyCode: code, gmUid: uid, initialState: state }) => {
           setLobbyCode(code); setGmUid(uid); setInitialState(state);
           saveSession({ screen: 'gm-game', lobbyCode: code, gmUid: uid });

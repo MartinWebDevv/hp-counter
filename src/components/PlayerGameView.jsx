@@ -1,8 +1,18 @@
 import React from 'react';
 import { colors, borders, fonts, hpBarColor, text, btn, tierColors, cardShell, insetSection, pill } from '../theme';
-import { subscribeGameState, writePendingRequest, subscribePendingRequests, subscribePendingChoices, resolvePendingChoice } from '../services/gameStateService';
+import { subscribeGameState, writePendingRequest, subscribePendingRequests, subscribePendingChoices, resolvePendingChoice, writePlayerNotes, subscribePlayerNotes } from '../services/gameStateService';
 import { markPlayerLeft, subscribeGameEnded } from '../services/lobbyService';
 import { getSlotCount, getHeldCount } from './lootUtils';
+
+// Sort items: Common → Rare → Legendary → Quest at bottom
+const TIER_ORDER = { Common: 0, Rare: 1, Legendary: 2 };
+const sortItems = (items) => [...(items || [])].sort((a, b) => {
+  if (a.isQuestItem && !b.isQuestItem) return 1;
+  if (!a.isQuestItem && b.isQuestItem) return -1;
+  return (TIER_ORDER[a.tier] ?? 0) - (TIER_ORDER[b.tier] ?? 0);
+});
+
+
 import { COMMANDER_STATS } from '../data/commanderStats';
 import { FACTION_STATS } from '../data/factionStats';
 
@@ -22,6 +32,9 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   const [npcFilter,     setNpcFilter]     = React.useState('All');
   const [movesetNpc,    setMovesetNpc]    = React.useState(null);
   const [turnFlash,     setTurnFlash]     = React.useState(false);
+  const [playerNotes,   setPlayerNotes]   = React.useState([]);
+  const [notesDraft,    setNotesDraft]    = React.useState('');
+  const [noteColor,     setNoteColor]     = React.useState('#fbbf24');
   const seenDenials = React.useRef(new Set());
   const seenChoices = React.useRef(new Set());
   const touchStartX = React.useRef(null);
@@ -88,6 +101,35 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
     });
     return () => unsub();
   }, [lobbyCode, playerData?.uid]);
+
+  // ── Player notes — private per player, stored in Firestore by uid ─────────
+  React.useEffect(() => {
+    const uid = playerData?.uid;
+    if (!uid) return;
+    const unsub = subscribePlayerNotes(uid, (notes) => setPlayerNotes(notes));
+    return () => unsub();
+  }, [playerData?.uid]);
+
+  const saveNote = async () => {
+    if (!notesDraft.trim() || !playerData?.uid) return;
+    const note = { id: Date.now(), text: notesDraft.trim(), color: noteColor, createdAt: new Date().toLocaleString() };
+    const updated = [note, ...playerNotes];
+    setPlayerNotes(updated);
+    setNotesDraft('');
+    try { await writePlayerNotes(playerData.uid, updated); } catch {}
+  };
+
+  const deletePlayerNote = async (id) => {
+    const updated = playerNotes.filter(n => n.id !== id);
+    setPlayerNotes(updated);
+    try { await writePlayerNotes(playerData?.uid, updated); } catch {}
+  };
+
+  const editPlayerNote = async (id, text) => {
+    const updated = playerNotes.map(n => n.id === id ? { ...n, text } : n);
+    setPlayerNotes(updated);
+    try { await writePlayerNotes(playerData?.uid, updated); } catch {}
+  };
 
   // ── Watch for GM ending the game — redirect all players to home ───────────
   React.useEffect(() => {
@@ -168,6 +210,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
     { id: 'mine',    label: '⚔️ Mine'    },
     { id: 'players', label: '👥 Players' },
     { id: 'npcs',    label: '👾 NPCs'    },
+    { id: 'notes',   label: '📝 Notes'   },
     { id: 'victory', label: '🏆 Victory' },
   ];
 
@@ -389,6 +432,52 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
         })()}
 
         {/* ── Victory ───────────────────────────────────────────────────── */}
+        {/* Notes tab */}
+        {activeTab === 'notes' && (
+          <div style={{ padding: '0 0.25rem', maxWidth: '600px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+            {/* Color picker + composer */}
+            <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(90,74,58,0.35)', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem', alignItems: 'center' }}>
+                <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em' }}>COLOR</span>
+                {['#fbbf24','#86efac','#f9a8d4','#93c5fd','#fca5a5','#c4b5fd'].map(c => (
+                  <div key={c} onClick={() => setNoteColor(c)} style={{ width: '20px', height: '20px', borderRadius: '50%', background: c, cursor: 'pointer', flexShrink: 0, border: noteColor === c ? '2px solid white' : '2px solid transparent', touchAction: 'manipulation' }} />
+                ))}
+              </div>
+              <textarea
+                value={notesDraft}
+                onChange={e => setNotesDraft(e.target.value)}
+                placeholder="Write a note..."
+                rows={3}
+                style={{ width: '100%', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(90,74,58,0.4)', borderRadius: '8px', color: colors.textPrimary, padding: '0.6rem 0.75rem', fontFamily: fonts.body, fontSize: '0.85rem', boxSizing: 'border-box', outline: 'none', resize: 'vertical', marginBottom: '0.5rem' }}
+              />
+              <button onClick={saveNote} disabled={!notesDraft.trim()} style={{ width: '100%', padding: '0.75rem', background: notesDraft.trim() ? 'linear-gradient(135deg,rgba(201,169,97,0.2),rgba(120,80,0,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${notesDraft.trim() ? 'rgba(201,169,97,0.5)' : 'rgba(90,74,58,0.3)'}`, borderRadius: '8px', color: notesDraft.trim() ? colors.gold : colors.textDisabled, cursor: notesDraft.trim() ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.85rem', touchAction: 'manipulation' }}>
+                📝 Save Note
+              </button>
+            </div>
+
+            {/* Notes list */}
+            {playerNotes.length === 0 && (
+              <div style={{ textAlign: 'center', color: colors.textFaint, fontSize: '0.78rem', padding: '2rem 1rem' }}>No notes yet. Write something above.</div>
+            )}
+            {playerNotes.map(note => (
+              <div key={note.id} style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${note.color || '#fbbf24'}40`, borderLeft: `3px solid ${note.color || '#fbbf24'}`, borderRadius: '8px', padding: '0.75rem', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={e => editPlayerNote(note.id, e.currentTarget.textContent)}
+                    style={{ color: colors.textPrimary, fontSize: '0.85rem', lineHeight: '1.5', flex: 1, outline: 'none', whiteSpace: 'pre-wrap', wordBreak: 'break-word', minHeight: '1.2em' }}
+                  >
+                    {note.text}
+                  </div>
+                  <button onClick={() => deletePlayerNote(note.id)} style={{ background: 'none', border: 'none', color: colors.textFaint, cursor: 'pointer', fontSize: '1rem', padding: '0', flexShrink: 0, touchAction: 'manipulation' }}>✕</button>
+                </div>
+                <div style={{ color: colors.textFaint, fontSize: '0.6rem', marginTop: '0.35rem' }}>{note.createdAt} · Tap to edit</div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {activeTab === 'victory' && (() => {
           // ── VP helpers (match DM logic exactly) ──────────────────────
           const getTotalVP = (playerId) => {
@@ -584,7 +673,26 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
           onSubmit={() => setPendingChoice(null)}
         />
       )}
-      {pendingChoice && pendingChoice.type !== 'passChoice' && (
+      {pendingChoice && pendingChoice.type === 'guyTargetPick' && (
+        <GuyTargetPickScreen
+          choice={pendingChoice}
+          lobbyCode={lobbyCode}
+          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.find(p => String(p.id) === String(playerData?.id)) || null}
+          allPlayers={gameState?.players || []}
+          npcs={(gameState?.npcs || []).filter(n => n.active && !n.isDead)}
+          onSubmit={() => setPendingChoice(null)}
+        />
+      )}
+      {pendingChoice && pendingChoice.type === 'guyItemPick' && (
+        <GuyItemPickScreen
+          choice={pendingChoice}
+          lobbyCode={lobbyCode}
+          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.find(p => String(p.id) === String(playerData?.id)) || null}
+          allPlayers={gameState?.players || []}
+          onSubmit={() => setPendingChoice(null)}
+        />
+      )}
+      {pendingChoice && pendingChoice.type !== 'passChoice' && pendingChoice.type !== 'guyItemPick' && pendingChoice.type !== 'guyTargetPick' && (
         <ItemChoiceScreen
           choice={pendingChoice}
           lobbyCode={lobbyCode}
@@ -631,7 +739,7 @@ const ItemChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, npcs, onSub
   const effectType = choice.itemEffect;
 
   // Effects that target own units
-  const SELF_TARGET = ['heal','maxHP','attackBonus','defenseBonus','shieldWall','counterStrike','cleanse','fullCleanse','resurrect','extraSlot'];
+  const SELF_TARGET = ['heal','maxHP','attackBonus','defenseBonus','shieldWall','counterStrike','cleanse','fullCleanse','resurrect','extraSlot','theGuy'];
   // Effects that target enemies
   const ENEMY_TARGET = ['poisonVial','stunGrenade','attackDebuffItem','defenseDebuffItem','marked'];
   const IS_DESTROY   = effectType === 'destroyItem';
@@ -836,7 +944,7 @@ const ItemChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, npcs, onSub
                 const pColor = ep.playerColor || colors.blue;
                 // Gather all units with items
                 const unitsWithItems = [];
-                const cmdItems = (ep.inventory || []).filter(it => it.heldBy === 'commander' && !it.isQuestItem);
+                const cmdItems = sortItems((ep.inventory || []).filter(it => it.heldBy === 'commander'));
                 if ((ep.commanderStats?.hp ?? 0) > 0 && cmdItems.length > 0) {
                   unitsWithItems.push({ unitKey: 'commander', unitLabel: ep.commanderStats?.customName || ep.commander || 'Commander', items: cmdItems });
                 }
@@ -844,7 +952,7 @@ const ItemChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, npcs, onSub
                   if (u.hp <= 0) return;
                   const uKey = i === 0 ? 'special' : `soldier${i}`;
                   const uLabel = u.name?.trim() || (i === 0 ? 'Special' : `Soldier ${i}`);
-                  const unitItems = (ep.inventory || []).filter(it => it.heldBy === uKey && !it.isQuestItem);
+                  const unitItems = sortItems((ep.inventory || []).filter(it => it.heldBy === uKey));
                   if (unitItems.length > 0) unitsWithItems.push({ unitKey: uKey, unitLabel: uLabel, items: unitItems });
                 });
                 return (
@@ -915,6 +1023,8 @@ const ReadOnlyPlayerCard = ({
   const [expandedTargetId, setExpandedTargetId] = React.useState(null);
   const [targetUnitKeys,   setTargetUnitKeys]   = React.useState([]);
   const [confirmItem,      setConfirmItem]      = React.useState(null); // { item, index } — one-use confirm modal
+  const [guyModal,         setGuyModal]         = React.useState(null); // { item, index } — The Guy 1d4 roll modal
+  const [guyRoll,          setGuyRoll]          = React.useState('');   // The Guy 1d4 input
 
   const cmdHp      = player.commanderStats?.hp    ?? 0;
   const cmdMaxHp   = player.commanderStats?.maxHp ?? 1;
@@ -1025,11 +1135,38 @@ const ReadOnlyPlayerCard = ({
           <div style={{ height: '5px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', overflow: 'hidden' }}>
             <div style={{ width: `${cmdPct}%`, height: '100%', background: hpBarColor(cmdPct), transition: 'width 0.3s ease', borderRadius: '3px' }} />
           </div>
+          {/* Commander status effects */}
+          {(player.commanderStats?.statusEffects || []).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem' }}>
+              {(player.commanderStats.statusEffects).map((ef, ei) => {
+                const dur = ef.permanent ? '∞' : `${ef.duration}r`;
+                const statusMeta = {
+                  poison:       { label: `🤢 Poison ${ef.value}hp`, color: '#4ade80', bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.35)' },
+                  burn:         { label: `🔥 Burn ${ef.value}hp`,   color: '#fb923c', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.4)' },
+                  stun:         { label: '💫 Stun',                  color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)' },
+                  shieldWall:   { label: '🛡️ Shield',               color: '#93c5fd', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)' },
+                  counterStrike:{ label: '⚡ Counter',               color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)' },
+                  movementBoost:{ label: '🏃 +10″ Move',            color: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.4)' },
+                  closeCall:    { label: '🛡️ Close Call',            color: '#f9a8d4', bg: 'rgba(236,72,153,0.12)',  border: 'rgba(236,72,153,0.4)' },
+                  attackBuff:   { label: `⚔️↑ +${ef.value}`,        color: '#4ade80', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.35)' },
+                  defenseBuff:  { label: `🛡️↑ +${ef.value}`,        color: '#93c5fd', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.4)' },
+                  attackDebuff: { label: `⚔️↓ -${ef.value}`,        color: '#f87171', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.4)' },
+                  defenseDebuff:{ label: `🛡️↓ -${ef.value}`,        color: '#f87171', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.4)' },
+                  marked:       { label: '🎯 Marked',                color: '#f87171', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.4)' },
+                }[ef.type] || { label: ef.type, color: colors.textFaint, bg: 'rgba(0,0,0,0.2)', border: 'rgba(90,74,58,0.3)' };
+                return (
+                  <span key={ei} style={{ padding: '0.1rem 0.4rem', background: statusMeta.bg, border: `1px solid ${statusMeta.border}`, borderRadius: '20px', color: statusMeta.color, fontSize: '0.58rem', fontWeight: '800' }}>
+                    {statusMeta.label} {dur}
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Commander loot slot */}
         {(() => {
-          const heldItems = inventory.filter(it => it.heldBy === 'commander');
+          const heldItems = sortItems(inventory.filter(it => it.heldBy === 'commander'));
           const slotCount = getSlotCount(player, 'commander');
           const heldCount = getHeldCount(player, 'commander');
           return (
@@ -1084,7 +1221,7 @@ const ReadOnlyPlayerCard = ({
             const isInQueue = queuePos >= 0;
             const unitHPPct = unit.maxHp > 0 ? (unit.hp / unit.maxHp) * 100 : 0;
             const unitKey = index === 0 ? 'special' : `soldier${index}`;
-            const heldItems = inventory.filter(it => it.heldBy === unitKey);
+            const heldItems = sortItems(inventory.filter(it => it.heldBy === unitKey));
             const slotCount = getSlotCount(player, unitKey);
             const heldCount = getHeldCount(player, unitKey);
             const unitLabel = unit.name?.trim() || (index === 0 ? 'Special' : `Soldier ${index}`);
@@ -1121,6 +1258,33 @@ const ReadOnlyPlayerCard = ({
                   <div style={{ height: '6px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', overflow: 'hidden' }}>
                     <div style={{ width: `${unitHPPct}%`, height: '100%', background: hpBarColor(unitHPPct), transition: 'width 0.3s ease', borderRadius: '3px' }} />
                   </div>
+                  {/* Unit status effects */}
+                  {(unit.statusEffects || []).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.3rem' }}>
+                      {(unit.statusEffects).map((ef, ei) => {
+                        const dur = ef.permanent ? '∞' : `${ef.duration}r`;
+                        const statusMeta = {
+                          poison:       { label: `🤢 ${ef.value}hp`, color: '#4ade80', bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.35)' },
+                          burn:         { label: `🔥 ${ef.value}hp`, color: '#fb923c', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.4)' },
+                          stun:         { label: '💫 Stun',           color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)' },
+                          shieldWall:   { label: '🛡️',               color: '#93c5fd', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)' },
+                          counterStrike:{ label: '⚡',                color: '#fbbf24', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.35)' },
+                          movementBoost:{ label: '🏃+10″',            color: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.4)' },
+                          closeCall:    { label: '🛡️CC',              color: '#f9a8d4', bg: 'rgba(236,72,153,0.12)',  border: 'rgba(236,72,153,0.4)' },
+                          attackBuff:   { label: `⚔️↑+${ef.value}`,  color: '#4ade80', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.35)' },
+                          defenseBuff:  { label: `🛡️↑+${ef.value}`,  color: '#93c5fd', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.4)' },
+                          attackDebuff: { label: `⚔️↓-${ef.value}`,  color: '#f87171', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.4)' },
+                          defenseDebuff:{ label: `🛡️↓-${ef.value}`,  color: '#f87171', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.4)' },
+                          marked:       { label: '🎯',                color: '#f87171', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.4)' },
+                        }[ef.type] || { label: ef.type, color: colors.textFaint, bg: 'rgba(0,0,0,0.2)', border: 'rgba(90,74,58,0.3)' };
+                        return (
+                          <span key={ei} style={{ padding: '0.1rem 0.35rem', background: statusMeta.bg, border: `1px solid ${statusMeta.border}`, borderRadius: '20px', color: statusMeta.color, fontSize: '0.55rem', fontWeight: '800' }}>
+                            {statusMeta.label} {dur}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 {/* Attack buttons */}
                 {isOwnCard && (
@@ -1157,7 +1321,7 @@ const ReadOnlyPlayerCard = ({
           <div style={{ color: colors.textFaint, fontSize: '0.75rem', textAlign: 'center', padding: '0.85rem' }}>No items</div>
         )}
         <div style={{ overflowX: 'hidden' }}>
-          {inventory.map((item, i) => {
+          {sortItems(inventory).map((item, i) => {
             const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
             const usesLeft = item.effect?.uses === 0 ? 999 : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
             const canUse = !item.effect || item.effect.type === 'manual' || usesLeft > 0;
@@ -1166,7 +1330,7 @@ const ReadOnlyPlayerCard = ({
             const isEnemyTarget = ['poisonVial','stunGrenade','attackDebuffItem','defenseDebuffItem','marked'].includes(item.effect?.type);
             const isGlobal = ['npcPlague','playerPlague','crownsFavor','nullify','mirror'].includes(item.effect?.type);
             const showUseButton = !item.isQuestItem && !isKey && (
-              ['heal','maxHP','attackBonus','defenseBonus','manual','destroyItem','extraSlot'].includes(item.effect?.type)
+              ['heal','maxHP','attackBonus','defenseBonus','manual','destroyItem','extraSlot','theGuy'].includes(item.effect?.type)
               || isSelfTarget || isEnemyTarget || isGlobal
             );
 
@@ -1227,6 +1391,11 @@ const ReadOnlyPlayerCard = ({
                     <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
                       {showUseButton && (
                         <button onClick={() => {
+                          if (item.effect?.type === 'theGuy') {
+                            setGuyRoll('');
+                            setGuyModal({ item, index: i });
+                            return;
+                          }
                           const isOneUse = item.effect?.uses !== 0 && usesLeft === 1;
                           if (isOneUse) {
                             setConfirmItem({ item, index: i });
@@ -1513,7 +1682,431 @@ const ReadOnlyPlayerCard = ({
         </div>
       );
     })()}
+
+    {/* ── The Guy modal ── */}
+    {guyModal && (() => {
+      const { item: gi, index: gi_idx } = guyModal;
+      const tier = gi.tier || 'Common';
+      const tc = tierColors[tier] || tierColors.Common;
+
+      const GUY_OUTCOMES = {
+        Common: [
+          { roll: 1, label: '+2 to your next attack roll' },
+          { roll: 2, label: 'Heal 2HP to one of your units' },
+          { roll: 3, label: 'Roll 1d10 — unblockable damage to a target' },
+          { roll: 4, label: 'Cleanse all squad units of poison, burn & stun' },
+        ],
+        Rare: [
+          { roll: 1, label: 'Heal 5HP to one of your units' },
+          { roll: 2, label: 'Extra 10″ movement (active until DM removes)' },
+          { roll: 3, label: 'Roll 2d10 — unblockable damage to a target' },
+          { roll: 4, label: '+5 to your next defense roll' },
+        ],
+        Legendary: [
+          { roll: 1, label: 'Choose any Common or Rare item from the loot pool' },
+          { roll: 2, label: 'Poison all active NPCs' },
+          { roll: 3, label: 'Absorb your next instance of damage (Close Call)' },
+          { roll: 4, label: 'Revive one dead unit to full HP' },
+        ],
+      };
+
+      const outcomes = GUY_OUTCOMES[tier] || GUY_OUTCOMES.Common;
+      const rollNum = parseInt(guyRoll);
+      const validRoll = rollNum >= 1 && rollNum <= 4;
+      const selectedOutcome = validRoll ? outcomes[rollNum - 1] : null;
+
+      const handleSend = async () => {
+        if (!validRoll || sending) return;
+        setSending(true);
+        try {
+          const reqId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          await writePendingRequest(lobbyCode, reqId, {
+            type: 'useItem',
+            reqId,
+            playerId: player.id,
+            playerName: player.playerName,
+            itemIndex: gi_idx,
+            itemName: gi.name,
+            itemEffect: 'theGuy',
+            itemTier: tier,
+            guyRoll: rollNum,
+            guyOutcomeLabel: selectedOutcome?.label,
+            action: 'use',
+            timestamp: Date.now(),
+          });
+          setGuyModal(null);
+        } finally {
+          setSending(false);
+        }
+      };
+
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4200, padding: '1rem' }}>
+          <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: `2px solid ${tc.border}`, borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '380px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🎲</div>
+              <div style={{ color: tc.text, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.05rem', letterSpacing: '0.08em' }}>The Guy — {tier}</div>
+              <div style={{ color: colors.textFaint, fontSize: '0.68rem', marginTop: '0.25rem' }}>Roll 1d4 at the table</div>
+            </div>
+
+            {/* Outcome table */}
+            <div style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid ${tc.border}`, borderRadius: '10px', padding: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ color: tc.text, fontSize: '0.6rem', fontWeight: '900', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Possible Outcomes</div>
+              {outcomes.map(o => (
+                <div key={o.roll} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.3rem 0', borderBottom: o.roll < 4 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                  <span style={{ color: tc.text, fontWeight: '900', fontSize: '0.78rem', minWidth: '1rem', flexShrink: 0 }}>{o.roll}</span>
+                  <span style={{ color: colors.textSecondary, fontSize: '0.72rem', lineHeight: '1.35' }}>{o.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Roll input */}
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Enter your roll (1–4)</div>
+              <input
+                type="number" min="1" max="4"
+                value={guyRoll}
+                onChange={e => setGuyRoll(e.target.value)}
+                style={{ width: '100%', padding: '0.7rem', background: 'rgba(0,0,0,0.4)', border: `2px solid ${validRoll ? tc.border : 'rgba(90,74,58,0.4)'}`, borderRadius: '8px', color: validRoll ? tc.text : colors.textMuted, fontSize: '1.1rem', fontWeight: '900', textAlign: 'center', fontFamily: fonts.body, boxSizing: 'border-box', outline: 'none' }}
+                placeholder="—"
+              />
+            </div>
+
+            {/* Selected outcome highlight */}
+            {selectedOutcome && (
+              <div style={{ background: 'rgba(34,197,94,0.06)', border: `1px solid ${tc.border}`, borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem' }}>
+                <div style={{ color: tc.text, fontSize: '0.62rem', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>Roll {rollNum} Result</div>
+                <div style={{ color: colors.textPrimary, fontSize: '0.8rem', fontWeight: '700', lineHeight: '1.35' }}>{selectedOutcome.label}</div>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+              <button onClick={() => setGuyModal(null)} style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✕ Cancel</button>
+              <button onClick={handleSend} disabled={!validRoll || sending} style={{ padding: '0.85rem', background: validRoll ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${validRoll ? 'rgba(34,197,94,0.4)' : 'rgba(90,74,58,0.3)'}`, borderRadius: '10px', color: validRoll ? '#86efac' : colors.textDisabled, cursor: validRoll ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✦ Send to DM</button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
     </>
+  );
+};
+
+// ── Guy Target Pick Screen ────────────────────────────────────────────────────
+// Two-step: first choose NPC or Player, then pick from list.
+// Player targets expand on click to show their units.
+const GuyTargetPickScreen = ({ choice, lobbyCode, myPlayer, allPlayers, npcs, onSubmit }) => {
+  const [step, setStep] = React.useState('type'); // 'type' | 'npc' | 'player'
+  const [expandedPlayerId, setExpandedPlayerId] = React.useState(null);
+  const [selectedTarget, setSelectedTarget] = React.useState(null);
+  const [sending, setSending] = React.useState(false);
+
+  const dice = choice.dice || '1d10';
+  const numRolls = choice.numRolls || 1;
+  const dieType = choice.dieType || 'd10';
+
+  const enemyPlayers = (allPlayers || []).filter(p =>
+    p.id !== myPlayer?.id && !p.isAbsent && !p.commanderStats?.isDead && (p.commanderStats?.hp ?? 0) > 0
+  );
+
+  const submit = async () => {
+    if (!selectedTarget || sending) return;
+    setSending(true);
+    try {
+      const reqId = `itemChoice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await writePendingRequest(lobbyCode, reqId, {
+        type: 'itemChoice', reqId,
+        choiceId: choice.choiceId,
+        playerId: myPlayer?.id,
+        playerName: myPlayer?.playerName,
+        itemEffect: 'guyAttack',
+        targetType: selectedTarget.type,
+        targetNpcId: selectedTarget.npcId || null,
+        targetPlayerId: selectedTarget.playerId || null,
+        targetUnitKey: selectedTarget.unitKey || null,
+        targetUnitLabel: selectedTarget.unitLabel || null,
+        targetName: selectedTarget.name || null,
+        guyNumRolls: numRolls,
+        guyDieType: dieType,
+        timestamp: Date.now(),
+      });
+      onSubmit();
+    } finally { setSending(false); }
+  };
+
+  const orangeBorder = 'rgba(249,115,22,0.5)';
+  const containerStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4200, padding: '1rem' };
+  const boxStyle = { background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: `2px solid ${orangeBorder}`, borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' };
+
+  return (
+    <div style={containerStyle}>
+      <div style={boxStyle}>
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🎯</div>
+          <div style={{ color: '#fb923c', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>The Guy — Pick a Target</div>
+          <div style={{ color: colors.textFaint, fontSize: '0.68rem', marginTop: '0.25rem' }}>{dice} unblockable damage</div>
+        </div>
+
+        {/* Step 1 — choose type */}
+        {step === 'type' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+            <button onClick={() => setStep('npc')} disabled={npcs.length === 0} style={{
+              padding: '1.1rem 0.5rem', borderRadius: '10px', cursor: npcs.length > 0 ? 'pointer' : 'not-allowed',
+              background: 'rgba(239,68,68,0.1)', border: '2px solid rgba(239,68,68,0.4)',
+              color: npcs.length > 0 ? '#fca5a5' : colors.textDisabled,
+              fontFamily: fonts.body, fontWeight: '900', fontSize: '0.9rem',
+            }}>
+              <div style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>👾</div>
+              NPC
+              {npcs.length === 0 && <div style={{ fontSize: '0.6rem', opacity: 0.6 }}>None active</div>}
+            </button>
+            <button onClick={() => setStep('player')} disabled={enemyPlayers.length === 0} style={{
+              padding: '1.1rem 0.5rem', borderRadius: '10px', cursor: enemyPlayers.length > 0 ? 'pointer' : 'not-allowed',
+              background: 'rgba(139,92,246,0.1)', border: '2px solid rgba(139,92,246,0.4)',
+              color: enemyPlayers.length > 0 ? '#c4b5fd' : colors.textDisabled,
+              fontFamily: fonts.body, fontWeight: '900', fontSize: '0.9rem',
+            }}>
+              <div style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>⚔️</div>
+              Player
+              {enemyPlayers.length === 0 && <div style={{ fontSize: '0.6rem', opacity: 0.6 }}>None available</div>}
+            </button>
+          </div>
+        )}
+
+        {/* Step 2a — NPC list */}
+        {step === 'npc' && (
+          <>
+            <button onClick={() => { setStep('type'); setSelectedTarget(null); }} style={{ background: 'none', border: 'none', color: colors.textFaint, cursor: 'pointer', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.75rem', padding: 0 }}>← Back</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', marginBottom: '1rem' }}>
+              {npcs.map(npc => {
+                const isSelected = selectedTarget?.npcId === npc.id;
+                return (
+                  <div key={npc.id} onClick={() => setSelectedTarget({ type: 'npc', npcId: npc.id, name: npc.name })} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '0.5rem 0.75rem', borderRadius: '8px', cursor: 'pointer',
+                    background: isSelected ? 'rgba(249,115,22,0.12)' : 'rgba(0,0,0,0.3)',
+                    border: `2px solid ${isSelected ? '#f97316' : 'rgba(239,68,68,0.25)'}`,
+                  }}>
+                    <span style={{ color: isSelected ? '#fdba74' : '#fca5a5', fontWeight: '800', fontSize: '0.85rem' }}>👾 {npc.name}</span>
+                    <span style={{ color: colors.textFaint, fontSize: '0.7rem' }}>{npc.hp}/{npc.maxHp}hp · 🛡️{npc.armor}+</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Step 2b — Player list with expandable units */}
+        {step === 'player' && (
+          <>
+            <button onClick={() => { setStep('type'); setSelectedTarget(null); setExpandedPlayerId(null); }} style={{ background: 'none', border: 'none', color: colors.textFaint, cursor: 'pointer', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.75rem', padding: 0 }}>← Back</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+              {enemyPlayers.map(p => {
+                const isExpanded = expandedPlayerId === p.id;
+                const units = [
+                  { key: 'commander', label: p.commanderStats?.customName || p.commander || 'Commander', hp: p.commanderStats?.hp, maxHp: p.commanderStats?.maxHp },
+                  ...(p.subUnits || []).filter(u => u.hp > 0).map((u, i) => ({
+                    key: i === 0 ? 'special' : `soldier${i}`,
+                    label: u.name?.trim() || (i === 0 ? 'Special' : `Soldier ${i}`),
+                    hp: u.hp, maxHp: u.maxHp,
+                  })),
+                ];
+                return (
+                  <div key={p.id}>
+                    {/* Player name row — click to expand */}
+                    <div onClick={() => setExpandedPlayerId(isExpanded ? null : p.id)} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '0.55rem 0.75rem', borderRadius: isExpanded ? '8px 8px 0 0' : '8px', cursor: 'pointer',
+                      background: isExpanded ? 'rgba(139,92,246,0.15)' : 'rgba(0,0,0,0.3)',
+                      border: `2px solid ${isExpanded ? 'rgba(139,92,246,0.5)' : 'rgba(139,92,246,0.2)'}`,
+                      borderBottom: isExpanded ? '1px solid rgba(139,92,246,0.2)' : undefined,
+                    }}>
+                      <span style={{ color: p.playerColor || '#c4b5fd', fontWeight: '900', fontSize: '0.85rem' }}>{p.playerName}</span>
+                      <span style={{ color: colors.textFaint, fontSize: '0.7rem' }}>{isExpanded ? '▲' : '▼'} {units.length} unit{units.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    {/* Unit list — shown when expanded */}
+                    {isExpanded && (
+                      <div style={{ background: 'rgba(0,0,0,0.25)', border: '2px solid rgba(139,92,246,0.2)', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '0.4rem' }}>
+                        {units.map(u => {
+                          const isSelected = selectedTarget?.playerId === p.id && selectedTarget?.unitKey === u.key;
+                          return (
+                            <div key={u.key} onClick={() => setSelectedTarget({ type: 'player', playerId: p.id, unitKey: u.key, unitLabel: u.label, name: `${p.playerName} — ${u.label}` })} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '0.4rem 0.6rem', borderRadius: '6px', cursor: 'pointer', marginBottom: '0.2rem',
+                              background: isSelected ? 'rgba(249,115,22,0.12)' : 'rgba(0,0,0,0.2)',
+                              border: `2px solid ${isSelected ? '#f97316' : 'rgba(139,92,246,0.15)'}`,
+                            }}>
+                              <span style={{ color: isSelected ? '#fdba74' : colors.textSecondary, fontWeight: '700', fontSize: '0.8rem' }}>{u.label}</span>
+                              <span style={{ color: colors.textFaint, fontSize: '0.65rem' }}>{u.hp}/{u.maxHp}hp</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Selected target summary */}
+        {selectedTarget && (
+          <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: '8px', padding: '0.5rem 0.75rem', marginBottom: '1rem' }}>
+            <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '800' }}>TARGET: </span>
+            <span style={{ color: '#fdba74', fontWeight: '800', fontSize: '0.8rem' }}>{selectedTarget.name}</span>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+          <button onClick={onSubmit} style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✕ Cancel</button>
+          <button onClick={submit} disabled={!selectedTarget || sending} style={{ padding: '0.85rem', background: selectedTarget ? 'linear-gradient(135deg,rgba(249,115,22,0.2),rgba(180,60,0,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${selectedTarget ? 'rgba(249,115,22,0.5)' : 'rgba(90,74,58,0.3)'}`, borderRadius: '10px', color: selectedTarget ? '#fdba74' : colors.textDisabled, cursor: selectedTarget ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>🎯 Confirm Target</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Guy Item Pick Screen ──────────────────────────────────────────────────────
+// Shown to the player after The Guy (Legendary) roll 1.
+// Player picks any Common or Rare item from the loot pool.
+const GuyItemPickScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit }) => {
+  const [selectedItem, setSelectedItem] = React.useState(null);
+  const [selectedUnitKey, setSelectedUnitKey] = React.useState('');
+  const [swapItemId, setSwapItemId] = React.useState(null);
+  const [sending, setSending] = React.useState(false);
+
+  const lootPool = choice.lootPool || [];
+  const freshMe = allPlayers.find(p => String(p.id) === String(myPlayer?.id)) || myPlayer;
+
+  const allUnits = freshMe ? [
+    { key: 'commander', label: freshMe.commanderStats?.customName || freshMe.commander || 'Commander' },
+    ...(freshMe.subUnits || []).map((u, i) => ({
+      key: i === 0 ? 'special' : `soldier${i}`,
+      label: u.name?.trim() || (i === 0 ? 'Special' : `Soldier ${i}`),
+    })),
+  ] : [];
+
+  const unitIsFull = (unitKey) => {
+    if (!freshMe || !selectedItem) return false;
+    const held = (freshMe.inventory || []).filter(it => it.heldBy === unitKey && !it.isQuestItem).length;
+    const slots = 1 + ((freshMe.commanderStats?.bonusSlots || 0));
+    const unit = unitKey === 'commander' ? null : (freshMe.subUnits || [])[unitKey === 'special' ? 0 : parseInt(unitKey.replace('soldier',''))];
+    const unitSlots = unitKey === 'commander' ? slots : 1 + (unit?.bonusSlots || 0);
+    return held >= unitSlots;
+  };
+
+  const selectedUnitFull = selectedUnitKey ? unitIsFull(selectedUnitKey) : false;
+  const heldItems = selectedUnitFull
+    ? (freshMe?.inventory || []).filter(it => it.heldBy === selectedUnitKey && !it.isQuestItem)
+    : [];
+  const canConfirm = !!selectedItem && !!selectedUnitKey && (!selectedUnitFull || !!swapItemId);
+
+  const submit = async () => {
+    if (!canConfirm || sending) return;
+    setSending(true);
+    try {
+      const reqId = `itemChoice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await writePendingRequest(lobbyCode, reqId, {
+        type: 'itemChoice',
+        reqId,
+        choiceId: choice.choiceId,
+        playerId: myPlayer?.id,
+        playerName: myPlayer?.playerName,
+        itemEffect: 'theGuyLegendary1',
+        targetType: 'self',
+        targetUnitKey: selectedUnitKey,
+        targetUnitLabel: allUnits.find(u => u.key === selectedUnitKey)?.label || selectedUnitKey,
+        guyPickedItem: selectedItem,
+        swapItemId: swapItemId || null,
+        timestamp: Date.now(),
+      });
+      onSubmit();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5000, padding: '1rem' }}>
+      <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(251,191,36,0.5)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '420px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🎲</div>
+          <div style={{ color: '#fbbf24', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.05rem', letterSpacing: '0.08em' }}>The Guy — Legendary</div>
+          <div style={{ color: colors.textFaint, fontSize: '0.68rem', marginTop: '0.25rem' }}>Choose any Common or Rare item</div>
+        </div>
+
+        {/* Item list */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ color: colors.textMuted, fontSize: '0.62rem', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>Available Items</div>
+          {lootPool.length === 0 && <div style={{ color: colors.textFaint, fontSize: '0.72rem' }}>No Common or Rare items in the loot pool.</div>}
+          {lootPool.map(it => {
+            const tc = tierColors[it.tier] || tierColors.Common;
+            const isSelected = selectedItem?.id === it.id;
+            return (
+              <div key={it.id} onClick={() => { setSelectedItem(it); setSelectedUnitKey(''); setSwapItemId(null); }} style={{
+                padding: '0.5rem 0.7rem', borderRadius: '7px', cursor: 'pointer', marginBottom: '0.3rem',
+                background: isSelected ? 'rgba(251,191,36,0.1)' : 'rgba(0,0,0,0.3)',
+                border: `2px solid ${isSelected ? 'rgba(251,191,36,0.5)' : tc.border}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: tc.text, fontWeight: '800', fontSize: '0.82rem' }}>{it.name}</span>
+                  <span style={{ color: tc.text, fontSize: '0.6rem', fontWeight: '700', opacity: 0.8 }}>{it.tier}</span>
+                </div>
+                {it.description && <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.2rem', lineHeight: '1.3' }}>{it.description}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Unit picker */}
+        {selectedItem && (
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ color: colors.textMuted, fontSize: '0.62rem', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>Assign to Unit</div>
+            {allUnits.map(u => {
+              const full = unitIsFull(u.key);
+              const isSelected = selectedUnitKey === u.key;
+              return (
+                <div key={u.key} onClick={() => { setSelectedUnitKey(u.key); setSwapItemId(null); }} style={{
+                  padding: '0.4rem 0.7rem', borderRadius: '7px', cursor: 'pointer', marginBottom: '0.3rem',
+                  background: isSelected ? 'rgba(34,197,94,0.08)' : 'rgba(0,0,0,0.3)',
+                  border: `2px solid ${isSelected ? 'rgba(34,197,94,0.4)' : full ? 'rgba(249,115,22,0.3)' : 'rgba(90,74,58,0.3)'}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: isSelected ? '#86efac' : colors.textSecondary, fontWeight: '800', fontSize: '0.8rem' }}>{u.label}</span>
+                    {full && <span style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800' }}>{isSelected ? '↕ SWAP' : 'FULL'}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Swap picker */}
+        {selectedUnitFull && heldItems.length > 0 && (
+          <div style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: '8px', padding: '0.65rem', marginBottom: '1rem' }}>
+            <div style={{ color: '#f97316', fontSize: '0.65rem', fontWeight: '900', marginBottom: '0.4rem' }}>↕ Unit is full — choose item to drop:</div>
+            {heldItems.map(it => (
+              <div key={it.id} onClick={() => setSwapItemId(it.id)} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '0.4rem 0.6rem', borderRadius: '6px', cursor: 'pointer', marginBottom: '0.25rem',
+                background: swapItemId === it.id ? 'rgba(249,115,22,0.15)' : 'rgba(0,0,0,0.3)',
+                border: `2px solid ${swapItemId === it.id ? '#f97316' : 'rgba(249,115,22,0.2)'}`,
+              }}>
+                <span style={{ color: swapItemId === it.id ? '#fdba74' : colors.amber, fontWeight: '800', fontSize: '0.78rem' }}>{it.name}</span>
+                {swapItemId === it.id && <span style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800' }}>✓ DROP</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+          <button onClick={onSubmit} style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✕ Cancel</button>
+          <button onClick={submit} disabled={!canConfirm || sending} style={{ padding: '0.85rem', background: canConfirm ? 'linear-gradient(135deg,rgba(251,191,36,0.2),rgba(180,130,0,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${canConfirm ? 'rgba(251,191,36,0.4)' : 'rgba(90,74,58,0.3)'}`, borderRadius: '10px', color: canConfirm ? '#fbbf24' : colors.textDisabled, cursor: canConfirm ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✦ Confirm</button>
+        </div>
+      </div>
+    </div>
   );
 };
 

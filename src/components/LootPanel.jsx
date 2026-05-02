@@ -21,7 +21,6 @@ const EFFECT_TYPES = [
   { value: 'destroyItem',        label: '💥 Destroy Enemy Item' },
   { value: 'diceSwap',           label: '⇅ Swap Dice Rolls' },
   { value: 'closecall',          label: '🛡️ Close Call — Negate All Damage' },
-  // ── New effects ──
   { value: 'cleanse',            label: '✨ Cleanse — Remove One Status Effect' },
   { value: 'fullCleanse',        label: '✨✨ Full Cleanse — Remove All Status Effects' },
   { value: 'poisonVial',         label: '🧪 Poison Vial — Poison One Enemy' },
@@ -37,6 +36,7 @@ const EFFECT_TYPES = [
   { value: 'marked',             label: '🎯 Marked — Enemy Takes Double Damage This Round' },
   { value: 'nullify',            label: '🚫 Nullify — Remove Last Status Effect On All Own Units' },
   { value: 'mirror',             label: '🪞 Mirror — Copy Last Item Played' },
+  { value: 'theGuy',             label: '🎲 The Guy — Roll 1d4 for a random effect (tier-based)' },
 ];
 
 const TIER_COLORS = {
@@ -57,8 +57,9 @@ const blankItem = () => ({
 
 // ── Item Creator ─────────────────────────────────────────────────────────────
 
-const ItemCreator = ({ onSave, onCancel }) => {
-  const [item, setItem] = useState(blankItem());
+const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
+  const [item, setItem] = useState(initialItem ? { ...initialItem } : blankItem());
+  const isEditing = !!initialItem;
 
   const set = (field, value) => setItem(prev => ({ ...prev, [field]: value }));
   const setEffect = (field, value) => setItem(prev => ({
@@ -70,7 +71,7 @@ const ItemCreator = ({ onSave, onCancel }) => {
   const isExtraSlot = item.effect.type === 'extraSlot';
   const noUseTypes  = ['manual','extraSlot','key','destroyItem','cleanse','fullCleanse',
                         'poisonVial','stunGrenade','shieldWall','attackDebuffItem','defenseDebuffItem',
-                        'counterStrike','npcPlague','playerPlague','crownsFavor','resurrect','marked','nullify','mirror'];
+                        'counterStrike','npcPlague','playerPlague','crownsFavor','resurrect','marked','nullify','mirror','theGuy'];
   const needsUses      = !noUseTypes.includes(item.effect.type);
   const needsDebuffVal = ['attackDebuffItem','defenseDebuffItem'].includes(item.effect.type);
   const needsDamage    = ['poisonVial','npcPlague','playerPlague'].includes(item.effect.type);
@@ -84,7 +85,7 @@ const ItemCreator = ({ onSave, onCancel }) => {
       padding: '1.25rem', marginBottom: '1rem',
     }}>
       <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.95rem', marginBottom: '1rem', letterSpacing: '0.08em' }}>
-        ✨ New Loot Item
+        ✨ {isEditing ? 'Edit Item' : 'New Loot Item'}
       </div>
 
       {/* Name */}
@@ -255,9 +256,12 @@ const ItemCreator = ({ onSave, onCancel }) => {
 const GiveModal = ({ item, players, onConfirm, onClose }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
   const [selectedUnitType, setSelectedUnitType] = useState('');
+  const [swapItemId, setSwapItemId] = useState(null);
 
   const player = players.find(p => String(p.id) === String(selectedPlayerId));
-  const canConfirm = selectedPlayerId && selectedUnitType;
+  const isSwap = !!(selectedUnitType && !item.isQuestItem && player && unitIsFull(player, selectedUnitType));
+  const heldItems = isSwap ? (player.inventory || []).filter(it => it.heldBy === selectedUnitType && !it.isQuestItem) : [];
+  const canConfirm = selectedPlayerId && selectedUnitType && (!isSwap || !!swapItemId);
 
   return (
     <div onClick={onClose} style={{
@@ -283,7 +287,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
           <label style={labelStyle}>Player</label>
           <select style={{ ...inputStyle, cursor: 'pointer' }}
             value={selectedPlayerId}
-            onChange={e => { setSelectedPlayerId(e.target.value); setSelectedUnitType(''); }}>
+            onChange={e => { setSelectedPlayerId(e.target.value); setSelectedUnitType(''); setSwapItemId(null); }}>
             <option value="">Select player...</option>
             {players.map(p => <option key={p.id} value={p.id}>{p.playerName || 'Player'}</option>)}
           </select>
@@ -291,7 +295,6 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
 
         {/* Unit */}
         {player && (() => {
-          // Build unit list with full/swap state
           const allUnits = [
             { unitType: 'commander', label: player.commanderStats?.customName || player.commander || 'Commander' },
             ...(player.subUnits || []).map((u, idx) => ({
@@ -299,11 +302,6 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
               label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`),
             })),
           ];
-          const isSwap = selectedUnitType && !item.isQuestItem && unitIsFull(player, selectedUnitType);
-          const currentItem = selectedUnitType
-            ? (player.inventory || []).find(it => it.heldBy === selectedUnitType && !it.isQuestItem)
-            : null;
-
           return (
             <div style={{ marginBottom: '1.25rem' }}>
               <label style={labelStyle}>Assign to Unit</label>
@@ -312,7 +310,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
                   const full = !item.isQuestItem && unitIsFull(player, ut);
                   const selected = selectedUnitType === ut;
                   return (
-                    <div key={ut} onClick={() => setSelectedUnitType(ut)} style={{
+                    <div key={ut} onClick={() => { setSelectedUnitType(ut); setSwapItemId(null); }} style={{
                       ...unitRow(selected, full ? '#f97316' : colors.gold),
                       cursor: 'pointer',
                       border: `2px solid ${selected ? (full ? '#f97316' : colors.gold) : full ? 'rgba(249,115,22,0.3)' : 'rgba(90,74,58,0.3)'}`,
@@ -325,13 +323,24 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
                 })}
               </div>
 
-              {/* Swap warning */}
-              {isSwap && currentItem && (
-                <div style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '0.5rem' }}>
-                  <div style={{ color: '#f97316', fontSize: '0.68rem', fontWeight: '900', marginBottom: '0.2rem' }}>⚠️ SWAP — unit is full</div>
-                  <div style={{ color: colors.textSecondary, fontSize: '0.68rem' }}>
-                    Drop <span style={{ color: '#fbbf24', fontWeight: '800' }}>{currentItem.name}</span> and take <span style={{ color: '#fbbf24', fontWeight: '800' }}>{item.name}</span>?
-                  </div>
+              {/* Swap item picker */}
+              {isSwap && (
+                <div style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: '8px', padding: '0.65rem', marginBottom: '0.5rem' }}>
+                  <div style={{ color: '#f97316', fontSize: '0.65rem', fontWeight: '900', marginBottom: '0.4rem' }}>↕ Unit is full — choose item to drop:</div>
+                  {heldItems.map(it => (
+                    <div key={it.id} onClick={() => setSwapItemId(it.id)} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.4rem 0.6rem', borderRadius: '6px', cursor: 'pointer', marginBottom: '0.25rem',
+                      background: swapItemId === it.id ? 'rgba(249,115,22,0.15)' : 'rgba(0,0,0,0.3)',
+                      border: `2px solid ${swapItemId === it.id ? '#f97316' : 'rgba(249,115,22,0.2)'}`,
+                    }}>
+                      <div>
+                        <span style={{ color: swapItemId === it.id ? '#fdba74' : colors.amber, fontWeight: '800', fontSize: '0.8rem' }}>{it.name}</span>
+                        <span style={{ color: colors.textFaint, fontSize: '0.62rem', marginLeft: '0.5rem' }}>{it.tier || 'Common'}</span>
+                      </div>
+                      {swapItemId === it.id && <span style={{ color: '#f97316', fontSize: '0.62rem', fontWeight: '800' }}>✓ DROP</span>}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -341,12 +350,10 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button disabled={!canConfirm} onClick={() => {
             if (!canConfirm) return;
-            const pid = selectedPlayerId;
-            const isSwap = !item.isQuestItem && unitIsFull(player, selectedUnitType);
-            const droppedItem = isSwap
-              ? (player.inventory || []).find(it => it.heldBy === selectedUnitType && !it.isQuestItem)
+            const droppedItem = swapItemId
+              ? (player.inventory || []).find(it => it.id === swapItemId)
               : null;
-            onConfirm(pid, selectedUnitType, droppedItem || null);
+            onConfirm(selectedPlayerId, selectedUnitType, droppedItem || null);
           }} style={{
             flex: 1, padding: '0.75rem',
             background: canConfirm ? 'linear-gradient(135deg, #059669, #047857)' : '#1a0f0a',
@@ -354,7 +361,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
             color: canConfirm ? '#d1fae5' : '#4a3322', borderRadius: '8px',
             cursor: canConfirm ? 'pointer' : 'not-allowed',
             fontFamily: 'inherit', fontWeight: '800', fontSize: '0.9rem',
-          }}>{canConfirm && !item.isQuestItem && unitIsFull(player, selectedUnitType) ? '↕ Swap' : '✓ Give'}</button>
+          }}>{isSwap ? '↕ Swap' : '✓ Give'}</button>
           <button onClick={onClose} style={{
             flex: 1, padding: '0.75rem',
             background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
@@ -369,7 +376,7 @@ const GiveModal = ({ item, players, onConfirm, onClose }) => {
 
 // ── Loot Item Card ────────────────────────────────────────────────────────────
 
-const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
+const LootItemCard = ({ item, players, onGive, onDelete, onArchive, onEdit }) => {
   const [showGive, setShowGive] = useState(false);
   const c = item.isQuestItem ? TIER_COLORS.Quest : (TIER_COLORS[item.tier] || TIER_COLORS.Common);
   const effectLabel = EFFECT_TYPES.find(e => e.value === item.effect?.type)?.label || '📋 Manual';
@@ -430,6 +437,14 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
             )}
           </div>
           <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+            <button onClick={() => onEdit(item)} style={{
+              padding: '0.35rem 0.85rem',
+              background: 'rgba(139,92,246,0.12)',
+              border: '1px solid rgba(139,92,246,0.4)',
+              color: '#c4b5fd', borderRadius: '6px', cursor: 'pointer',
+              fontFamily: 'inherit', fontWeight: '800', fontSize: '0.75rem',
+              letterSpacing: '0.05em',
+            }}>✏️ Edit</button>
             <button onClick={() => setShowGive(true)} style={{
               padding: '0.35rem 0.85rem',
               background: 'linear-gradient(135deg, rgba(139,92,246,0.2), rgba(109,40,217,0.1))',
@@ -466,6 +481,7 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive }) => {
 
 const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
   const [showCreator, setShowCreator] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
   const [filterTier, setFilterTier] = useState('All');
   const [search, setSearch] = useState('');
   const [archivedItems, setArchivedItems] = useState(() => {
@@ -481,6 +497,17 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
   const handleSave = (item) => {
     setLootPool(prev => [...prev, item]);
     setShowCreator(false);
+  };
+
+  const handleEdit = (item) => {
+    setEditingItem(item);
+    setShowCreator(false);
+  };
+
+  const handleSaveEdit = (updatedItem) => {
+    // Preserve the original id so it stays in place
+    setLootPool(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+    setEditingItem(null);
   };
 
   const handleDelete = (itemId) => {
@@ -538,6 +565,14 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
       {/* Creator form */}
       {showCreator && (
         <ItemCreator onSave={handleSave} onCancel={() => setShowCreator(false)} />
+      )}
+
+      {editingItem && (
+        <ItemCreator
+          initialItem={editingItem}
+          onSave={handleSaveEdit}
+          onCancel={() => setEditingItem(null)}
+        />
       )}
 
       {/* Tier filter */}
@@ -615,6 +650,7 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
           onGive={onGiveItem}
           onDelete={handleDelete}
           onArchive={handleArchive}
+          onEdit={handleEdit}
         />
       ))}
 

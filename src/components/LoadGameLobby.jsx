@@ -190,6 +190,21 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
       }
     });
 
+    // Sort: locked-in players first (by lockedInAt ascending), then absent/unclaimed at bottom
+    const getPlayerTime = (p) => {
+      const slot = Object.values(saveSlots).find(s => s.claimedByUid === p.uid);
+      if (slot?.lockedInAt) return slot.lockedInAt;
+      const lobbyPlayer = joinedPlayers.find(jp => jp.uid === p.uid);
+      if (lobbyPlayer?.joinedAt?.toMillis) return lobbyPlayer.joinedAt.toMillis();
+      if (typeof lobbyPlayer?.joinedAt === 'number') return lobbyPlayer.joinedAt;
+      return Infinity;
+    };
+    finalPlayers.sort((a, b) => {
+      if (a.isAbsent && !b.isAbsent) return 1;
+      if (!a.isAbsent && b.isAbsent) return -1;
+      return getPlayerTime(a) - getPlayerTime(b);
+    });
+
     // Build full game state from save file + updated players
     const initialState = {
       ...saveData,
@@ -299,7 +314,7 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
                 <div style={{ flex: 1 }}>
                   <div style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.88rem' }}>{p.playerName}</div>
                   <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.1rem' }}>
-                    {p.faction} · {p.commander} · {p.commanderStats?.hp ?? '?'}/{p.commanderStats?.maxHp ?? '?'} HP
+                    {p.commander} · {p.faction} · {p.commanderStats?.hp ?? '?'}/{p.commanderStats?.maxHp ?? '?'} HP
                   </div>
                 </div>
               </div>
@@ -335,7 +350,16 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
   // ── Waiting room ───────────────────────────────────────────────────────────
   if (phase === 'waiting') {
     const joinedPlayers = Object.values(lobbyData.players || {});
-    const slotList      = Object.entries(saveSlots);
+    const slotList      = Object.entries(saveSlots)
+      .sort(([, a], [, b]) => {
+        // Locked-in players (have lockedInAt) sort first by time, then unclaimed at bottom
+        const aClaimed = !!a.claimedByUid;
+        const bClaimed = !!b.claimedByUid;
+        if (aClaimed && !bClaimed) return -1;
+        if (!aClaimed && bClaimed) return 1;
+        if (aClaimed && bClaimed) return (a.lockedInAt || 0) - (b.lockedInAt || 0);
+        return 0;
+      });
     const allClaimed    = slotList.filter(([, s]) => !s.isAbsent && !s.isManual).every(([, s]) => s.claimedByUid);
 
     return (
@@ -388,7 +412,7 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
                       {p.playerName}
                     </div>
                     <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.05rem' }}>
-                      {p.faction} · {p.commander} · {p.commanderStats?.hp}/{p.commanderStats?.maxHp} HP
+                      {p.commander} · {p.faction} · {p.commanderStats?.hp}/{p.commanderStats?.maxHp} HP
                     </div>
                   </div>
                   {absent  ? <span style={{ color: '#9ca3af', fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.05em', flexShrink: 0 }}>ABSENT</span>
@@ -422,8 +446,8 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
                   <div key={p.uid || i} style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.55rem 0.75rem', background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)', borderRadius: '8px', marginBottom: i < newPlayers.length - 1 ? '0.4rem' : 0 }}>
                     <div style={{ width: '9px', height: '9px', borderRadius: '50%', background: p.playerColor || '#8b5cf6', flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
-                      <div style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>{p.commanderName || p.playerName || 'New Player'}</div>
-                      <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.05rem' }}>{p.faction} · {p.commander}</div>
+                      <div style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>{p.playerName || p.commanderName || 'New Player'}</div>
+                      <div style={{ color: colors.textFaint, fontSize: '0.62rem', marginTop: '0.05rem' }}>{p.commander} · {p.faction}</div>
                     </div>
                     <span style={{ color: '#a78bfa', fontSize: '0.65rem', fontWeight: '800' }}>NEW</span>
                   </div>

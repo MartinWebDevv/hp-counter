@@ -103,7 +103,7 @@ const DMPanel = ({
   const squadCount = Object.keys(squadSelected).length;
 
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
       {/* Header buttons */}
       <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -148,7 +148,7 @@ const DMPanel = ({
 
       {/* Search + Filter bar */}
       {npcs.length > 0 && (
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'center', overflowX: isMobile ? 'auto' : 'visible', flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
           {/* Search */}
           <div style={{ flex: 1, position: 'relative' }}>
             <span style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: colors.textFaint, pointerEvents: 'none' }}>🔍</span>
@@ -230,18 +230,21 @@ const DMPanel = ({
 
       {/* NPC grid — same 2-column layout as player cards */}
       {npcs.length > 0 && (
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', overflow: 'hidden', width: '100%' }}>
         <div style={{
           display: 'grid',
           gridTemplateColumns: isMobile ? '1fr' : (filteredNPCs.length === 1 ? '1fr' : '48% 48%'),
-          gap: '1%',
-          padding: '0 0.5%',
+          gap: isMobile ? '0.75rem' : '1%',
+          padding: isMobile ? '0' : '0 0.5%',
           maxWidth: isMobile ? '100%' : (filteredNPCs.length === 1 ? '50%' : '100%'),
           margin: (!isMobile && filteredNPCs.length === 1) ? '0 auto' : '0',
           alignItems: 'start',
+          width: '100%',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
         }}>
           {filteredNPCs.map(npc => (
-            <div key={npc.id} style={{ position: 'relative', isolation: 'isolate' }}>
+            <div key={npc.id} style={{ position: 'relative', isolation: 'isolate', minWidth: 0, overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
               {/* Squad mode overlay */}
               {squadMode && !npc.isDead && npc.active && (
                 <div

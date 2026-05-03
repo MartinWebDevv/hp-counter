@@ -609,3 +609,51 @@ body {
   -webkit-overflow-scrolling: touch !important;
   height: auto !important;
 }
+
+/* ============================================================
+   NPC CARDS — force within screen on mobile
+   ============================================================ */
+
+@media screen and (max-width: 768px) {
+
+  /* NPC grid container — never wider than viewport */
+  body div[style*="alignItems: 'start'"][style*="display: 'grid'"],
+  body div[style*="alignItems: start"][style*="display: grid"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    grid-template-columns: 1fr !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Every NPC card — constrained to container */
+  body div[style*="alignItems: 'start'"] > div,
+  body div[style*="alignItems: start"] > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  /* NPC card inner content — no horizontal bleed */
+  body div[style*="borderRadius: '12px'"][style*="fontFamily"][style*="boxShadow"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  /* Attack buttons — wrap instead of pushing card wider */
+  body div[style*="borderRadius: '12px'"][style*="fontFamily"] div[style*="display: 'flex'"][style*="gap"] {
+    flex-wrap: wrap !important;
+    min-width: 0 !important;
+  }
+
+  /* Text that is nowrap — allow truncation */
+  body div[style*="borderRadius: '12px'"][style*="fontFamily"] [style*="whiteSpace: 'nowrap'"] {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 100% !important;
+  }
+
+}

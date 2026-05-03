@@ -103,12 +103,23 @@ const NPCCard = ({
           ? `1px solid rgba(239,68,68,0.3)`
           : borders.default;
 
+  const [isMobile, setIsMobile] = React.useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768
+  );
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   return (
+    <div style={{ minWidth: 0, maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
     <div style={{
       background: npc.active && !npc.isDead
         ? 'linear-gradient(145deg, #160e0e, #0e0808)'
         : surfaces.card,
       borderRadius: '12px', padding: '1rem', fontFamily: fonts.body,
+      width: '100%', boxSizing: 'border-box', overflow: 'hidden',
       boxShadow: isCurrentTurn
         ? `0 0 20px ${colors.red}50, 0 8px 32px rgba(0,0,0,0.7)`
         : '0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03)',
@@ -119,7 +130,7 @@ const NPCCard = ({
 
       {/* Header */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: '0.6rem',
+        display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap',
         marginBottom: '0.75rem', paddingBottom: '0.65rem',
         borderBottom: `1px solid rgba(255,255,255,0.06)`,
       }}>
@@ -184,7 +195,7 @@ const NPCCard = ({
                   <div style={{
                     position: 'absolute', top: '110%', right: 0, zIndex: 50,
                     background: surfaces.elevated, border: `1px solid ${colors.purpleBorder}`,
-                    borderRadius: '8px', padding: '0.4rem', minWidth: '160px',
+                    borderRadius: '8px', padding: '0.4rem', minWidth: isMobile ? '120px' : '160px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
                   }}>
                     <div style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '0.2rem 0.5rem 0.4rem' }}>Jump to phase:</div>
@@ -251,7 +262,7 @@ const NPCCard = ({
       )}
 
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', marginBottom: '0.75rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '0.4rem', marginBottom: '0.75rem' }}>
         {[
           { label: 'Armor',     value: `${npc.armor}+`,            color: colors.tealLight   },
           { label: 'Atk Bonus', value: `+${npc.attackBonus || 0}`, color: colors.amber       },
@@ -274,7 +285,7 @@ const NPCCard = ({
         <div style={{ height: '5px', background: 'rgba(0,0,0,0.5)', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.6rem' }}>
           <div style={{ width: `${hpPercent}%`, height: '100%', background: hpBarColor(hpPercent), transition: 'width 0.4s ease', borderRadius: '3px' }} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
           <button onClick={() => onHPChange(npc.id, npc.hp - 1)} disabled={npc.hp === 0 || npc.isDead} style={btn.hp(npc.hp === 0 || npc.isDead)}>−</button>
           <input
             type="number" value={manualHP}
@@ -304,12 +315,12 @@ const NPCCard = ({
         background: 'rgba(0,0,0,0.28)', border: borders.default,
         borderRadius: '10px', padding: '0.85rem',
         marginBottom: '0.75rem',
-        display: 'flex', flexDirection: 'column', height: '260px',
+        display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '260px', maxHeight: isMobile ? '220px' : 'none', overflowY: 'auto',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.25rem' }}>
           <span style={{ color: colors.amber, fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase' }}>⚔️ Attacks</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginLeft: 'auto' }}>
-            <span style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '700', letterSpacing: '0.05em' }}>TIMES ATTACKED:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginLeft: 'auto', flexShrink: 0 }}>
+            {!isMobile && <span style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '700', letterSpacing: '0.05em' }}>TIMES ATTACKED:</span>}
             <span style={{ minWidth: '22px', textAlign: 'center', color: (npc.attackCount || 0) > 0 ? colors.amber : colors.textFaint, fontWeight: '900', fontSize: '0.88rem' }}>{npc.attackCount || 0}</span>
             <button onClick={() => onIncrementAttack && onIncrementAttack(npc.id)} style={{ padding: '0.12rem 0.42rem', background: colors.amberSubtle, border: `1px solid ${colors.amberBorder}`, borderRadius: '4px', cursor: 'pointer', color: colors.amber, fontWeight: '900', fontSize: '0.72rem', fontFamily: fonts.body }}>+1</button>
             <button onClick={() => onIncrementAttack && onIncrementAttack(npc.id, true)} style={{ padding: '0.12rem 0.38rem', background: 'rgba(75,85,99,0.18)', border: `1px solid rgba(75,85,99,0.3)`, borderRadius: '4px', cursor: 'pointer', color: colors.textFaint, fontWeight: '900', fontSize: '0.62rem', fontFamily: fonts.body }}>↺</button>
@@ -332,7 +343,7 @@ const NPCCard = ({
                 borderRadius: '7px', padding: '0.6rem',
                 marginBottom: i < npc.attacks.length - 1 ? '0.38rem' : 0,
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.32rem', marginBottom: '0.22rem' }}>
                       {isSpawn  && <span style={pill('#86efac', 'rgba(74,222,128,0.1)', 'rgba(74,222,128,0.28)')}>🐣 SPAWN</span>}
@@ -395,6 +406,7 @@ const NPCCard = ({
           }}
         >{npc.active ? '💤 Deactivate' : '⚡ Activate into Battle'}</button>
       )}
+    </div>
     </div>
   );
 };

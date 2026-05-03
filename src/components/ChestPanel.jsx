@@ -133,7 +133,7 @@ const ChestCreator = ({ onSave, onCancel, lootPool, initialChest = null }) => {
                 const pct = totalWeight > 0 ? Math.round((chest.tierWeights[tier] / totalWeight) * 100) : 0;
                 return (
                   <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ color: c.text, fontWeight: '800', fontSize: '0.78rem', width: '72px' }}>{tier}</span>
+                    <span style={{ color: c.text, fontWeight: '800', fontSize: '0.78rem', minWidth: '60px', flexShrink: 0 }}>{tier}</span>
                     <input type="number" min="0" max="100" value={chest.tierWeights[tier]}
                       onChange={e => setWeight(tier, e.target.value)}
                       style={{ ...inputStyle, width: '64px', padding: '0.35rem 0.5rem', textAlign: 'center' }} />

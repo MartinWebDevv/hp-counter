@@ -12,7 +12,7 @@ const CATS = [
   { id: 'finalBossKill', label: 'Final Boss Kill',     icon: '👑', pts: 2 },
 ];
 
-const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpdateVpStats, onClearTrackers }) => {
+const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpdateVpStats, onClearTrackers, isMobile = false }) => {
   const [manualAward, setManualAward] = useState({ playerId: '', points: 1, reason: '', categoryId: 'finalBossKill' });
   const [showManual, setShowManual] = useState(false);
   const [showDeleteSession, setShowDeleteSession] = useState(false);
@@ -202,7 +202,7 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
               {isExpanded && (
                 <div style={{ marginTop: '0.65rem', borderTop: `1px solid rgba(255,255,255,0.06)`, paddingTop: '0.65rem' }}>
                   <div style={{ color: colors.textMuted, fontSize: '0.62rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.35rem' }}>Live Stats (current session)</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.25rem', marginBottom: '0.65rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0.25rem', marginBottom: '0.65rem' }}>
                     {[
                       ['🐉 NPC Damage', live.npcDamage],
                       ['⚔️ PvP Damage',  live.pvpDamage],
@@ -277,7 +277,7 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
       {/* Category legend */}
       <div style={{ background: 'rgba(0,0,0,0.28)', border: borders.default, borderRadius: '8px', padding: '0.7rem', marginBottom: '0.85rem' }}>
         <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.68rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.4rem', fontFamily: fonts.display }}>Points Per Category</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0.25rem' }}>
           {CATS.map(cat => (
             <div key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.22rem 0.4rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
               <span style={{ fontSize: '0.75rem' }}>{cat.icon}</span>
@@ -308,7 +308,7 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
               {players.map(p => <option key={p.id} value={p.id}>{p.playerName}</option>)}
             </select>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', marginBottom: '0.45rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '0.45rem', marginBottom: '0.45rem' }}>
             <div>
               <label style={{ color: colors.textMuted, fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '0.22rem' }}>Category</label>
               <select style={{ ...themedInput, cursor: 'pointer' }} value={manualAward.categoryId} onChange={e => setManualAward(p => ({ ...p, categoryId: e.target.value }))}>

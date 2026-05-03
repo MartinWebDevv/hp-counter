@@ -8,7 +8,8 @@ const NAV_ITEMS = [
   { id: 'chests',  label: 'Chests',  icon: '📦', color: '#fde68a',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#eab308'     },
   { id: 'vp',      label: 'Victory', icon: '🏆', color: colors.amber,        activeBg: 'rgba(30,58,138,0.5)',  activeBorder: colors.blue   },
   { id: 'rooms',   label: 'DM Tools', icon: '🛠️', color: '#fcd34d',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#d97706'     },
-  { id: 'timers',  label: 'Timers',  icon: '⏱️', color: colors.purpleLight,  activeBg: 'rgba(76,29,149,0.5)',  activeBorder: colors.purple },
+  { id: 'timers',   label: 'Timers',   icon: '⏱️', color: colors.purpleLight,  activeBg: 'rgba(76,29,149,0.5)',  activeBorder: colors.purple },
+  { id: 'settings', label: 'Settings', icon: '⚙️', color: '#94a3b8',           activeBg: 'rgba(30,41,59,0.6)',   activeBorder: '#64748b'     },
 ];
 
 /**
@@ -23,6 +24,15 @@ const NAV_ITEMS = [
  *   unopenedChestCount — badge count for Chests tab
  */
 const DMSidebar = ({ activePanel, setActivePanel, activeNPCsCount = 0, unopenedChestCount = 0, activeTimersCount = 0, activeRoomsCount = 0 }) => {
+  const [isMobile, setIsMobile] = React.useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768
+  );
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const getBadge = (id) => {
     if (id === 'dm'     && activeNPCsCount    > 0) return activeNPCsCount;
     if (id === 'chests' && unopenedChestCount > 0) return unopenedChestCount;
@@ -31,6 +41,46 @@ const DMSidebar = ({ activePanel, setActivePanel, activeNPCsCount = 0, unopenedC
     return null;
   };
 
+  // ── Mobile: fixed bottom tab bar ─────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <nav style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 500,
+        background: 'linear-gradient(180deg,rgba(8,4,14,0.98),rgba(4,2,8,1))',
+        borderTop: '1px solid rgba(139,92,246,0.3)',
+        display: 'flex', overflowX: 'auto',
+        paddingBottom: 'env(safe-area-inset-bottom, 0)',
+        WebkitOverflowScrolling: 'touch',
+        boxShadow: '0 -4px 20px rgba(0,0,0,0.6)',
+        scrollbarWidth: 'none',
+      }}>
+        {NAV_ITEMS.map(item => {
+          const isActive = activePanel === item.id;
+          const badge = getBadge(item.id);
+          return (
+            <button key={item.id} onClick={() => setActivePanel(item.id)} style={{
+              flex: '1 0 auto', minWidth: '52px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              padding: '0.5rem 0.25rem 0.45rem',
+              background: isActive ? item.activeBg : 'transparent',
+              border: 'none',
+              borderTop: `2px solid ${isActive ? item.activeBorder : 'transparent'}`,
+              cursor: 'pointer', position: 'relative',
+              transition: 'all 0.15s',
+            }}>
+              <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>{item.icon}</span>
+              <span style={{ fontSize: '0.48rem', fontWeight: '800', color: isActive ? item.color : colors.textFaint, marginTop: '0.15rem', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{item.label}</span>
+              {badge !== null && (
+                <span style={{ position: 'absolute', top: '2px', right: '4px', background: item.id === 'chests' ? '#eab308' : item.id === 'timers' ? colors.purple : colors.red, color: '#fff', borderRadius: '50%', width: '14px', height: '14px', fontSize: '0.5rem', fontWeight: '900', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{badge}</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+    );
+  }
+
+  // ── Desktop: vertical sidebar ─────────────────────────────────────────────
   return (
     <nav style={{
       display: 'flex', flexDirection: 'column', gap: '0.3rem',

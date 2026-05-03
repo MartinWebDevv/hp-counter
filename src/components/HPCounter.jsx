@@ -1382,6 +1382,17 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
   const isCampaign = gameMode === 'campaign';
 
+  // ── Mobile detection (GM side) ────────────────────────────────────────────
+  const [isMobile, setIsMobile] = React.useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768
+  );
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const [carouselIndex, setCarouselIndex] = React.useState(0);
+
   // ── Derived turn info ─────────────────────────────────────────────────────
   const campaignTurnOrder       = isCampaign ? campaign.buildTurnOrder() : [];
   const currentCampaignTurn     = campaignTurnOrder[campaign.campaignTurnIndex] || null;
@@ -1574,8 +1585,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         </div>
       </div>
 
-      {/* Log + session controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem' }}>
+      {/* Log + session controls — hidden on mobile (session buttons move to Settings tab) */}
+      <div style={{ display: isMobile ? 'none' : 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem' }}>
         <div style={{ flex: 1 }}><LogPanel battleLog={combatLog} onClearLog={clearLog} /></div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           {isMultiplayer && lobbyCode && (
@@ -1598,7 +1609,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       </div>
 
       {/* Main content */}
-      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', paddingBottom: isMobile ? '5.5rem' : 0 }}>
 
         {/* Campaign sidebar nav */}
         {isCampaign && (
@@ -1727,7 +1738,80 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           )}
 
           {(!isCampaign || activePanel === 'players') && !(isCampaign && viewMode === 'current' && currentNonRebuttalNPC) && (
-            <div style={{ display: players.length === 0 ? 'block' : 'grid', gridTemplateColumns: players.length === 1 ? '1fr' : viewMode === 'current' ? '1fr' : '48% 48%', gap: '1%', padding: '0 0.5%', maxWidth: players.length === 1 ? '50%' : '100%', margin: players.length === 1 ? '0 auto' : '0' }}>
+            isMobile ? (
+              <div style={{ width: '100%' }}>
+                {/* Lobby code above carousel — mobile only */}
+                {isMultiplayer && lobbyCode && (
+                  <div style={{ textAlign: 'center', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', padding: '0.35rem 1rem', background: 'rgba(201,169,97,0.08)', border: '1px solid rgba(201,169,97,0.25)', borderRadius: '8px' }}>
+                      <span style={{ color: colors.textFaint, fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Lobby</span>
+                      <span style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.12em' }}>{lobbyCode}</span>
+                    </div>
+                  </div>
+                )}
+                {displayedPlayers.length > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <button onClick={() => setCarouselIndex(i => Math.max(0, i - 1))} disabled={carouselIndex === 0} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', color: carouselIndex === 0 ? 'rgba(255,255,255,0.2)' : '#fff', fontSize: '1.2rem', padding: '0.3rem 0.9rem', cursor: carouselIndex === 0 ? 'default' : 'pointer', fontFamily: fonts.body }}>‹</button>
+                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.72rem', fontWeight: '700' }}>{carouselIndex + 1} / {displayedPlayers.length}</span>
+                    <button onClick={() => setCarouselIndex(i => Math.min(displayedPlayers.length - 1, i + 1))} disabled={carouselIndex === displayedPlayers.length - 1} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', color: carouselIndex === displayedPlayers.length - 1 ? 'rgba(255,255,255,0.2)' : '#fff', fontSize: '1.2rem', padding: '0.3rem 0.9rem', cursor: carouselIndex === displayedPlayers.length - 1 ? 'default' : 'pointer', fontFamily: fonts.body }}>›</button>
+                  </div>
+                )}
+                {displayedPlayers.length > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '0.35rem', marginBottom: '0.6rem' }}>
+                    {displayedPlayers.map((_, di) => (
+                      <div key={di} onClick={() => setCarouselIndex(di)} style={{ width: di === carouselIndex ? '18px' : '7px', height: '7px', borderRadius: '20px', background: di === carouselIndex ? '#8b5cf6' : 'rgba(255,255,255,0.2)', cursor: 'pointer', transition: 'all 0.2s' }} />
+                    ))}
+                  </div>
+                )}
+                {(() => {
+                  const player = displayedPlayers[Math.min(carouselIndex, displayedPlayers.length - 1)];
+                  if (!player) return null;
+                  const actualIndex = players.findIndex(p => String(p.id) === String(player.id));
+                  const isThisTurn  = isCampaign ? String(player.id) === String(currentCampaignPlayerId) : actualIndex === currentPlayerIndex;
+                  return (
+                    <div key={player.id} style={{ width: '100%' }}>
+                      <PlayerCard
+                        player={player}
+                        onUpdate={updatePlayer}
+                        onRemove={removePlayer}
+                        onKick={isMultiplayer ? handleKick : undefined}
+                        onToggleSquad={toggleSquad}
+                        onOpenCalculator={(attackerId, action, unitType) => { if (attackerId) vp.trackVP(attackerId, 'warmonger', 1); openCalculator(attackerId, action, unitType); }}
+                        onUseRevive={useRevive}
+                        onOpenSquadRevive={id => setSquadRevivePlayerId(id)}
+                        onCommanderDied={(p) => tokens.createToken(p, (p.commanderStats?.revives || 0) > 0)}
+                        allPlayers={players}
+                        isCurrentTurn={isThisTurn}
+                        hasActedThisRound={playersWhoActedThisRound.includes(player.id)}
+                        onOpenDestroyModal={(attackerPlayer, attackerItem) => loot.setDestroyModal({ attackerPlayer, attackerItem: attackerItem || null, targetPlayer: null, targetUnitType: null, allPlayers: players })}
+                        onOpenHandOff={(srcPlayer, srcUnitType, item) => loot.openHandOff(srcPlayer, srcUnitType, item)}
+                        getTimersForPlayerUnit={roundTimers.getTimersForPlayerUnit}
+                        getTokenForPlayer={tokens.getTokenForPlayer}
+                        isFocusMode={viewMode === 'current'}
+                        onUseItemOnEnemy={(srcPlayer, item, itemIndex) => { setEnemyItemModal({ sourcePlayer: srcPlayer, item, itemIndex }); setEnemyTargetMode(null); }}
+                        onTrackLastItem={(srcPlayer, item) => setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id })}
+                        onNullifyLastEffect={(playerId) => {
+                          const p = players.find(pl => String(pl.id) === String(playerId));
+                          if (!p) return;
+                          const lastEf = lastItemPlayed?.item?.effect;
+                          const effectTypeToRemove = lastEf ? { poisonVial: 'poison', npcPlague: 'poison', playerPlague: 'poison', stunGrenade: 'stun', attackDebuffItem: 'attackDebuff', defenseDebuffItem: 'defenseDebuff', marked: 'marked', shieldWall: 'shieldWall', counterStrike: 'counterStrike', attackBonus: 'attackBuff', crownsFavor: 'attackBuff', defenseBonus: 'defenseBuff' }[lastEf.type] : null;
+                          const removeEffect = (effects) => { if (effectTypeToRemove) { const idx = [...effects].reverse().findIndex(ef => ef.type === effectTypeToRemove); if (idx !== -1) { const ri = effects.length - 1 - idx; return effects.filter((_, i) => i !== ri); } } return effects.length > 0 ? effects.slice(0, -1) : []; };
+                          updatePlayer(playerId, { commanderStats: { ...p.commanderStats, statusEffects: removeEffect(p.commanderStats.statusEffects || []) }, subUnits: (p.subUnits || []).map(u => ({ ...u, statusEffects: removeEffect(u.statusEffects || []) })) });
+                          addLog('🚫 ' + p.playerName + ' used Nullify — ' + (effectTypeToRemove ? lastItemPlayed.item.name : 'last effect') + ' removed from all units!', 'items');
+                        }}
+                        onUseGlobalItem={(srcPlayer, item, itemIndex) => {
+                          const ef = item.effect;
+                          const consume = () => { const freshSrc = players.find(p => String(p.id) === String(srcPlayer.id)); if (!freshSrc) return; const uses = item.effect?.uses ?? 1; const usesRemaining = item.effect?.usesRemaining ?? uses; if (uses === 0) return; if (usesRemaining <= 1) { updatePlayer(freshSrc.id, { inventory: (freshSrc.inventory || []).filter((_, i) => i !== itemIndex) }); } else { updatePlayer(freshSrc.id, { inventory: (freshSrc.inventory || []).map((it, i) => i === itemIndex ? { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } } : it) }); } };
+                          setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id });
+                          if (ef?.type === 'npcPlague') { const dmgPerRound = ef.value || 2; const duration = ef.duration || 2; setNpcs(prev => prev.map(n => n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), { type: 'poison', value: dmgPerRound, duration, permanent: false, sourcePlayerId: srcPlayer.id }] } : n)); consume(); addLog(`☠️ ${srcPlayer.playerName} unleashed NPC Plague! All active NPCs are poisoned (${dmgPerRound}hp×${duration}r).`, 'items'); }
+                        }}
+                      />
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div style={{ display: players.length === 0 ? 'block' : 'grid', gridTemplateColumns: players.length === 1 ? '1fr' : viewMode === 'current' ? '1fr' : '48% 48%', gap: '1%', padding: '0 0.5%', maxWidth: players.length === 1 ? '50%' : '100%', margin: players.length === 1 ? '0 auto' : '0' }}>
               {players.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '4rem 2rem', color: colors.textFaint }}>
                   <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚔️</div>
@@ -1913,6 +1997,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                 );
               })}
             </div>
+            )
           )}
 
           {isCampaign && activePanel === 'dm' && (
@@ -1971,7 +2056,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
           )}
 
           {isCampaign && activePanel === 'vp' && (
-            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} onUpdateVpStats={vp.setVpStats} onClearTrackers={vp.resetLiveVPTrackers} />
+            <VictoryPanel players={players} vpStats={vp.vpStats} onAwardPoints={vp.awardVPPoints} onDeleteSession={vp.deleteSession} onUpdateVpStats={vp.setVpStats} onClearTrackers={vp.resetLiveVPTrackers} isMobile={isMobile} />
           )}
 
           {isCampaign && activePanel === 'rooms' && (
@@ -2018,6 +2103,22 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             />
             </div>
           )}
+        {/* Settings panel — mobile only */}
+          {isMobile && isCampaign && activePanel === 'settings' && (
+            <div style={{ padding: '1rem 0.5rem', maxWidth: '480px', margin: '0 auto' }}>
+              <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '0.78rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1rem', paddingBottom: '0.4rem', borderBottom: '1px solid rgba(201,169,97,0.2)' }}>Session Controls</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <button onClick={() => vp.setEndSessionModal(true)} style={{ width: '100%', padding: '1rem', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: '10px', color: '#fbbf24', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer', textAlign: 'left' }}>🏆 End Session</button>
+                <button onClick={handleNewSession} style={{ width: '100%', padding: '1rem', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)', borderRadius: '10px', color: '#c4b5fd', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer', textAlign: 'left' }}>🔄 New Session</button>
+                {isMultiplayer && onEndGame && (
+                  <button onClick={() => { if (window.confirm('End Game for all players? Everyone will be returned to the home screen.')) onEndGame(); }} style={{ width: '100%', padding: '1rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '10px', color: '#fca5a5', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer', textAlign: 'left' }}>🚪 End Game</button>
+                )}
+                <button onClick={saveGameToFile} style={{ width: '100%', padding: '1rem', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: '10px', color: '#86efac', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer', textAlign: 'left' }}>💾 Save Game</button>
+                <button onClick={loadGameFromFile} style={{ width: '100%', padding: '1rem', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '10px', color: '#a5b4fc', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer', textAlign: 'left' }}>📂 Load Game</button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
 

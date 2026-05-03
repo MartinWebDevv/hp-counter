@@ -45,6 +45,15 @@ const DMPanel = ({
   currentRound = 1,
 }) => {
   const editingNPC = editingNPCId ? getNPCById(editingNPCId) : null;
+  const [isMobile, setIsMobile] = React.useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768
+  );
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const [squadMode,        setSquadMode]        = React.useState(false);
   const [squadSelected,    setSquadSelected]    = React.useState({}); // { npcId: attackIndex }
   const [search,           setSearch]           = React.useState('');
@@ -101,7 +110,7 @@ const DMPanel = ({
         <button
           onClick={() => openCreator(null)}
           style={{
-            padding: '1rem 2.5rem',
+            padding: isMobile ? '0.7rem 1.25rem' : '1rem 2.5rem',
             background: 'linear-gradient(135deg, #7c1d1d, #6b1a1a)',
             border: '2px solid #ef4444',
             color: '#fecaca',
@@ -109,7 +118,7 @@ const DMPanel = ({
             cursor: 'pointer',
             fontFamily: fonts.body,
             fontWeight: '800',
-            fontSize: '1rem',
+            fontSize: isMobile ? '0.88rem' : '1rem',
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
             boxShadow: '0 8px 24px rgba(239, 68, 68, 0.25)',
@@ -224,11 +233,11 @@ const DMPanel = ({
         <div style={{ position: 'relative' }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: filteredNPCs.length === 1 ? '1fr' : '48% 48%',
+          gridTemplateColumns: isMobile ? '1fr' : (filteredNPCs.length === 1 ? '1fr' : '48% 48%'),
           gap: '1%',
           padding: '0 0.5%',
-          maxWidth: filteredNPCs.length === 1 ? '50%' : '100%',
-          margin: filteredNPCs.length === 1 ? '0 auto' : '0',
+          maxWidth: isMobile ? '100%' : (filteredNPCs.length === 1 ? '50%' : '100%'),
+          margin: (!isMobile && filteredNPCs.length === 1) ? '0 auto' : '0',
           alignItems: 'start',
         }}>
           {filteredNPCs.map(npc => (

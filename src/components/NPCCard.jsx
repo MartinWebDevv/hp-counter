@@ -14,6 +14,7 @@ const NPCCard = ({
   onRemove,
   onHPChange,
   onTriggerPhase,
+  onTriggerEvolution,
   onOpenNPCAttack,
   onSpawnAttack,
   onIncrementAttack,
@@ -28,6 +29,8 @@ const NPCCard = ({
 
   const hpPercent = npc.maxHp > 0 ? (npc.hp / npc.maxHp) * 100 : 0;
   const hasNextPhase = npc.hasPhases && npc.currentPhase < (npc.phases?.length || 0);
+  const hasNextEvolution = npc.hasEvolutions && (npc.evolutions || []).some(e => !e.triggered);
+  const nextEvolution = hasNextEvolution ? (npc.evolutions || []).find(e => !e.triggered) : null;
   const currentPhaseName = npc.currentPhase > 0
     ? (npc.phases[npc.currentPhase - 1]?.label || `Phase ${npc.currentPhase + 1}`)
     : 'Phase 1';
@@ -275,6 +278,23 @@ const NPCCard = ({
           </div>
         ))}
       </div>
+
+      {/* Evolution button — shows when a non-triggered evolution exists */}
+      {hasNextEvolution && (
+        <div style={{ marginBottom: '0.6rem' }}>
+          <button
+            onClick={() => onTriggerEvolution && onTriggerEvolution(npc.id)}
+            style={{
+              width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', cursor: 'pointer',
+              background: 'rgba(251,146,60,0.12)', border: '2px solid rgba(251,146,60,0.5)',
+              color: '#fb923c', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.78rem',
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+            }}
+          >
+            ⚡ Evolve{nextEvolution?.triggerType !== 'manual' ? ` (triggers ≤${nextEvolution?.triggerHP}hp)` : ' (manual)'}
+          </button>
+        </div>
+      )}
 
       {/* HP section */}
       <div style={{ ...insetSection('default'), marginBottom: '0.75rem' }}>

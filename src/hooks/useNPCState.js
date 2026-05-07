@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const NPC_STORAGE_KEY = 'hpCounterNPCs';
 
@@ -16,6 +16,7 @@ export const useNPCState = (addLog, onNPCKilled) => {
     } catch { return []; }
   });
   const [showNPCCreator, setShowNPCCreator] = useState(false);
+  const onEvolveRef = useRef(null); // set by HPCounter to fire evolution modal
   const [editingNPCId, setEditingNPCId] = useState(null);
 
   // Persist NPCs to localStorage whenever they change
@@ -71,6 +72,21 @@ export const useNPCState = (addLog, onNPCKilled) => {
   /**
    * Build a fresh NPC shell for the creator form
    */
+  const blankEvolution = (evoNumber) => ({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    evoNumber,
+    name: '',            // optional new name — defaults to "[name] Ascended"
+    triggerType: 'hp',   // 'hp' | 'manual'
+    triggerHP: 0,        // HP at which evolution triggers
+    newMaxHP: 20,        // HP resets to this on evolution
+    armor: null,         // null = carry over from current form
+    attackBonus: null,
+    walk: '',
+    run: '',
+    attacks: [blankAttack()],
+    triggered: false,    // marks if already used — can only fire once
+  });
+
   const blankNPC = () => ({
     id: generateId(),
     name: '',
@@ -84,6 +100,8 @@ export const useNPCState = (addLog, onNPCKilled) => {
     hasPhases: false,
     phases: [],           // array of phase objects
     currentPhase: 0,      // index into phases array (0 = base)
+    hasEvolutions: false,
+    evolutions: [],       // array of evolution objects
     active: false,        // whether this NPC is in the turn rotation
     isDead: false,
     isFinalBoss: false,   // marks this NPC for Final Boss Kill VP award
@@ -225,6 +243,9 @@ export const useNPCState = (addLog, onNPCKilled) => {
       if (updated.hasPhases && updated.phases.length > 0) {
         updated = checkPhaseTransition(updated);
       }
+      if (updated.hasEvolutions && updated.evolutions?.length > 0) {
+        updated = checkEvolutionTransition(updated, onEvolveRef.current);
+      }
       return updated;
     }));
   };
@@ -286,6 +307,83 @@ export const useNPCState = (addLog, onNPCKilled) => {
     addLog(`🔄 "${npc.name}" entered ${nextPhase.label || `Phase ${nextPhaseIndex + 1}`}!`);
 
     return updated;
+  };
+
+  /**
+   * Check whether the NPC's current HP triggers an evolution.
+   * Evolutions are checked in order. First untriggered one wins.
+   * Returns mutated NPC + fires dramatic modal via callback.
+   */
+  const checkEvolutionTransition = (npc, onEvolve = null) => {
+    if (!npc.hasEvolutions || !npc.evolutions?.length) return npc;
+    const nextEvo = npc.evolutions.find(e => !e.triggered && (e.triggerType || 'hp') === 'hp');
+    if (!nextEvo) return npc;
+    if (npc.hp > nextEvo.triggerHP) return npc;
+
+    const oldName = npc.name;
+    const newName = nextEvo.name?.trim()
+      ? nextEvo.name
+      : `${npc.name} Ascended`;
+    const newMaxHP = parseInt(nextEvo.newMaxHP) || 20;
+    const evoAttacksFilled = nextEvo.attacks?.some(a => a.name?.trim());
+
+    const updated = {
+      ...npc,
+      name:        newName,
+      maxHp:       newMaxHP,
+      hp:          newMaxHP,
+      armor:       nextEvo.armor !== null && nextEvo.armor !== '' ? parseInt(nextEvo.armor) : npc.armor,
+      attackBonus: nextEvo.attackBonus !== null && nextEvo.attackBonus !== '' ? parseInt(nextEvo.attackBonus) : npc.attackBonus,
+      walk:        nextEvo.walk?.trim() ? nextEvo.walk : npc.walk,
+      run:         nextEvo.run?.trim()  ? nextEvo.run  : npc.run,
+      attacks:     evoAttacksFilled ? nextEvo.attacks : npc.attacks,
+      currentPhase: 0, // reset phase on evolution
+      phases:      nextEvo.phases?.length ? nextEvo.phases : [],
+      hasPhases:   !!(nextEvo.phases?.length),
+      evolutions:  npc.evolutions.map(e => e.id === nextEvo.id ? { ...e, triggered: true } : e),
+      evolutionJustTriggered: true,
+    };
+
+    addLog(`⚡ "${oldName}" evolved into "${newName}"! HP reset to ${newMaxHP}/${newMaxHP}!`, 'combat');
+    if (onEvolve) onEvolve({ oldName, newName, newMaxHP });
+    return updated;
+  };
+
+  /**
+   * DM manually triggers next evolution
+   */
+  const triggerNextEvolution = (npcId, onEvolve = null) => {
+    setNpcs(prev => prev.map(n => {
+      if (n.id !== npcId) return n;
+      if (!n.hasEvolutions || !n.evolutions?.length) return n;
+      const nextEvo = n.evolutions.find(e => !e.triggered);
+      if (!nextEvo) return n;
+
+      const oldName = n.name;
+      const newName = nextEvo.name?.trim() ? nextEvo.name : `${n.name} Ascended`;
+      const newMaxHP = parseInt(nextEvo.newMaxHP) || 20;
+      const evoAttacksFilled = nextEvo.attacks?.some(a => a.name?.trim());
+
+      const updated = {
+        ...n,
+        name:        newName,
+        maxHp:       newMaxHP,
+        hp:          newMaxHP,
+        armor:       nextEvo.armor !== null && nextEvo.armor !== '' ? parseInt(nextEvo.armor) : n.armor,
+        attackBonus: nextEvo.attackBonus !== null && nextEvo.attackBonus !== '' ? parseInt(nextEvo.attackBonus) : n.attackBonus,
+        walk:        nextEvo.walk?.trim() ? nextEvo.walk : n.walk,
+        run:         nextEvo.run?.trim()  ? nextEvo.run  : n.run,
+        attacks:     evoAttacksFilled ? nextEvo.attacks : n.attacks,
+        currentPhase: 0,
+        phases:      nextEvo.phases?.length ? nextEvo.phases : [],
+        hasPhases:   !!(nextEvo.phases?.length),
+        evolutions:  n.evolutions.map(e => e.id === nextEvo.id ? { ...e, triggered: true } : e),
+      };
+
+      addLog(`⚡ DM triggered: "${oldName}" evolved into "${newName}"! HP reset to ${newMaxHP}/${newMaxHP}!`, 'combat');
+      if (onEvolve) onEvolve({ oldName, newName, newMaxHP });
+      return updated;
+    }));
   };
 
   /**
@@ -356,6 +454,8 @@ export const useNPCState = (addLog, onNPCKilled) => {
     blankNPC,
     blankAttack,
     blankPhase,
+    blankEvolution,
+    triggerNextEvolution,
     openCreator,
     closeCreator,
     saveNPC,
@@ -368,5 +468,6 @@ export const useNPCState = (addLog, onNPCKilled) => {
     triggerNextPhase,
     getNPCById,
     resetAllNPCs,
+    setOnEvolve: (fn) => { onEvolveRef.current = fn; },
   };
 };

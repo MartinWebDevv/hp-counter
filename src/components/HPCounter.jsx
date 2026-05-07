@@ -37,6 +37,36 @@ import { subscribePlayerLeft, subscribePlayerRejoin, markPlayerLeft } from '../s
 
 
 
+// ── Dramatic modal for phase changes and evolutions ──────────────────────────
+const PhaseEvolutionModal = ({ type, data, onClose }) => {
+  React.useEffect(() => {
+    const tid = setTimeout(onClose, 2000);
+    return () => clearTimeout(tid);
+  }, []);
+  const isEvo = type === 'evolution';
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9998 + (isEvo ? 1 : 0), background: isEvo ? 'radial-gradient(ellipse at center, rgba(120,53,15,0.97) 0%, rgba(0,0,0,0.99) 100%)' : 'radial-gradient(ellipse at center, rgba(76,29,149,0.97) 0%, rgba(0,0,0,0.99) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <button onClick={onClose} style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: '36px', height: '36px', color: '#fff', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+      {isEvo ? (
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <div style={{ fontSize: '3.5rem', marginBottom: '0.75rem' }}>⚡</div>
+          <div style={{ fontSize: '1.8rem', fontWeight: '900', fontFamily: '"Cinzel",Georgia,serif', background: 'linear-gradient(135deg,#fb923c,#f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>EVOLUTION</div>
+          <div style={{ color: '#fdba74', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.25rem' }}>{data.oldName} →</div>
+          <div style={{ color: '#fde68a', fontSize: '1.5rem', fontWeight: '900', marginBottom: '0.4rem' }}>{data.newName}</div>
+          <div style={{ color: '#fb923c', fontSize: '0.85rem', fontWeight: '700' }}>HP reset to {data.newMaxHP}/{data.newMaxHP}</div>
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <div style={{ fontSize: '3.5rem', marginBottom: '0.75rem' }}>🔄</div>
+          <div style={{ fontSize: '1.8rem', fontWeight: '900', fontFamily: '"Cinzel",Georgia,serif', color: '#a78bfa', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>PHASE SHIFT</div>
+          <div style={{ color: '#c4b5fd', fontSize: '1.1rem', fontWeight: '700', marginBottom: '0.3rem' }}>{data.npcName}</div>
+          <div style={{ color: '#e9d5ff', fontSize: '1.4rem', fontWeight: '900' }}>{data.phaseLabel}</div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, initialGameState = null, onEndGame = null }) => {
   // ── Round timers (init first so callback is ready for useGameState) ────────
   const roundTimers = useRoundTimers();
@@ -138,7 +168,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     blankNPC, blankAttack, blankPhase,
     openCreator, closeCreator, saveNPC, removeNPC, duplicateNPC,
     activateNPC, deactivateNPC,
-    applyDamageToNPC, setNPCHP, triggerNextPhase, getNPCById, setNpcs, resetAllNPCs,
+    applyDamageToNPC, setNPCHP, triggerNextPhase, triggerNextEvolution, getNPCById, setNpcs, resetAllNPCs,
+    blankEvolution, setOnEvolve,
   } = useNPCState(addLog, (killedNPC) => {
     const attackingPlayer = players.find(p => String(p.id) === String(lastAttackerIdRef.current)) || null;
     const hasLoot = killedNPC.lootMode === 'weighted'
@@ -1358,7 +1389,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const [spawnModal, setSpawnModal] = React.useState(null);
   const [guyConfirmModal, setGuyConfirmModal] = React.useState(null); // { req, player } — The Guy DM confirm
   const [guyTargetUnit, setGuyTargetUnit] = React.useState(null); // { unitKey, label } — unit picked in Guy modal
-  const [guyCloseCallModal, setGuyCloseCallModal] = React.useState(null); // { playerName, damage } — The Guy absorbed hit
+  const [guyCloseCallModal, setGuyCloseCallModal] = React.useState(null);
+  const [phaseModal,         setPhaseModal]         = React.useState(null); // { npcName, phaseLabel }
+  const [evolutionModal,     setEvolutionModal]     = React.useState(null); // { oldName, newName, newMaxHP } // { playerName, damage } — The Guy absorbed hit
   const [enemyItemModal, setEnemyItemModal] = React.useState(null); // { sourcePlayer, item, itemIndex }
   const [lastItemPlayed, setLastItemPlayed] = React.useState(null); // { item, sourcePlayerId }
   const [enemyTargetMode, setEnemyTargetMode] = React.useState(null); // 'npc' | 'player' // { attack } — confirm before creating NPC
@@ -1381,6 +1414,21 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const [draggedIndex,     setDraggedIndex]     = React.useState(null);
 
   const isCampaign = gameMode === 'campaign';
+
+  // ── Wire evolution modal callback ────────────────────────────────────────
+  React.useEffect(() => {
+    if (setOnEvolve) setOnEvolve((data) => setEvolutionModal(data));
+  }, [setOnEvolve]);
+
+  // ── Wire phase modal callback ─────────────────────────────────────────────
+  // Phase dramatic moment fires when phaseJustTriggered is set on an NPC
+  React.useEffect(() => {
+    const triggered = npcs.find(n => n.phaseJustTriggered);
+    if (!triggered) return;
+    const phase = triggered.phases?.[triggered.currentPhase - 1];
+    setPhaseModal({ npcName: triggered.name, phaseLabel: phase?.label || `Phase ${triggered.currentPhase + 1}` });
+    setNpcs(prev => prev.map(n => n.id === triggered.id ? { ...n, phaseJustTriggered: false } : n));
+  }, [npcs]);
 
   // ── Mobile detection (GM side) ────────────────────────────────────────────
   const [isMobile, setIsMobile] = React.useState(
@@ -2004,13 +2052,14 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             <DMPanel
               npcs={npcs} activeNPCs={activeNPCs} inactiveNPCs={inactiveNPCs} deadNPCs={deadNPCs}
               showNPCCreator={showNPCCreator} editingNPCId={editingNPCId}
-              blankNPC={blankNPC} blankAttack={blankAttack} blankPhase={blankPhase}
+              blankNPC={blankNPC} blankAttack={blankAttack} blankPhase={blankPhase} blankEvolution={blankEvolution}
               openCreator={openCreator} closeCreator={closeCreator}
               saveNPC={saveNPC} removeNPC={removeNPC}
               activateNPC={campaign.handleActivateNPC}
               deactivateNPC={deactivateNPC}
               onHPChange={setNPCHP}
               onTriggerPhase={triggerNextPhase}
+              onTriggerEvolution={triggerNextEvolution}
               currentRound={currentRound}
               onOpenNPCAttack={campaign.openNPCAttack}
               onOpenNPCSquadAttack={campaign.openNPCSquadAttack}
@@ -2121,6 +2170,24 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
         </div>
       </div>
+
+      {/* ── Phase dramatic modal ── */}
+      {phaseModal && (
+        <PhaseEvolutionModal
+          type="phase"
+          data={phaseModal}
+          onClose={() => setPhaseModal(null)}
+        />
+      )}
+
+      {/* ── Evolution dramatic modal ── */}
+      {evolutionModal && (
+        <PhaseEvolutionModal
+          type="evolution"
+          data={evolutionModal}
+          onClose={() => setEvolutionModal(null)}
+        />
+      )}
 
       {/* ── Modals ── */}
 

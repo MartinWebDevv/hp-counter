@@ -20,12 +20,14 @@ const TIER_COLORS_NPC = {
  * Full NPC stat block builder — name, HP, armor, move, attacks, phases.
  * Used by the DM to create/edit NPCs on the fly in Campaign mode.
  */
-const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, lootPool = [] }) => {
+const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, blankEvolution, lootPool = [] }) => {
   const [npc, setNpc] = useState(() => ({
     ...initialNPC,
     attacks: initialNPC.attacks?.length ? initialNPC.attacks : [blankAttack()],
     phases: initialNPC.phases || [],
     hasPhases: initialNPC.hasPhases || false,
+    evolutions: initialNPC.evolutions || [],
+    hasEvolutions: initialNPC.hasEvolutions || false,
     lootTable: initialNPC.lootTable || [],
     lootMode: initialNPC.lootMode || 'preloaded',   // 'preloaded' | 'weighted'
     lootItemCount: initialNPC.lootItemCount || 1,
@@ -247,8 +249,52 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
           buffEffect: a.buffEffect || null,
         })),
       })) : [],
+      hasEvolutions: npc.hasEvolutions,
+      evolutions: npc.hasEvolutions ? npc.evolutions.map(e => ({
+        ...e,
+        triggerType: e.triggerType || 'hp',
+        triggerHP: (e.triggerType || 'hp') === 'manual' ? -1 : (parseInt(e.triggerHP) || 0),
+        newMaxHP: parseInt(e.newMaxHP) || 20,
+        armor: e.armor !== '' && e.armor !== null ? parseInt(e.armor) : null,
+        attackBonus: e.attackBonus !== '' && e.attackBonus !== null ? parseInt(e.attackBonus) : null,
+        triggered: false,
+        attacks: (e.attacks || []).map(a => ({
+          ...a,
+          attackType: a.attackType || 'attack',
+          numRolls: (a.attackType || 'attack') === 'attack' ? (parseInt(a.numRolls) || 1) : 0,
+          spawnText: a.spawnText || '',
+          spawnDieType: a.spawnDieType || '',
+          spawnNumRolls: parseInt(a.spawnNumRolls) || 1,
+          spawnPresets: (a.spawnPresets || []).map(p => ({
+            ...p,
+            attacks: (p.attacks || []).map(m => ({
+              name: m.name || '', range: m.range || '',
+              dieType: m.dieType || 'd20', numRolls: parseInt(m.numRolls) || 1, attackType: 'attack',
+            })),
+          })),
+          description: a.description || '',
+          attackEffect: a.attackEffect || null,
+          buffEffect: a.buffEffect || null,
+        })),
+      })) : [],
     });
   };
+
+  // ── Evolution handlers ───────────────────────────────────────────────────
+  const addEvolution = () => {
+    set('evolutions', [...npc.evolutions, blankEvolution ? blankEvolution(npc.evolutions.length + 1) : {
+      id: Date.now().toString(36), evoNumber: npc.evolutions.length + 1,
+      name: '', triggerType: 'hp', triggerHP: 0, newMaxHP: 20,
+      armor: null, attackBonus: null, walk: '', run: '',
+      attacks: [{ id: Date.now().toString(36), name: '', attackType: 'attack', dieType: 'd20', numRolls: 1, range: '', description: '', attackEffect: null, buffEffect: null, spawnText: '', spawnDieType: '', spawnNumRolls: 1, spawnPresets: [] }],
+      triggered: false,
+    }]);
+  };
+  const removeEvolution = (ei) => set('evolutions', npc.evolutions.filter((_, i) => i !== ei));
+  const setEvoField = (ei, field, value) => set('evolutions', npc.evolutions.map((e, i) => i === ei ? { ...e, [field]: value } : e));
+  const addEvoAttack = (ei) => set('evolutions', npc.evolutions.map((e, i) => i === ei ? { ...e, attacks: [...e.attacks, { id: Date.now().toString(36), name: '', attackType: 'attack', dieType: 'd20', numRolls: 1, range: '', description: '', attackEffect: null, buffEffect: null, spawnText: '', spawnDieType: '', spawnNumRolls: 1, spawnPresets: [] }] } : e));
+  const removeEvoAttack = (ei, ai) => set('evolutions', npc.evolutions.map((e, i) => i === ei ? { ...e, attacks: e.attacks.filter((_, j) => j !== ai) } : e));
+  const setEvoAttack = (ei, ai, field, value) => set('evolutions', npc.evolutions.map((e, i) => i === ei ? { ...e, attacks: e.attacks.map((a, j) => j === ai ? { ...a, [field]: value } : a) } : e));
 
   // ── Shared input style ───────────────────────────────────────────────────
 
@@ -494,6 +540,45 @@ const NPCCreator = ({ initialNPC, onSave, onClose, blankAttack, blankPhase, loot
 
               <button onClick={addPhase} style={addBtnStyle}>
                 + Add Phase {npc.phases.length + 2}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* ── Evolutions Toggle ── */}
+        <div style={{ ...sectionStyle, borderColor: npc.hasEvolutions ? 'rgba(251,146,60,0.5)' : 'rgba(201,169,97,0.2)', marginBottom: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: npc.hasEvolutions ? '1rem' : 0 }}>
+            <div style={{ ...sectionTitleStyle, color: npc.hasEvolutions ? '#fb923c' : colors.gold }}>⚡ Evolutions</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <span style={{ color: colors.textMuted, fontSize: '0.8rem' }}>Does this NPC evolve?</span>
+              <div onClick={() => set('hasEvolutions', !npc.hasEvolutions)} style={{ width: '44px', height: '24px', borderRadius: '12px', background: npc.hasEvolutions ? '#ea580c' : colors.textDisabled, border: npc.hasEvolutions ? '2px solid #fb923c' : '2px solid #4b5563', position: 'relative', cursor: 'pointer', transition: 'all 0.2s' }}>
+                <div style={{ position: 'absolute', top: '2px', left: npc.hasEvolutions ? '20px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: npc.hasEvolutions ? '#ffedd5' : colors.textSecondary, transition: 'left 0.2s' }} />
+              </div>
+            </label>
+          </div>
+          {npc.hasEvolutions && (
+            <>
+              {npc.evolutions.length === 0 && (
+                <p style={{ color: colors.textMuted, fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+                  No evolutions yet. Add one below — Evolution 1 is the first transformation.
+                </p>
+              )}
+              {npc.evolutions.map((evo, ei) => (
+                <EvolutionSection
+                  key={evo.id}
+                  evo={evo}
+                  evoIndex={ei}
+                  onFieldChange={(field, value) => setEvoField(ei, field, value)}
+                  onAddAttack={() => addEvoAttack(ei)}
+                  onRemoveAttack={(ai) => removeEvoAttack(ei, ai)}
+                  onAttackChange={(ai, field, value) => setEvoAttack(ei, ai, field, value)}
+                  onRemoveEvolution={() => removeEvolution(ei)}
+                  inputStyle={inputStyle}
+                  labelStyle={labelStyle}
+                />
+              ))}
+              <button onClick={addEvolution} style={{ ...addBtnStyle, borderColor: '#fb923c', color: '#fdba74', background: 'rgba(251,146,60,0.1)' }}>
+                + Add Evolution {npc.evolutions.length + 1}
               </button>
             </>
           )}
@@ -1102,6 +1187,84 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
     </div>
   );
 };
+
+// ── EvolutionSection sub-component ───────────────────────────────────────────
+
+const EvolutionSection = ({
+  evo, evoIndex,
+  onFieldChange, onAddAttack, onRemoveAttack, onAttackChange, onRemoveEvolution,
+  inputStyle, labelStyle,
+}) => (
+  <div style={{ background: 'rgba(251,146,60,0.08)', border: '2px solid rgba(251,146,60,0.35)', borderRadius: '10px', padding: '1rem', marginBottom: '0.75rem' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+      <div style={{ color: '#fb923c', fontWeight: '800', fontSize: '0.9rem', letterSpacing: '0.08em' }}>⚡ EVOLUTION {evoIndex + 1}</div>
+      <button onClick={onRemoveEvolution} style={removeBtnStyle}>✕ Remove</button>
+    </div>
+
+    {/* New name */}
+    <div style={{ marginBottom: '0.75rem' }}>
+      <label style={labelStyle}>New Name (optional — defaults to "[Name] Ascended")</label>
+      <input style={inputStyle} value={evo.name} onChange={e => onFieldChange('name', e.target.value)} placeholder="e.g. Mordax Ascended" />
+    </div>
+
+    {/* Trigger type */}
+    <div style={{ marginBottom: '0.75rem' }}>
+      <label style={labelStyle}>Trigger Type</label>
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        {[{ value: 'hp', label: '❤️ HP Threshold' }, { value: 'manual', label: '🎯 Manual' }].map(opt => (
+          <div key={opt.value} onClick={() => onFieldChange('triggerType', opt.value)} style={{ flex: 1, textAlign: 'center', padding: '0.45rem', background: (evo.triggerType || 'hp') === opt.value ? 'rgba(251,146,60,0.15)' : 'rgba(0,0,0,0.3)', border: `2px solid ${(evo.triggerType || 'hp') === opt.value ? '#fb923c' : 'rgba(90,74,58,0.3)'}`, borderRadius: '6px', cursor: 'pointer', color: (evo.triggerType || 'hp') === opt.value ? '#fb923c' : colors.textFaint, fontWeight: '800', fontSize: '0.78rem' }}>{opt.label}</div>
+        ))}
+      </div>
+    </div>
+
+    {/* HP threshold */}
+    {(evo.triggerType || 'hp') === 'hp' && (
+      <div style={{ marginBottom: '0.75rem' }}>
+        <label style={labelStyle}>Trigger at HP ≤</label>
+        <input style={inputStyle} type="number" min="0" value={evo.triggerHP} onChange={e => onFieldChange('triggerHP', e.target.value)} placeholder="e.g. 10" />
+        <span style={{ color: colors.textMuted, fontSize: '0.7rem' }}>Evolution fires when NPC reaches this HP or lower</span>
+      </div>
+    )}
+
+    {/* New stats */}
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+      <div>
+        <label style={{ ...labelStyle, color: '#fb923c' }}>New Max HP</label>
+        <input style={{ ...inputStyle, borderColor: '#fb923c60' }} type="number" min="1" value={evo.newMaxHP} onChange={e => onFieldChange('newMaxHP', e.target.value)} placeholder="20" />
+      </div>
+      <div>
+        <label style={labelStyle}>Armor Floor</label>
+        <input style={inputStyle} type="number" min="0" value={evo.armor ?? ''} onChange={e => onFieldChange('armor', e.target.value)} placeholder="Inherits" />
+      </div>
+      <div>
+        <label style={labelStyle}>Walk</label>
+        <input style={inputStyle} value={evo.walk} onChange={e => onFieldChange('walk', e.target.value)} placeholder="Inherits" />
+      </div>
+      <div>
+        <label style={labelStyle}>Run</label>
+        <input style={inputStyle} value={evo.run} onChange={e => onFieldChange('run', e.target.value)} placeholder="Inherits" />
+      </div>
+    </div>
+
+    {/* New attacks */}
+    <div style={{ marginBottom: '0.5rem' }}>
+      <label style={{ ...labelStyle, marginBottom: '0.5rem' }}>Attacks in evolved form</label>
+      {(evo.attacks || []).map((attack, ai) => (
+        <AttackRow
+          key={attack.id || ai}
+          attack={attack}
+          index={ai}
+          canRemove={(evo.attacks || []).length > 1}
+          onChange={(field, value) => onAttackChange(ai, field, value)}
+          onRemove={() => onRemoveAttack(ai)}
+          inputStyle={inputStyle}
+          labelStyle={labelStyle}
+        />
+      ))}
+      <button onClick={onAddAttack} style={{ ...addBtnStyle, marginTop: '0.25rem' }}>+ Add Attack</button>
+    </div>
+  </div>
+);
 
 // ── PhaseSection sub-component ───────────────────────────────────────────────
 

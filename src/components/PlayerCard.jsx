@@ -14,6 +14,15 @@ const sortItems = (items) => [...(items || [])].sort((a, b) => {
   return (TIER_ORDER[a.tier] ?? 0) - (TIER_ORDER[b.tier] ?? 0);
 });
 
+const TAG_STYLES = {
+  reactive:  { color: '#a78bfa', label: 'Reactive',   icon: '⚡', desc: 'Use any time' },
+  combat:    { color: '#f87171', label: 'Combat',     icon: '🗡️', desc: 'Use inside calculator' },
+  prebattle: { color: '#38bdf8', label: 'Pre-Battle', icon: '🌅', desc: 'Use before battle' },
+  quest:     { color: '#fde68a', label: 'Quest',      icon: '🗝️', desc: 'Carried only' },
+};
+const getItemTag = (item) =>
+  TAG_STYLES[item.tag] || (item.isQuestItem ? TAG_STYLES.quest : TAG_STYLES.reactive);
+
 const PlayerCard = ({
   player,
   onUpdate,
@@ -35,6 +44,7 @@ const PlayerCard = ({
   onNullifyLastEffect,
   onTrackLastItem,
   onUseGlobalItem,
+  isDM = false,
 }) => {
   const [showSquad, setShowSquad] = React.useState(true);
   const [showSetup, setShowSetup] = React.useState(false);
@@ -43,9 +53,9 @@ const PlayerCard = ({
   const [healTargetItem, setHealTargetItem] = React.useState(null);
   const [maxHpTargetItem, setMaxHpTargetItem] = React.useState(null);
   const [extraSlotItem, setExtraSlotItem] = React.useState(null);
-  const [cleanseItem, setCleanseItem] = React.useState(null);       // { item, itemIndex, fullCleanse }
-  const [resurrectItem, setResurrectItem] = React.useState(null);   // { item, itemIndex }
-  const [shieldWallItem, setShieldWallItem] = React.useState(null); // { item, itemIndex }
+  const [cleanseItem, setCleanseItem] = React.useState(null);       // { item, fullCleanse }
+  const [resurrectItem, setResurrectItem] = React.useState(null);   // { item }
+  const [shieldWallItem, setShieldWallItem] = React.useState(null); // { item }
 
   const reviveQueue = player.reviveQueue || [];
   const [deathLootModal, setDeathLootModal] = React.useState(null);
@@ -657,10 +667,19 @@ const PlayerCard = ({
               </div>
             ));
           })()}
-          {sortItems(player.inventory || []).map((item, i, arr) => {
+          {sortItems(player.inventory || []).map((item, _i, arr) => {
             const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
+            const tag = getItemTag(item);
             const usesLeft = item.effect?.uses === 0 ? Infinity : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
             const canUse = !item.effect || item.effect.type === 'manual' || usesLeft > 0;
+
+            // Combat items are calculator-only — never show USE button on the card
+            // Quest items — no USE button ever
+            // Pre-battle items — only usable before game starts (DM can always use)
+            const isCombatOnly = item.tag === 'combat' || ['rerollAttack','rerollDefense','forceAttackReroll','forceDefenseReroll','diceSwap','closecall'].includes(item.effect?.type);
+            const isQuestTag   = item.isQuestItem || item.tag === 'quest';
+            const isPreBattle  = item.tag === 'prebattle';
+
             const isAuto = ['heal', 'maxHP', 'attackBonus', 'defenseBonus'].includes(item.effect?.type);
             const isManual = item.effect?.type === 'manual';
             const isDestroyItem = item.effect?.type === 'destroyItem';
@@ -669,11 +688,16 @@ const PlayerCard = ({
             const isSelfTarget = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'].includes(item.effect?.type);
             const isEnemyTarget = ['poisonVial','stunGrenade','attackDebuffItem','defenseDebuffItem','marked'].includes(item.effect?.type);
             const isGlobal = ['npcPlague','playerPlague','crownsFavor','nullify','mirror'].includes(item.effect?.type);
-            const showUseButton = !item.isQuestItem && (isAuto || isManual || isDestroyItem || isExtraSlot || isSelfTarget || isEnemyTarget || isGlobal);
 
-            const handleUseKey = () => {
-              onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
-            };
+            const hasUseLogic = isAuto || isManual || isDestroyItem || isExtraSlot || isSelfTarget || isEnemyTarget || isGlobal || item.effect?.type === 'theGuy';
+            // DM can always use anything. Players respect tag gating.
+            const showUseButton = !isQuestTag && !isCombatOnly && hasUseLogic && (isDM || !isPreBattle);
+
+            // ── All inventory mutations use item.id — never array index ──
+            const removeItem = () =>
+              onUpdate(player.id, { inventory: (player.inventory || []).filter(it => it.id !== item.id) });
+
+            const handleUseKey = () => removeItem();
 
             const handleUse = () => {
               if (!canUse) return;
@@ -681,37 +705,36 @@ const PlayerCard = ({
               const newUsesRemaining = !ef || ef.uses === 0 ? Infinity : usesLeft - 1;
               const consumed = newUsesRemaining <= 0;
               const newInventory = (player.inventory || [])
-                .map((it, idx) => idx !== i ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
-                .filter((it, idx) => idx !== i ? true : !consumed);
+                .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
+                .filter(it => it.id !== item.id ? true : !consumed);
 
-              if (ef?.type === 'heal') { setHealTargetItem({ item, itemIndex: i }); return; }
-              if (ef?.type === 'maxHP') { setMaxHpTargetItem({ item, itemIndex: i }); return; }
+              if (ef?.type === 'heal') { setHealTargetItem({ item }); return; }
+              if (ef?.type === 'maxHP') { setMaxHpTargetItem({ item }); return; }
               if (ef?.type === 'attackBonus' || ef?.type === 'defenseBonus') {
                 const bonusKey = ef.type === 'attackBonus' ? 'pendingAttackBonus' : 'pendingDefenseBonus';
                 onUpdate(player.id, { [bonusKey]: (player[bonusKey] || 0) + ef.value, inventory: newInventory });
               } else if (ef?.type === 'extraSlot') {
-                setExtraSlotItem({ item, itemIndex: i });
+                setExtraSlotItem({ item });
                 return;
               } else if (ef?.type === 'cleanse' || ef?.type === 'fullCleanse') {
-                setCleanseItem({ item, itemIndex: i, fullCleanse: ef.type === 'fullCleanse' });
+                setCleanseItem({ item, fullCleanse: ef.type === 'fullCleanse' });
                 return;
               } else if (ef?.type === 'resurrect') {
-                setResurrectItem({ item, itemIndex: i });
+                setResurrectItem({ item });
                 return;
               } else if (ef?.type === 'shieldWall' || ef?.type === 'counterStrike') {
                 if (onTrackLastItem) onTrackLastItem(player, item);
-                setShieldWallItem({ item, itemIndex: i });
+                setShieldWallItem({ item });
                 return;
               } else if (ef?.type === 'poisonVial' || ef?.type === 'stunGrenade' || ef?.type === 'attackDebuffItem' || ef?.type === 'defenseDebuffItem' || ef?.type === 'marked') {
                 if (onTrackLastItem) onTrackLastItem(player, item);
-                if (onUseItemOnEnemy) { onUseItemOnEnemy(player, item, i); return; }
+                if (onUseItemOnEnemy) { onUseItemOnEnemy(player, item); return; }
               } else if (ef?.type === 'nullify') {
                 if (onNullifyLastEffect) { onNullifyLastEffect(player.id); }
-                const newInventory = (player.inventory || []).filter((_, idx) => idx !== i);
-                onUpdate(player.id, { inventory: newInventory });
+                onUpdate(player.id, { inventory: (player.inventory || []).filter(it => it.id !== item.id) });
                 return;
               } else if (ef?.type === 'npcPlague' || ef?.type === 'playerPlague' || ef?.type === 'crownsFavor' || ef?.type === 'mirror') {
-                if (onUseGlobalItem) { onUseGlobalItem(player, item, i); return; }
+                if (onUseGlobalItem) { onUseGlobalItem(player, item); return; }
               } else if (ef?.type === 'destroyItem') {
                 if (onOpenDestroyModal) onOpenDestroyModal(player);
                 return;
@@ -721,13 +744,18 @@ const PlayerCard = ({
             };
 
             return (
-              <div key={i} style={{
+              <div key={item.id} style={{
                 display: 'flex', alignItems: 'center', gap: '0.6rem',
                 padding: '0.55rem 0.85rem',
                 borderLeft: `3px solid ${tc.text}`,
-                borderBottom: i < arr.length - 1 ? `1px solid rgba(201,169,97,0.08)` : 'none',
+                borderBottom: _i < arr.length - 1 ? `1px solid rgba(201,169,97,0.08)` : 'none',
                 opacity: canUse ? 1 : 0.4,
               }}>
+                {/* Tag dot */}
+                <span title={`${tag.label} — ${tag.desc}`} style={{
+                  width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
+                  background: tag.color, boxShadow: `0 0 4px ${tag.color}88`,
+                }} />
                 <span style={{ fontSize: '0.95rem', flexShrink: 0 }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: tc.text, fontWeight: '800', fontSize: '0.82rem', marginBottom: '0.08rem' }}>{item.name}</div>
@@ -746,6 +774,8 @@ const PlayerCard = ({
                           return item.heldBy;
                         })()}
                     {item.effect?.uses !== 0 && usesLeft !== Infinity && ` · ${usesLeft} use${usesLeft !== 1 ? 's' : ''} left`}
+                    {isCombatOnly && !isQuestTag && <span style={{ color: tag.color, marginLeft: '0.35rem' }}>· {tag.icon} calc only</span>}
+                    {isPreBattle && !isDM && <span style={{ color: tag.color, marginLeft: '0.35rem' }}>· {tag.icon} pre-battle only</span>}
                   </div>
                 </div>
                 {item.isQuestItem && <span style={pill('#fde68a', 'rgba(234,179,8,0.1)', 'rgba(234,179,8,0.35)')}>QUEST</span>}
@@ -757,13 +787,21 @@ const PlayerCard = ({
                   {isKey && (
                     <button onClick={handleUseKey} style={{ ...pill(colors.amber, colors.amberSubtle, colors.amberBorder), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🔑 USE</button>
                   )}
-                  {!item.isQuestItem && onOpenHandOff && (
+                  {onOpenHandOff && (
                     <button onClick={() => onOpenHandOff(player, item.heldBy, item)} style={{ ...pill(colors.textMuted, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.35)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🤝 PASS</button>
                   )}
-                  {!item.isQuestItem && (
+                  {/* Trash — DM only, non-quest items */}
+                  {isDM && !item.isQuestItem && (
                     <button onClick={() => {
                       if (!window.confirm(`Drop "${item.name}"?`)) return;
-                      onUpdate(player.id, { inventory: (player.inventory || []).filter((_, idx) => idx !== i) });
+                      removeItem();
+                    }} style={{ ...pill('#f87171', 'rgba(239,68,68,0.08)', 'rgba(239,68,68,0.3)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🗑</button>
+                  )}
+                  {/* Trash — DM only, quest items */}
+                  {isDM && item.isQuestItem && (
+                    <button onClick={() => {
+                      if (!window.confirm(`Remove quest item "${item.name}"?`)) return;
+                      removeItem();
                     }} style={{ ...pill('#f87171', 'rgba(239,68,68,0.08)', 'rgba(239,68,68,0.3)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🗑</button>
                   )}
                 </div>
@@ -858,7 +896,7 @@ const PlayerCard = ({
 
       {/* ── Max HP Target Modal ── */}
       {maxHpTargetItem && (() => {
-        const { item, itemIndex } = maxHpTargetItem;
+        const { item } = maxHpTargetItem;
         const ef = item.effect;
         const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
         const usesLeft = ef.uses === 0 ? Infinity : (ef.usesRemaining ?? ef.uses ?? 1);
@@ -867,8 +905,8 @@ const PlayerCard = ({
 
         const applyMaxHPToUnit = (unitKey) => {
           const newInventory = (player.inventory || [])
-            .map((it, idx) => idx !== itemIndex ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
-            .filter((it, idx) => idx !== itemIndex ? true : !consumed);
+            .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
+            .filter(it => it.id !== item.id ? true : !consumed);
           if (unitKey === 'commander') {
             const cs = player.commanderStats;
             onUpdate(player.id, { commanderStats: { ...cs, maxHp: cs.maxHp + ef.value, hp: cs.hp + ef.value }, inventory: newInventory });
@@ -893,12 +931,12 @@ const PlayerCard = ({
 
       {/* ── Extra Slot Unit Picker ── */}
       {extraSlotItem && (() => {
-        const { item, itemIndex } = extraSlotItem;
+        const { item } = extraSlotItem;
         const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
 
         const applyExtraSlot = (unitKey) => {
           // Remove the item from inventory (consumed)
-          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          const newInventory = (player.inventory || []).filter(it => it.id !== item.id);
           // Increment bonusSlots on the chosen unit
           let updates = { inventory: newInventory };
           if (unitKey === 'commander') {
@@ -928,11 +966,11 @@ const PlayerCard = ({
 
       {/* ── Cleanse / Full Cleanse Modal ── */}
       {cleanseItem && (() => {
-        const { item, itemIndex, fullCleanse } = cleanseItem;
+        const { item, fullCleanse } = cleanseItem;
         const tc = tierColors[item.tier] || tierColors.Common;
 
         const applyCleanseToUnit = (unitKey) => {
-          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          const newInventory = (player.inventory || []).filter(it => it.id !== item.id);
           if (unitKey === 'commander') {
             const cs = player.commanderStats;
             const newEffects = fullCleanse ? [] : (cs.statusEffects || []).slice(1);
@@ -959,13 +997,13 @@ const PlayerCard = ({
 
       {/* ── Shield Wall / Counter Strike Modal ── */}
       {shieldWallItem && (() => {
-        const { item, itemIndex } = shieldWallItem;
+        const { item } = shieldWallItem;
         const tc = tierColors[item.tier] || tierColors.Common;
         const isCounter = item.effect?.type === 'counterStrike';
         const effectType = isCounter ? 'counterStrike' : 'shieldWall';
 
         const applyToUnit = (unitKey) => {
-          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          const newInventory = (player.inventory || []).filter(it => it.id !== item.id);
           const entry = { type: effectType, duration: 1, permanent: false };
           if (unitKey === 'commander') {
             const cs = player.commanderStats;
@@ -994,11 +1032,11 @@ const PlayerCard = ({
 
       {/* ── Resurrect Modal ── */}
       {resurrectItem && (() => {
-        const { item, itemIndex } = resurrectItem;
+        const { item } = resurrectItem;
         const tc = tierColors[item.tier] || tierColors.Common;
 
         const applyResurrect = (unitKey) => {
-          const newInventory = (player.inventory || []).filter((_, idx) => idx !== itemIndex);
+          const newInventory = (player.inventory || []).filter(it => it.id !== item.id);
           if (unitKey === 'commander') {
             const cs = player.commanderStats;
             onUpdate(player.id, { inventory: newInventory, commanderStats: { ...cs, hp: 5, isDead: false } });
@@ -1032,7 +1070,7 @@ const PlayerCard = ({
 
       {/* ── Heal Target Modal ── */}
       {healTargetItem && (() => {
-        const { item, itemIndex } = healTargetItem;
+        const { item } = healTargetItem;
         const ef = item.effect;
         const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
         const usesLeft = ef.uses === 0 ? Infinity : (ef.usesRemaining ?? ef.uses ?? 1);
@@ -1041,8 +1079,8 @@ const PlayerCard = ({
 
         const applyHealToUnit = (unitKey) => {
           const newInventory = (player.inventory || [])
-            .map((it, idx) => idx !== itemIndex ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
-            .filter((it, idx) => idx !== itemIndex ? true : !consumed);
+            .map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: newUsesRemaining } })
+            .filter(it => it.id !== item.id ? true : !consumed);
           if (unitKey === 'commander') {
             const cs = player.commanderStats;
             onUpdate(player.id, { commanderStats: { ...cs, hp: Math.min(cs.maxHp, cs.hp + ef.value) }, inventory: newInventory });

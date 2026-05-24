@@ -37,35 +37,6 @@ import { subscribePlayerLeft, subscribePlayerRejoin, markPlayerLeft } from '../s
 
 
 
-// ── Dramatic modal for phase changes and evolutions ──────────────────────────
-const PhaseEvolutionModal = ({ type, data, onClose }) => {
-  React.useEffect(() => {
-    const tid = setTimeout(onClose, 2000);
-    return () => clearTimeout(tid);
-  }, []);
-  const isEvo = type === 'evolution';
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9998 + (isEvo ? 1 : 0), background: isEvo ? 'radial-gradient(ellipse at center, rgba(120,53,15,0.97) 0%, rgba(0,0,0,0.99) 100%)' : 'radial-gradient(ellipse at center, rgba(76,29,149,0.97) 0%, rgba(0,0,0,0.99) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <button onClick={onClose} style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%', width: '36px', height: '36px', color: '#fff', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-      {isEvo ? (
-        <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <div style={{ fontSize: '3.5rem', marginBottom: '0.75rem' }}>⚡</div>
-          <div style={{ fontSize: '1.8rem', fontWeight: '900', fontFamily: '"Cinzel",Georgia,serif', background: 'linear-gradient(135deg,#fb923c,#f59e0b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>EVOLUTION</div>
-          <div style={{ color: '#fdba74', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.25rem' }}>{data.oldName} →</div>
-          <div style={{ color: '#fde68a', fontSize: '1.5rem', fontWeight: '900', marginBottom: '0.4rem' }}>{data.newName}</div>
-          <div style={{ color: '#fb923c', fontSize: '0.85rem', fontWeight: '700' }}>HP reset to {data.newMaxHP}/{data.newMaxHP}</div>
-        </div>
-      ) : (
-        <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <div style={{ fontSize: '3.5rem', marginBottom: '0.75rem' }}>🔄</div>
-          <div style={{ fontSize: '1.8rem', fontWeight: '900', fontFamily: '"Cinzel",Georgia,serif', color: '#a78bfa', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>PHASE SHIFT</div>
-          <div style={{ color: '#c4b5fd', fontSize: '1.1rem', fontWeight: '700', marginBottom: '0.3rem' }}>{data.npcName}</div>
-          <div style={{ color: '#e9d5ff', fontSize: '1.4rem', fontWeight: '900' }}>{data.phaseLabel}</div>
-        </div>
-      )}
-    </div>
-  );
-};
 
 const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, initialGameState = null, onEndGame = null }) => {
   // ── Round timers (init first so callback is ready for useGameState) ────────
@@ -103,10 +74,13 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const tokens = useCommanderTokens((...args) => addLogRef.current(...args));
   tokensOnRoundRef.current = tokens.onPlayerTurnEnd;
 
-  // Wrap useRevive to handle token return on revive
+  // Wrap useRevive to handle token return on revive and VP tracking
   const useRevive = (playerId, isSuccessful) => {
     const player = players.find(p => String(p.id) === String(playerId));
-    if (player && isSuccessful) tokens.onCommanderRevived(playerId);
+    if (player && isSuccessful) {
+      tokens.onCommanderRevived(playerId);
+      vp.trackVP(playerId, 'revivesUsed', 1);
+    }
     useReviveBase(playerId, isSuccessful);
   };
 
@@ -169,7 +143,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     openCreator, closeCreator, saveNPC, removeNPC, duplicateNPC,
     activateNPC, deactivateNPC,
     applyDamageToNPC, setNPCHP, triggerNextPhase, triggerNextEvolution, getNPCById, setNpcs, resetAllNPCs,
-    blankEvolution, setOnEvolve,
+    setOnEvolve,
   } = useNPCState(addLog, (killedNPC) => {
     const attackingPlayer = players.find(p => String(p.id) === String(lastAttackerIdRef.current)) || null;
     const hasLoot = killedNPC.lootMode === 'weighted'
@@ -216,6 +190,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       initialStateLoaded.current = true;
       loadGameState(initialGameState);
       if (initialGameState.npcs?.length) setNpcs(initialGameState.npcs);
+      if (initialGameState.chests?.length) setChests(initialGameState.chests);
+      if (initialGameState.lootPool?.length) setLootPool(initialGameState.lootPool);
       // Restore vpStats from save file — overrides stale localStorage data
       // Also zero out live session trackers so npcDamage etc don't bleed in
       if (initialGameState.dmNotes) setDmNotes(initialGameState.dmNotes);
@@ -266,6 +242,23 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     const unsub = subscribePendingRequests(lobbyCode, setPendingRequests);
     return () => unsub();
   }, [isMultiplayer, lobbyCode]);
+
+  // ── Auto-process trade/gift responses outside of render ───────────────────
+  // firstPassChoice with a tradeAction must be handled in a useEffect, NOT during
+  // render — calling setGmTradeResult during render causes an infinite re-render loop.
+  const handledTradeRefs = React.useRef(new Set());
+  React.useEffect(() => {
+    if (!isMultiplayer) return;
+    const passChoices = Object.values(pendingRequests).filter(
+      r => r?.type === 'itemChoice' && r?.itemEffect === 'passChoice' && r?.tradeAction
+    );
+    passChoices.forEach(req => {
+      if (handledTradeRefs.current.has(req.reqId)) return;
+      handledTradeRefs.current.add(req.reqId);
+      handleTradeGiftResponse(req);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRequests, isMultiplayer]);
 
   // ── GM: player-left toast ─────────────────────────────────────────────────
   const [leftToasts,     setLeftToasts]     = React.useState([]);
@@ -346,7 +339,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     const player = players.find(p => String(p.id) === String(req.playerId));
     if (!player) return;
 
-    const item = (player.inventory || [])[req.itemIndex];
+    // Look up by id — never by index (inventory may be sorted differently than when request was sent)
+    const item = req.itemId
+      ? (player.inventory || []).find(it => it.id === req.itemId)
+      : null;
     const effectType = req.itemEffect;
 
     // ── The Guy unblockable attack — player attacks target ─────────────────
@@ -491,9 +487,11 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         if (uses === 0) {
           // unlimited — don't remove
         } else if (usesRemaining <= 1) {
-          updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+          updatePlayer(player.id, { inventory: (player.inventory || []).filter(it => it.id !== item.id) });
         } else {
-          const newInv = (player.inventory || []).map((it, i) => i === req.itemIndex ? { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } } : it);
+          const newInv = (player.inventory || []).map(it =>
+            it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } }
+          );
           updatePlayer(player.id, { inventory: newInv });
         }
       }
@@ -576,7 +574,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
       // Remove item after use
       if (item) {
-        updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+        updatePlayer(player.id, { inventory: (player.inventory || []).filter(it => it.id !== item.id) });
       }
     }
 
@@ -601,72 +599,219 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       setTimeout(() => resolvePendingChoice(lobbyCode, noticeId), 6000);
 
       // Remove destroyer's item too
-      if (item) updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+      if (item) updatePlayer(player.id, { inventory: (player.inventory || []).filter(it => it.id !== item.id) });
       addLog(`💥 ${player.playerName} destroyed ${targetPlayer.playerName}'s "${req.destroyedItemName}"`, 'items');
+      if (item) setLastItemPlayed({ item, sourcePlayerId: player.id });
     }
+    // Track last item played for Mirror — covers self, enemy, and destroy paths
+    if (item && req.targetType !== 'destroyItem') setLastItemPlayed({ item, sourcePlayerId: player.id });
   };
 
-  // ── Execute a DM-approved pass (hand-off) ────────────────────────────────
   const handleExecutePassChoice = (req) => {
     resolvePendingRequest(lobbyCode, req.reqId);
     if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId);
 
-    // Read fresh player state — avoids stale snapshot from when the request was created
     const freshSource = players.find(p => String(p.id) === String(req.playerId));
     const freshTarget = players.find(p => String(p.id) === String(req.passTargetPlayerId));
     if (!freshSource || !freshTarget) return;
 
-    const item = (freshSource.inventory || [])[req.itemIndex];
+    const item = req.itemId ? (freshSource.inventory || []).find(it => it.id === req.itemId) : null;
     if (!item) return;
 
-    const targetUnitType  = req.passTargetUnitType;
-    const isSamePlayer    = String(freshSource.id) === String(freshTarget.id);
-
     const sourceUnitLabel = loot.unitNameByType(freshSource, item.heldBy);
-    const targetUnitLabel = loot.unitNameByType(freshTarget, targetUnitType);
+    const targetUnitLabel = loot.unitNameByType(freshTarget, req.passTargetUnitType);
 
     if (req.passMode === 'give') {
-      if (isSamePlayer) {
-        const inv = (freshSource.inventory || [])
-          .filter(it => it.id !== item.id)
-          .concat({ ...item, heldBy: targetUnitType });
-        updatePlayer(freshSource.id, { inventory: inv });
-        addLog(`🔀 ${freshSource.playerName} moved "${item.name}" from ${sourceUnitLabel} to ${targetUnitLabel}`, 'items');
-      } else {
-        const newSourceInv = (freshSource.inventory || []).filter(it => it.id !== item.id);
-        updatePlayer(freshSource.id, { inventory: newSourceInv });
-        const newTargetInv = [...(freshTarget.inventory || []), { ...item, heldBy: targetUnitType }];
-        updatePlayer(freshTarget.id, { inventory: newTargetInv });
-        addLog(`🎁 ${freshSource.playerName}'s ${sourceUnitLabel} gave "${item.name}" to ${freshTarget.playerName}'s ${targetUnitLabel}`, 'items');
-      }
+      // ── GIVE: remove item from source, send giftNotice to target so they place it ──
+      const newSourceInv = (freshSource.inventory || []).filter(it => it.id !== item.id);
+      updatePlayer(freshSource.id, { inventory: newSourceInv });
+
+      // Write giftNotice to the target player
+      const noticeId = `gift_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+      writePendingChoice(lobbyCode, noticeId, {
+        choiceId:              noticeId,
+        type:                  'giftNotice',
+        targetPlayerUid:       freshTarget.uid,
+        targetPlayerId:        freshTarget.id,
+        initiatorPlayerName:   freshSource.playerName,
+        initiatorPlayerId:     freshSource.id,
+        offeredItemId:         item.id,
+        offeredItemName:       item.name,
+        offeredItemTier:       item.tier,
+        offeredItemDescription: item.description,
+        offeredItemEffect:     item.effect,
+        offeredItemHeldBy:     req.passTargetUnitType,
+        timestamp:             Date.now(),
+      });
+      addLog(`🎁 ${freshSource.playerName}'s ${sourceUnitLabel} gave "${item.name}" to ${freshTarget.playerName} — awaiting placement`, 'items');
+
     } else if (req.passMode === 'trade') {
-      const tradedItem = req.passTradeItemId
-        ? (freshTarget.inventory || []).find(it => it.id === req.passTradeItemId)
-        : null;
-      if (!tradedItem) return;
+      // ── TRADE INITIATION: send tradeRequest to target player ──
+      const tradeId = `trade_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+      writePendingChoice(lobbyCode, tradeId, {
+        choiceId:              tradeId,
+        type:                  'tradeRequest',
+        targetPlayerUid:       freshTarget.uid,
+        targetPlayerId:        freshTarget.id,
+        initiatorPlayerName:   freshSource.playerName,
+        initiatorPlayerId:     freshSource.id,
+        initiatorPlayerUid:    freshSource.uid,
+        initiatorUnitType:     item.heldBy,
+        offeredItemId:         item.id,
+        offeredItemName:       item.name,
+        offeredItemTier:       item.tier,
+        offeredItemDescription: item.description,
+        offeredItemIsQuest:    item.isQuestItem || false,
+        targetUnitType:        req.passTargetUnitType,
+        timestamp:             Date.now(),
+      });
+      addLog(`⇄ ${freshSource.playerName} initiated a trade with ${freshTarget.playerName} — awaiting response`, 'items');
+    }
+  };
 
-      if (isSamePlayer) {
-        const inv = (freshSource.inventory || [])
-          .filter(it => it.id !== item.id && it.id !== tradedItem.id)
-          .concat(
-            { ...item,       heldBy: targetUnitType },
-            { ...tradedItem, heldBy: item.heldBy    },
-          );
-        updatePlayer(freshSource.id, { inventory: inv });
-        addLog(`⇄ ${freshSource.playerName} swapped "${item.name}" (${sourceUnitLabel}) with "${tradedItem.name}" (${targetUnitLabel})`, 'items');
-      } else {
-        const newSourceInv = (freshSource.inventory || [])
-          .filter(it => it.id !== item.id)
-          .concat({ ...tradedItem, heldBy: item.heldBy });
-        updatePlayer(freshSource.id, { inventory: newSourceInv });
+  // ── Handle trade/gift responses that come back as itemChoice pending requests ──
+  const handleTradeGiftResponse = (req) => {
+    resolvePendingRequest(lobbyCode, req.reqId);
+    if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId);
 
-        const newTargetInv = (freshTarget.inventory || [])
-          .filter(it => it.id !== tradedItem.id)
-          .concat({ ...item, heldBy: targetUnitType });
-        updatePlayer(freshTarget.id, { inventory: newTargetInv });
+    const action = req.tradeAction;
 
-        addLog(`⇄ ${freshSource.playerName}'s ${sourceUnitLabel} traded "${item.name}" with ${freshTarget.playerName}'s ${targetUnitLabel} for "${tradedItem.name}"`, 'items');
+    // ── Gift placed: target chose a unit — execute immediately, no GM window needed ──
+    if (action === 'giftPlaced') {
+      const freshTarget = players.find(p => String(p.id) === String(req.playerId));
+      if (!freshTarget) return;
+      let newInv = [...(freshTarget.inventory || [])];
+      if (req.swapItemId) newInv = newInv.filter(it => it.id !== req.swapItemId);
+      // Look up item across all players — source already removed it on approve
+      let giftItem = null;
+      players.forEach(p => { const f = (p.inventory || []).find(it => it.id === req.itemId); if (f) giftItem = f; });
+      if (!giftItem) {
+        giftItem = { id: req.itemId, name: req.itemName, tier: req.itemTier || 'Common', heldBy: req.passTargetUnitType, effect: req.offeredItemEffect || { type: 'manual', uses: 1, usesRemaining: 1 }, description: req.offeredItemDescription || '', isQuestItem: false };
       }
+      newInv = [...newInv, { ...giftItem, heldBy: req.passTargetUnitType }];
+      updatePlayer(freshTarget.id, { inventory: newInv });
+      const unitLabel = loot.unitNameByType(freshTarget, req.passTargetUnitType);
+      addLog(`🎁 ${freshTarget.playerName}'s ${unitLabel} received "${req.itemName}"`, 'items');
+      return;
+    }
+
+    // ── Trade: target offered an item back ──
+    if (action === 'offer') {
+      const initiator = players.find(p => String(p.id) === String(req.passTargetPlayerId));
+      const target    = players.find(p => String(p.id) === String(req.playerId));
+      if (!initiator || !target) return;
+      const counterItem = (target.inventory || []).find(it => it.id === req.passTradeItemId);
+      // Send tradeReview to initiator (player1)
+      const reviewId = `tradereview_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+      writePendingChoice(lobbyCode, reviewId, {
+        choiceId:              reviewId,
+        type:                  'tradeReview',
+        targetPlayerUid:       req.passTargetPlayerUid || initiator.uid,  // ← player1.uid (who sees this)
+        targetPlayerId:        initiator.id,
+        initiatorPlayerName:   initiator.playerName,
+        targetPlayerName:      target.playerName,
+        targetPlayerId2:       target.id,       // player2's id (for accept to find them)
+        targetPlayerUid2:      target.uid,      // player2's uid (renamed — NOT targetPlayerUid to avoid overwrite)
+        targetUnitType:        req.passTargetUnitType,
+        myItemId:              req.itemId,
+        myItemName:            req.itemName,
+        myItemTier:            req.itemTier,
+        counterItemId:         counterItem?.id,
+        counterItemName:       counterItem?.name,
+        counterItemTier:       counterItem?.tier,
+        counterItemDescription: counterItem?.description,
+        timestamp:             Date.now(),
+      });
+      addLog(`⇄ ${target.playerName} offered "${counterItem?.name || 'an item'}" in return — awaiting ${initiator.playerName}'s decision`, 'items');
+      return;
+    }
+
+    // ── Trade: target denied — notify initiator, no GM window needed ──
+    if (action === 'deny') {
+      const initiator = players.find(p => String(p.id) === String(req.passTargetPlayerId));
+      const target    = players.find(p => String(p.id) === String(req.playerId));
+      if (!initiator) return;
+      const resultId = `result_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+      writePendingChoice(lobbyCode, resultId, {
+        choiceId:        resultId,
+        type:            'tradeResult',
+        targetPlayerUid: req.passTargetPlayerUid || initiator.uid,
+        resultIcon:      '❌',
+        resultTitle:     'Trade Denied',
+        resultMessage:   `${target?.playerName || 'The other player'} declined your trade offer.`,
+        timestamp:       Date.now(),
+      });
+      addLog(`❌ ${target?.playerName || 'Player'} denied the trade with ${initiator.playerName}`, 'items');
+      return;
+    }
+
+    // ── Trade: initiator accepted — show GM final confirmation window ──
+    if (action === 'accept') {
+      const freshSource = players.find(p => String(p.id) === String(req.playerId));           // player1 (initiator)
+      const freshTarget = players.find(p => String(p.id) === String(req.passTargetPlayerId)); // player2 (target)
+      if (!freshSource || !freshTarget) return;
+      const myItem    = (freshSource.inventory || []).find(it => it.id === req.itemId);
+      const theirItem = (freshTarget.inventory || []).find(it => it.id === req.passTradeItemId);
+      if (!myItem || !theirItem) return;
+      setGmTradeResult({
+        outcome:    'accepted',
+        p1Name:     freshSource.playerName, p1Item: myItem.name,    p1ItemId: myItem.id,    p1Id: freshSource.id,
+        p2Name:     freshTarget.playerName, p2Item: theirItem.name, p2ItemId: theirItem.id, p2Id: freshTarget.id,
+        // Each item keeps its current heldBy — the traded item lands on the same unit slot
+        p1HeldBy:   myItem.heldBy,     // unit on player1 that receives theirItem
+        p2HeldBy:   theirItem.heldBy,  // unit on player2 that receives myItem
+        execReq:    req,
+      });
+      return;
+    }
+
+    // ── Trade: initiator countered (bounce trade request back to target) ──
+    if (action === 'counter') {
+      const initiator = players.find(p => String(p.id) === String(req.playerId));
+      const target    = players.find(p => String(p.id) === String(req.passTargetPlayerId));
+      if (!initiator || !target) return;
+      const myItem = (initiator.inventory || []).find(it => it.id === req.itemId);
+      if (!myItem) return;
+      const tradeId = `trade_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+      writePendingChoice(lobbyCode, tradeId, {
+        choiceId:              tradeId,
+        type:                  'tradeRequest',
+        targetPlayerUid:       req.passTargetPlayerUid || target.uid,
+        targetPlayerId:        target.id,
+        initiatorPlayerName:   initiator.playerName,
+        initiatorPlayerId:     initiator.id,
+        initiatorPlayerUid:    initiator.uid,
+        initiatorUnitType:     myItem.heldBy,
+        offeredItemId:         myItem.id,
+        offeredItemName:       myItem.name,
+        offeredItemTier:       myItem.tier,
+        offeredItemDescription: myItem.description,
+        targetUnitType:        req.passTargetUnitType,
+        isCounter:             true,
+        timestamp:             Date.now(),
+      });
+      addLog(`🔄 ${initiator.playerName} countered — trade sent back to ${target.playerName}`, 'items');
+      return;
+    }
+
+    // ── Trade: initiator denied/cancelled — notify target, no GM window needed ──
+    if (action === 'cancel') {
+      const initiator = players.find(p => String(p.id) === String(req.playerId));
+      const target    = players.find(p => String(p.id) === String(req.passTargetPlayerId));
+      if (target?.uid) {
+        const resultId = `result_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+        writePendingChoice(lobbyCode, resultId, {
+          choiceId:        resultId,
+          type:            'tradeResult',
+          targetPlayerUid: req.passTargetPlayerUid || target.uid,
+          resultIcon:      '❌',
+          resultTitle:     'Trade Cancelled',
+          resultMessage:   `${initiator?.playerName || 'The other player'} declined the trade.`,
+          timestamp:       Date.now(),
+        });
+      }
+      addLog(`❌ Trade cancelled by ${initiator?.playerName || 'player'}`, 'items');
+      return;
     }
   };
 
@@ -767,7 +912,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     // Enemy targeting
     'poisonVial', 'stunGrenade', 'attackDebuffItem', 'defenseDebuffItem', 'marked', 'destroyItem',
     // Own unit targeting
-    'heal', 'maxHP', 'attackBonus', 'defenseBonus', 'shieldWall', 'counterStrike',
+    'heal', 'maxHP', 'shieldWall', 'counterStrike',
     'cleanse', 'fullCleanse', 'resurrect', 'extraSlot',
   ];
 
@@ -778,8 +923,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
     // Auto-execute simple destructive actions — no choice needed
     if (req.action === 'drop' || req.action === 'useKey') {
-      const newInventory = (player.inventory || []).filter((_, idx) => idx !== req.itemIndex);
-      updatePlayer(player.id, { inventory: newInventory });
+      if (item) updatePlayer(player.id, { inventory: (player.inventory || []).filter(it => it.id !== item.id) });
       return;
     }
 
@@ -787,6 +931,32 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
     if (req.action === 'use' && req.itemEffect === 'theGuy') {
       setGuyTargetUnit(null);
       setGuyConfirmModal({ req, player });
+      return;
+    }
+
+    // attackBonus / defenseBonus — auto-execute, no player picker needed
+    // Sets pending bonus on the player; calculator picks it up on next roll
+    if (req.action === 'use' && (req.itemEffect === 'attackBonus' || req.itemEffect === 'defenseBonus')) {
+      const item = req.itemId ? (player.inventory || []).find(it => it.id === req.itemId) : null;
+      if (item) {
+        const bonusKey = req.itemEffect === 'attackBonus' ? 'pendingAttackBonus' : 'pendingDefenseBonus';
+        const val = item.effect?.value || 1;
+        const label = req.itemEffect === 'attackBonus' ? '⚔️↑' : '🛡️↑';
+        // Consume item
+        const uses = item.effect?.uses ?? 1;
+        const usesRemaining = item.effect?.usesRemaining ?? uses;
+        let newInv;
+        if (uses === 0) {
+          newInv = player.inventory; // unlimited
+        } else if (usesRemaining <= 1) {
+          newInv = (player.inventory || []).filter(it => it.id !== item.id);
+        } else {
+          newInv = (player.inventory || []).map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } });
+        }
+        updatePlayer(player.id, { [bonusKey]: (player[bonusKey] || 0) + val, inventory: newInv });
+        setLastItemPlayed({ item, sourcePlayerId: player.id });
+        addLog(`${label} ${player.playerName} primed +${val} ${req.itemEffect === 'attackBonus' ? 'attack' : 'defense'} bonus — applies on next roll`, 'items');
+      }
       return;
     }
 
@@ -798,7 +968,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         targetPlayerUid: player.uid,
         targetPlayerId:  player.id,
         playerName:      player.playerName,
-        itemIndex:       req.itemIndex,
+        itemId:          req.itemId,
         itemName:        req.itemName,
         itemEffect:      req.itemEffect,
         // Pass full game context the player needs to make their choice
@@ -824,25 +994,19 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         targetPlayerUid: player.uid,
         targetPlayerId:  player.id,
         playerName:      player.playerName,
-        itemIndex:       req.itemIndex,
+        itemId:          req.itemId,
         itemName:        req.itemName,
         itemEffect:      req.itemEffect,
-        // Snapshot of all players so the picker has data without another Firestore read
-        allPlayers: players.map(p => ({
-          id: p.id, uid: p.uid, playerName: p.playerName, playerColor: p.playerColor,
-          commanderStats: p.commanderStats,
-          subUnits: p.subUnits,
-          inventory: p.inventory,
-          commander: p.commander,
-        })),
-        timestamp: Date.now(),
+        timestamp:       Date.now(),
       });
       return;
     }
 
     // ── 'use' with no-target / global effects — auto-execute on approval ───
     if (req.action === 'use') {
-      const item = (player.inventory || [])[req.itemIndex];
+      const item = req.itemId
+        ? (player.inventory || []).find(it => it.id === req.itemId)
+        : null;
       const ef   = item?.effect;
       if (!ef) return;
 
@@ -859,10 +1023,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         const usesRemaining = ef.usesRemaining ?? uses;
         if (uses === 0) return; // unlimited — keep in inventory, tracking already done above
         if (usesRemaining <= 1) {
-          updatePlayer(player.id, { inventory: (fresh.inventory || []).filter((_, i) => i !== req.itemIndex) });
+          updatePlayer(player.id, { inventory: (fresh.inventory || []).filter(it => it.id !== item.id) });
         } else {
-          const newInv = (fresh.inventory || []).map((it, i) =>
-            i === req.itemIndex ? { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } } : it
+          const newInv = (fresh.inventory || []).map(it =>
+            it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } }
           );
           updatePlayer(player.id, { inventory: newInv });
         }
@@ -952,9 +1116,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         const selfTypes        = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'];
         if (enemyTargetTypes.includes(mef?.type)) {
           // Need a target — open enemy picker with the mirrored item
-          setEnemyItemModal({ sourcePlayer: player, item: { ...mirroredItem, id: `mirror_${Date.now()}` }, itemIndex: -1, isMirror: true, originalItemIndex: req.itemIndex, mirrorSourcePlayerId: player.id });
+          setEnemyItemModal({ sourcePlayer: player, item: { ...mirroredItem, id: `mirror_${Date.now()}` }, isMirror: true, originalItemId: item.id, mirrorSourcePlayerId: player.id });
           setEnemyTargetMode(null);
-          updatePlayer(player.id, { inventory: (player.inventory || []).filter((_, i) => i !== req.itemIndex) });
+          updatePlayer(player.id, { inventory: (player.inventory || []).filter(it => it.id !== item.id) });
           setLastItemPlayed({ item, sourcePlayerId: player.id });
         } else if (globalTypes.includes(mef?.type)) {
           const mDmg = mef.damagePerRound || 2;
@@ -1024,12 +1188,13 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
   // ── The Guy — execute the rolled outcome ──────────────────────────────────
   const handleExecuteGuy = (req, player, extraData = {}) => {
-    const { guyRoll, itemTier, itemIndex } = req;
+    const { guyRoll, itemTier } = req;
     const tier = itemTier || 'Common';
 
-    // Remove the item from inventory first (one-time use)
+    // Remove the item from inventory first (one-time use) — look up by id
     const removeItem = (p) => {
-      updatePlayer(p.id, { inventory: (p.inventory || []).filter((_, i) => i !== itemIndex) });
+      if (!req.itemId) return;
+      updatePlayer(p.id, { inventory: (p.inventory || []).filter(it => it.id !== req.itemId) });
     };
 
     if (tier === 'Common') {
@@ -1230,12 +1395,14 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         if (effect.type === 'poison') {
           const dmg = effect.value || 0;
           newCmdStats.hp = Math.max(0, newCmdStats.hp - dmg);
+          if (dmg > 0) vp.trackVP(player.id, 'damageTaken', dmg);
           addLog(`🤢 ${player.playerName}'s ${newCmdStats.customName || player.commander} took ${dmg}hp poison damage`, 'combat');
           changed = true;
         }
         if (effect.type === 'burn') {
           const dmg = effect.value || 0;
           newCmdStats.hp = Math.max(0, newCmdStats.hp - dmg);
+          if (dmg > 0) vp.trackVP(player.id, 'damageTaken', dmg);
           addLog(`🔥 ${player.playerName}'s ${newCmdStats.customName || player.commander} took ${dmg}hp burn damage`, 'combat');
           changed = true;
         }
@@ -1262,11 +1429,13 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         if (effect.type === 'poison') {
           const dmg = effect.value || 0;
           hp = Math.max(0, hp - dmg);
+          if (dmg > 0) vp.trackVP(player.id, 'damageTaken', dmg);
           addLog(`🤢 ${player.playerName}'s ${uName} took ${dmg}hp poison damage`, 'combat');
         }
         if (effect.type === 'burn') {
           const dmg = effect.value || 0;
           hp = Math.max(0, hp - dmg);
+          if (dmg > 0) vp.trackVP(player.id, 'damageTaken', dmg);
           addLog(`🔥 ${player.playerName}'s ${uName} took ${dmg}hp burn damage`, 'combat');
         }
         const dur = (effect.duration || 1) - 1;
@@ -1299,8 +1468,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
       const next = [];
       for (const ef of effects) {
         if (String(ef.sourcePlayerId) !== String(playerId)) { next.push(ef); continue; }
-        if (ef.type === 'poison') { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); addLog(`🤢 NPC "${npc.name}" took ${dmg}hp poison damage`, 'combat'); }
-        if (ef.type === 'burn')   { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); addLog(`🔥 NPC "${npc.name}" took ${dmg}hp burn damage`, 'combat'); }
+        if (ef.type === 'poison') { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); if (dmg > 0) vp.trackVP(playerId, 'npcDamage', dmg); addLog(`🤢 NPC "${npc.name}" took ${dmg}hp poison damage`, 'combat'); }
+        if (ef.type === 'burn')   { const dmg = ef.value || 2; hp = Math.max(0, hp - dmg); if (dmg > 0) vp.trackVP(playerId, 'npcDamage', dmg); addLog(`🔥 NPC "${npc.name}" took ${dmg}hp burn damage`, 'combat'); }
         if (ef.permanent) { next.push(ef); continue; }
         const dur = (ef.duration || 1) - 1;
         if (dur > 0) { next.push({ ...ef, duration: dur }); }
@@ -1390,9 +1559,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const [guyConfirmModal, setGuyConfirmModal] = React.useState(null); // { req, player } — The Guy DM confirm
   const [guyTargetUnit, setGuyTargetUnit] = React.useState(null); // { unitKey, label } — unit picked in Guy modal
   const [guyCloseCallModal, setGuyCloseCallModal] = React.useState(null);
-  const [phaseModal,         setPhaseModal]         = React.useState(null); // { npcName, phaseLabel }
-  const [evolutionModal,     setEvolutionModal]     = React.useState(null); // { oldName, newName, newMaxHP } // { playerName, damage } — The Guy absorbed hit
-  const [enemyItemModal, setEnemyItemModal] = React.useState(null); // { sourcePlayer, item, itemIndex }
+  const [gmTradeResult, setGmTradeResult] = React.useState(null); // { outcome, p1Name, p1Item, p2Name, p2Item }
+  const [enemyItemModal, setEnemyItemModal] = React.useState(null); // { sourcePlayer, item, isMirror, originalItemId }
   const [lastItemPlayed, setLastItemPlayed] = React.useState(null); // { item, sourcePlayerId }
   const [enemyTargetMode, setEnemyTargetMode] = React.useState(null); // 'npc' | 'player' // { attack } — confirm before creating NPC
   const setDeathLootModalRef = React.useRef(null);
@@ -1414,21 +1582,6 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
   const [draggedIndex,     setDraggedIndex]     = React.useState(null);
 
   const isCampaign = gameMode === 'campaign';
-
-  // ── Wire evolution modal callback ────────────────────────────────────────
-  React.useEffect(() => {
-    if (setOnEvolve) setOnEvolve((data) => setEvolutionModal(data));
-  }, [setOnEvolve]);
-
-  // ── Wire phase modal callback ─────────────────────────────────────────────
-  // Phase dramatic moment fires when phaseJustTriggered is set on an NPC
-  React.useEffect(() => {
-    const triggered = npcs.find(n => n.phaseJustTriggered);
-    if (!triggered) return;
-    const phase = triggered.phases?.[triggered.currentPhase - 1];
-    setPhaseModal({ npcName: triggered.name, phaseLabel: phase?.label || `Phase ${triggered.currentPhase + 1}` });
-    setNpcs(prev => prev.map(n => n.id === triggered.id ? { ...n, phaseJustTriggered: false } : n));
-  }, [npcs]);
 
   // ── Mobile detection (GM side) ────────────────────────────────────────────
   const [isMobile, setIsMobile] = React.useState(
@@ -1773,6 +1926,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                 onRemove={() => {}}
                 onHPChange={(id, hp) => { setNPCHP(id, hp); }}
                 onTriggerPhase={(id) => triggerNextPhase(id)}
+                onTriggerEvolution={(id) => triggerNextEvolution(id)}
                 onOpenNPCAttack={(npcId, attackIndex, opts) => campaign.openNPCAttack(npcId, attackIndex, opts)}
                 onSpawnAttack={(attack, parentName) => setSpawnModal({ attack, parentNPCName: parentName })}
                 onIncrementAttack={(npcId, reset) => campaign.handleIncrementAttack(npcId, reset)}
@@ -1824,7 +1978,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                         onRemove={removePlayer}
                         onKick={isMultiplayer ? handleKick : undefined}
                         onToggleSquad={toggleSquad}
-                        onOpenCalculator={(attackerId, action, unitType) => { if (attackerId) vp.trackVP(attackerId, 'warmonger', 1); openCalculator(attackerId, action, unitType); }}
+                        onOpenCalculator={(attackerId, action, unitType) => { openCalculator(attackerId, action, unitType); }}
                         onUseRevive={useRevive}
                         onOpenSquadRevive={id => setSquadRevivePlayerId(id)}
                         onCommanderDied={(p) => tokens.createToken(p, (p.commanderStats?.revives || 0) > 0)}
@@ -1833,10 +1987,10 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                         hasActedThisRound={playersWhoActedThisRound.includes(player.id)}
                         onOpenDestroyModal={(attackerPlayer, attackerItem) => loot.setDestroyModal({ attackerPlayer, attackerItem: attackerItem || null, targetPlayer: null, targetUnitType: null, allPlayers: players })}
                         onOpenHandOff={(srcPlayer, srcUnitType, item) => loot.openHandOff(srcPlayer, srcUnitType, item)}
-                        getTimersForPlayerUnit={roundTimers.getTimersForPlayerUnit}
+                        isDM={true}
                         getTokenForPlayer={tokens.getTokenForPlayer}
                         isFocusMode={viewMode === 'current'}
-                        onUseItemOnEnemy={(srcPlayer, item, itemIndex) => { setEnemyItemModal({ sourcePlayer: srcPlayer, item, itemIndex }); setEnemyTargetMode(null); }}
+                        onUseItemOnEnemy={(srcPlayer, item) => { setEnemyItemModal({ sourcePlayer: srcPlayer, item, isMirror: false }); setEnemyTargetMode(null); }}
                         onTrackLastItem={(srcPlayer, item) => setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id })}
                         onNullifyLastEffect={(playerId) => {
                           const p = players.find(pl => String(pl.id) === String(playerId));
@@ -1847,9 +2001,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                           updatePlayer(playerId, { commanderStats: { ...p.commanderStats, statusEffects: removeEffect(p.commanderStats.statusEffects || []) }, subUnits: (p.subUnits || []).map(u => ({ ...u, statusEffects: removeEffect(u.statusEffects || []) })) });
                           addLog('🚫 ' + p.playerName + ' used Nullify — ' + (effectTypeToRemove ? lastItemPlayed.item.name : 'last effect') + ' removed from all units!', 'items');
                         }}
-                        onUseGlobalItem={(srcPlayer, item, itemIndex) => {
+                        onUseGlobalItem={(srcPlayer, item) => {
                           const ef = item.effect;
-                          const consume = () => { const freshSrc = players.find(p => String(p.id) === String(srcPlayer.id)); if (!freshSrc) return; const uses = item.effect?.uses ?? 1; const usesRemaining = item.effect?.usesRemaining ?? uses; if (uses === 0) return; if (usesRemaining <= 1) { updatePlayer(freshSrc.id, { inventory: (freshSrc.inventory || []).filter((_, i) => i !== itemIndex) }); } else { updatePlayer(freshSrc.id, { inventory: (freshSrc.inventory || []).map((it, i) => i === itemIndex ? { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } } : it) }); } };
+                          const consume = () => { const freshSrc = players.find(p => String(p.id) === String(srcPlayer.id)); if (!freshSrc) return; const uses = item.effect?.uses ?? 1; const usesRemaining = item.effect?.usesRemaining ?? uses; if (uses === 0) return; if (usesRemaining <= 1) { updatePlayer(freshSrc.id, { inventory: (freshSrc.inventory || []).filter(it => it.id !== item.id) }); } else { updatePlayer(freshSrc.id, { inventory: (freshSrc.inventory || []).map(it => it.id !== item.id ? it : { ...it, effect: { ...it.effect, usesRemaining: usesRemaining - 1 } }) }); } };
                           setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id });
                           if (ef?.type === 'npcPlague') { const dmgPerRound = ef.value || 2; const duration = ef.duration || 2; setNpcs(prev => prev.map(n => n.active && !n.isDead ? { ...n, statusEffects: [...(n.statusEffects || []), { type: 'poison', value: dmgPerRound, duration, permanent: false, sourcePlayerId: srcPlayer.id }] } : n)); consume(); addLog(`☠️ ${srcPlayer.playerName} unleashed NPC Plague! All active NPCs are poisoned (${dmgPerRound}hp×${duration}r).`, 'items'); }
                         }}
@@ -1880,7 +2034,6 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                       onKick={isMultiplayer ? handleKick : undefined}
                       onToggleSquad={toggleSquad}
                       onOpenCalculator={(attackerId, action, unitType) => {
-                        if (attackerId) vp.trackVP(attackerId, 'warmonger', 1);
                         openCalculator(attackerId, action, unitType);
                       }}
                       onUseRevive={useRevive}
@@ -1891,10 +2044,11 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                       hasActedThisRound={playersWhoActedThisRound.includes(player.id)}
                       onOpenDestroyModal={(attackerPlayer, attackerItem) => loot.setDestroyModal({ attackerPlayer, attackerItem: attackerItem || null, targetPlayer: null, targetUnitType: null, allPlayers: players })}
                       onOpenHandOff={(srcPlayer, srcUnitType, item) => loot.openHandOff(srcPlayer, srcUnitType, item)}
+                      isDM={true}
                       getTimersForPlayerUnit={roundTimers.getTimersForPlayerUnit}
                       getTokenForPlayer={tokens.getTokenForPlayer}
                       isFocusMode={viewMode === 'current'}
-                      onUseItemOnEnemy={(srcPlayer, item, itemIndex) => { setEnemyItemModal({ sourcePlayer: srcPlayer, item, itemIndex }); setEnemyTargetMode(null); }}
+                      onUseItemOnEnemy={(srcPlayer, item) => { setEnemyItemModal({ sourcePlayer: srcPlayer, item, isMirror: false }); setEnemyTargetMode(null); }}
                       onTrackLastItem={(srcPlayer, item) => setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id })}
                       onNullifyLastEffect={(playerId) => {
                         const p = players.find(pl => String(pl.id) === String(playerId));
@@ -1927,12 +2081,14 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                         const label = effectTypeToRemove ? lastItemPlayed.item.name : 'last effect';
                         addLog('🚫 ' + p.playerName + ' used Nullify — ' + label + ' removed from all units!', 'items');
                       }}
-                      onUseGlobalItem={(srcPlayer, item, itemIndex) => {
+                      onUseGlobalItem={(srcPlayer, item) => {
                         const ef = item.effect;
                         const dmgPerRound = ef.damagePerRound || 2;
                         const duration = ef.duration || 3;
                         const consume = () => {
-                          updatePlayer(srcPlayer.id, { inventory: (srcPlayer.inventory || []).filter((_, i) => i !== itemIndex) });
+                          const freshSrc = players.find(p => String(p.id) === String(srcPlayer.id));
+                          if (!freshSrc) return;
+                          updatePlayer(srcPlayer.id, { inventory: (freshSrc.inventory || []).filter(it => it.id !== item.id) });
                           setLastItemPlayed({ item, sourcePlayerId: srcPlayer.id });
                         };
                         if (ef?.type === 'npcPlague') {
@@ -1980,8 +2136,9 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                           const globalTypes = ['npcPlague','playerPlague','crownsFavor'];
                           const selfTypes = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'];
                           if (enemyTargetTypes.includes(mef?.type)) {
-                            setEnemyItemModal({ sourcePlayer: srcPlayer, item: { ...mirroredItem, id: `mirror_${Date.now()}` }, itemIndex: -1, isMirror: true, originalItemIndex: itemIndex, mirrorSourcePlayerId: srcPlayer.id }); setEnemyTargetMode(null);
-                            updatePlayer(srcPlayer.id, { inventory: (srcPlayer.inventory || []).filter((_, i) => i !== itemIndex) });
+                            setEnemyItemModal({ sourcePlayer: srcPlayer, item: { ...mirroredItem, id: `mirror_${Date.now()}` }, isMirror: true, originalItemId: item.id, mirrorSourcePlayerId: srcPlayer.id }); setEnemyTargetMode(null);
+                            const freshSrc2 = players.find(p => String(p.id) === String(srcPlayer.id));
+                            if (freshSrc2) updatePlayer(srcPlayer.id, { inventory: (freshSrc2.inventory || []).filter(it => it.id !== item.id) });
                           } else if (globalTypes.includes(mef?.type)) {
                             // Re-apply the global effect for the mirror user
                             const mDmgPerRound = mef.damagePerRound || 2;
@@ -2052,7 +2209,7 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
             <DMPanel
               npcs={npcs} activeNPCs={activeNPCs} inactiveNPCs={inactiveNPCs} deadNPCs={deadNPCs}
               showNPCCreator={showNPCCreator} editingNPCId={editingNPCId}
-              blankNPC={blankNPC} blankAttack={blankAttack} blankPhase={blankPhase} blankEvolution={blankEvolution}
+              blankNPC={blankNPC} blankAttack={blankAttack} blankPhase={blankPhase}
               openCreator={openCreator} closeCreator={closeCreator}
               saveNPC={saveNPC} removeNPC={removeNPC}
               activateNPC={campaign.handleActivateNPC}
@@ -2171,24 +2328,6 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         </div>
       </div>
 
-      {/* ── Phase dramatic modal ── */}
-      {phaseModal && (
-        <PhaseEvolutionModal
-          type="phase"
-          data={phaseModal}
-          onClose={() => setPhaseModal(null)}
-        />
-      )}
-
-      {/* ── Evolution dramatic modal ── */}
-      {evolutionModal && (
-        <PhaseEvolutionModal
-          type="evolution"
-          data={evolutionModal}
-          onClose={() => setEvolutionModal(null)}
-        />
-      )}
-
       {/* ── Modals ── */}
 
       {showCalculator && (() => {
@@ -2273,10 +2412,14 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                 const key = t.isNPC ? `npc-${t.npcId}` : `${t.playerId}-${t.unitType}`;
                 return (damageDistribution[key]||0) > 0;
               });
-              if (anyDmg && !vp.firstBloodAwarded) {
-                vp.trackVP(attackerId, 'firstBlood', 1);
-                vp.setFirstBloodAwarded(true);
-                addLog(`🩸 First Blood! ${players.find(p=>p.id===attackerId)?.playerName||'Unknown'} draws first!`, 'vp');
+              if (anyDmg) {
+                // Warmonger: count completed attacks that deal real damage
+                vp.trackVP(attackerId, 'warmonger', 1);
+                if (!vp.firstBloodAwarded) {
+                  vp.trackVP(attackerId, 'firstBlood', 1);
+                  vp.setFirstBloodAwarded(true);
+                  addLog(`🩸 First Blood! ${players.find(p=>p.id===attackerId)?.playerName||'Unknown'} draws first!`, 'vp');
+                }
               }
               calc?.targetSquadMembers?.forEach(target => {
                 if (target.isNPC) return;
@@ -2537,6 +2680,11 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
                 <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</span>
                 <span style={{ color: colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>{firstItemRequest.itemName}</span>
               </div>
+              {firstItemRequest.itemDescription && (
+                <div style={{ marginBottom: '0.5rem', padding: '0.4rem 0.6rem', background: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
+                  <span style={{ color: colors.textMuted, fontSize: '0.72rem', lineHeight: '1.4', fontStyle: 'italic' }}>{firstItemRequest.itemDescription}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                 <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Action</span>
                 <span style={{ color: colors.amber, fontWeight: '700', fontSize: '0.85rem', textTransform: 'capitalize' }}>
@@ -2546,7 +2694,27 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
               {firstItemRequest.itemEffect && firstItemRequest.itemEffect !== 'none' && (
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Effect</span>
-                  <span style={{ color: colors.textMuted, fontWeight: '700', fontSize: '0.85rem' }}>{firstItemRequest.itemEffect}</span>
+                  <span style={{ color: colors.textMuted, fontWeight: '700', fontSize: '0.85rem' }}>{{
+                    heal: '💚 Heal', maxHP: '❤️ Max HP Boost', attackBonus: '⚔️↑ Attack Bonus',
+                    defenseBonus: '🛡️↑ Defense Bonus', shieldWall: '🛡️ Shield Wall',
+                    counterStrike: '⚡ Counter Strike', cleanse: '✨ Cleanse',
+                    fullCleanse: '✨✨ Full Cleanse', resurrect: '💫 Resurrect',
+                    extraSlot: '🎒 Extra Item Slot', poisonVial: '🧪 Poison Vial',
+                    stunGrenade: '💣 Stun Grenade', attackDebuffItem: '⚔️↓ Attack Debuff',
+                    defenseDebuffItem: '🛡️↓ Defense Debuff', marked: '🎯 Marked',
+                    destroyItem: '💥 Destroy Item', npcPlague: '☠️ NPC Plague',
+                    playerPlague: '☠️ Player Plague', crownsFavor: '👑 Crown\'s Favor',
+                    nullify: '🚫 Nullify', mirror: '🪞 Mirror', theGuy: '🎲 The Guy',
+                    manual: '📋 Manual — see description above',
+                  }[firstItemRequest.itemEffect] || firstItemRequest.itemEffect}</span>
+                </div>
+              )}
+              {firstItemRequest.itemTag && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
+                  <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tag</span>
+                  <span style={{ fontWeight: '700', fontSize: '0.82rem', color: {reactive:'#a78bfa',combat:'#f87171',prebattle:'#38bdf8',quest:'#fde68a'}[firstItemRequest.itemTag] || colors.textMuted }}>
+                    {{'reactive':'⚡ Reactive','combat':'🗡️ Combat','prebattle':'🌅 Pre-Battle','quest':'🗝️ Quest'}[firstItemRequest.itemTag] || firstItemRequest.itemTag}
+                  </span>
                 </div>
               )}
             </div>
@@ -2557,8 +2725,8 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
               </div>
             )}
             {firstItemRequest.action === 'pass' && (
-              <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: '#86efac', fontSize: '0.72rem' }}>
-                ✓ Approving sends the player a picker to choose where to send the item. You'll confirm the final hand-off.
+              <div style={{ background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '1rem', color: colors.amber, fontSize: '0.72rem' }}>
+                🤝 Approving allows <strong>{firstItemRequest.playerName}</strong> to choose who to pass <strong>{firstItemRequest.itemName}</strong> to and whether to give or trade.
               </div>
             )}
 
@@ -2668,6 +2836,57 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         );
       })()}
 
+      {/* ── GM: Trade/Gift Final Confirmation ── */}
+      {gmTradeResult && (() => {
+        const r = gmTradeResult;
+
+        const executeAndClose = () => {
+          if (r.outcome === 'accepted') {
+            const src = players.find(p => String(p.id) === String(r.p1Id));
+            const tgt = players.find(p => String(p.id) === String(r.p2Id));
+            if (src && tgt) {
+              const myItem    = (src.inventory || []).find(it => it.id === r.p1ItemId);
+              const theirItem = (tgt.inventory || []).find(it => it.id === r.p2ItemId);
+              if (myItem && theirItem) {
+                updatePlayer(src.id, { inventory: (src.inventory || []).filter(it => it.id !== myItem.id).concat({ ...theirItem, heldBy: r.p1HeldBy }) });
+                updatePlayer(tgt.id, { inventory: (tgt.inventory || []).filter(it => it.id !== theirItem.id).concat({ ...myItem, heldBy: r.p2HeldBy }) });
+                addLog(`✅ Trade complete: ${src.playerName} gave "${myItem.name}" ⇄ ${tgt.playerName} gave "${theirItem.name}"`, 'items');
+              }
+            }
+          }
+          setGmTradeResult(null);
+        };
+
+        // GM sees final confirmation only for accepted trades
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3500, padding: '1rem' }}>
+            <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(34,197,94,0.5)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '420px', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>⇄</div>
+                <div style={{ color: '#86efac', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>Trade Agreed</div>
+                <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.3rem' }}>Both players have accepted. Execute to swap items.</div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.2rem' }}>{r.p1Name}</div>
+                    <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.82rem' }}>{r.p1Item}</div>
+                  </div>
+                  <div style={{ color: colors.textFaint, fontSize: '1.2rem' }}>⇄</div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.2rem' }}>{r.p2Name}</div>
+                    <div style={{ color: colors.purpleLight, fontWeight: '800', fontSize: '0.82rem' }}>{r.p2Item}</div>
+                  </div>
+                </div>
+              </div>
+              <button onClick={executeAndClose} style={{ width: '100%', padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>
+                ✓ Execute Trade
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── The Guy Close Call epic modal ── */}
       {guyCloseCallModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'radial-gradient(ellipse at center, rgba(10,7,0,0.97) 0%, rgba(0,0,0,0.99) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -2752,78 +2971,48 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
         );
       })()}
 
-      {/* ── GM: Pass Choice Confirmation ── */}
-      {isMultiplayer && firstPassChoice && (() => {
-        const req = firstPassChoice;
+      {/* ── GM: Pass Choice Confirmation — player has chosen who + give/trade, GM approves to execute ── */}
+      {isMultiplayer && firstPassChoice && !firstPassChoice.tradeAction && (() => {
+        const req          = firstPassChoice;
         const sourcePlayer = players.find(p => String(p.id) === String(req.playerId));
         const targetPlayer = players.find(p => String(p.id) === String(req.passTargetPlayerId));
         if (!sourcePlayer || !targetPlayer) return null;
-
-        const sourceItem = (sourcePlayer.inventory || [])[req.itemIndex];
-        const tradeItem  = req.passMode === 'trade' && req.passTradeItemId
-          ? (targetPlayer.inventory || []).find(it => it.id === req.passTradeItemId)
-          : null;
-
-        const targetUnitLabel = (() => {
-          const ut = req.passTargetUnitType;
-          if (!ut || ut === 'commander') return targetPlayer.commanderStats?.customName || targetPlayer.commander || 'Commander';
-          if (ut === 'special') return targetPlayer.subUnits?.[0]?.name?.trim() || 'Special';
-          const idx = parseInt(ut.replace('soldier', ''));
-          return targetPlayer.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`;
-        })();
-
-        const sourceUnitLabel = (() => {
-          const ut = sourceItem?.heldBy;
-          if (!ut || ut === 'commander') return sourcePlayer.commanderStats?.customName || sourcePlayer.commander || 'Commander';
-          if (ut === 'special') return sourcePlayer.subUnits?.[0]?.name?.trim() || 'Special';
-          const idx = parseInt(ut.replace('soldier', ''));
-          return sourcePlayer.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`;
-        })();
-
+        const sourceItem   = req.itemId ? (sourcePlayer.inventory || []).find(it => it.id === req.itemId) : null;
+        const isGive       = req.passMode === 'give';
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1rem' }}>
-            <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '420px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
-
-              {/* Header */}
+            <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: `2px solid ${isGive ? 'rgba(34,197,94,0.4)' : 'rgba(167,139,250,0.4)'}`, borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '400px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
               <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-                <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>{req.passMode === 'trade' ? '⇄' : '🎁'}</div>
+                <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>{isGive ? '🎁' : '⇄'}</div>
                 <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1.1rem', letterSpacing: '0.08em' }}>
-                  {req.passMode === 'trade' ? 'Item Trade — Confirm' : 'Item Pass — Confirm'}
+                  {isGive ? 'Item Gift — Confirm' : 'Item Trade — Confirm'}
                 </div>
               </div>
-
-              {/* Details */}
               <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {[
-                  { label: 'From',      value: `${sourcePlayer.playerName} — ${sourceUnitLabel}`, color: colors.gold },
-                  { label: 'Item',      value: sourceItem?.name || req.itemName,                  color: colors.textPrimary },
-                  { label: 'To',        value: `${targetPlayer.playerName} — ${targetUnitLabel}`, color: colors.purpleLight },
-                  req.passMode === 'trade' && tradeItem && { label: 'In Exchange', value: tradeItem.name, color: colors.amber },
-                ].filter(Boolean).map(({ label, value, color }) => (
+                  { label: 'From', value: sourcePlayer.playerName, color: colors.gold },
+                  { label: 'Item', value: sourceItem?.name || req.itemName, color: colors.textPrimary },
+                  { label: 'To',   value: targetPlayer.playerName, color: colors.purpleLight },
+                  { label: 'Mode', value: isGive ? 'Give (no return)' : 'Trade (target picks counter-item)', color: isGive ? '#86efac' : '#a78bfa' },
+                ].map(({ label, value, color }) => (
                   <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                     <span style={{ color: colors.textFaint, fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>{label}</span>
-                    <span style={{ color, fontWeight: '700', fontSize: '0.85rem', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>{value}</span>
+                    <span style={{ color, fontWeight: '700', fontSize: '0.85rem', textAlign: 'right' }}>{value}</span>
                   </div>
                 ))}
               </div>
-
-              {/* Buttons */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                <button
-                  onClick={() => { resolvePendingRequest(lobbyCode, req.reqId); if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId); }}
-                  style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
-                >✕ Deny</button>
-                <button
-                  onClick={() => handleExecutePassChoice(req)}
-                  style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
-                >✓ Approve</button>
+                <button onClick={() => { resolvePendingRequest(lobbyCode, req.reqId); if (req.choiceId) resolvePendingChoice(lobbyCode, req.choiceId); }}
+                  style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✕ Deny</button>
+                <button onClick={() => handleExecutePassChoice(req)}
+                  style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✓ Approve</button>
               </div>
             </div>
           </div>
         );
       })()}
 
-      {/* ── GM: End Turn Request Modal — shows when no higher-priority request is pending ── */}
+      {/* ── GM: End Turn Request Modal ── */}
       {isMultiplayer && firstEndTurnRequest && !firstRequest && !firstItemRequest && !firstItemChoice && !firstPassChoice && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1rem' }}>
           <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(16,185,129,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '380px', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
@@ -3012,15 +3201,17 @@ const HPCounter = ({ lobbyCode = null, gmUid = null, isMultiplayer = false, init
 
       {/* ── Enemy Item Targeting Modal ── */}
       {enemyItemModal && (() => {
-        const { sourcePlayer, item, itemIndex, isMirror } = enemyItemModal;
+        const { sourcePlayer, item, isMirror, originalItemId } = enemyItemModal;
         const ef = item.effect;
         const dmgPerRound = ef.damagePerRound || 2;
         const duration = ef.duration || 1;
         const debuffVal = ef.debuffValue || 2;
 
         const consume = () => {
-          if (!isMirror && itemIndex >= 0) {
-            updatePlayer(sourcePlayer.id, { inventory: (sourcePlayer.inventory || []).filter((_, i) => i !== itemIndex) });
+          if (!isMirror) {
+            // Use item.id for non-mirror items; for mirror we already removed the source item when opening
+            const freshSrc = players.find(p => String(p.id) === String(sourcePlayer.id));
+            if (freshSrc) updatePlayer(sourcePlayer.id, { inventory: (freshSrc.inventory || []).filter(it => it.id !== item.id) });
           }
           setLastItemPlayed({ item, sourcePlayerId: sourcePlayer.id });
         };

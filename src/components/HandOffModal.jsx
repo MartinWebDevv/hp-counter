@@ -44,7 +44,7 @@ const HandOffModal = ({ sourcePlayer, sourceUnitType, item, players, onConfirm, 
   const [mode, setMode] = useState(null); // 'give' | 'trade'
   const [tradeItem, setTradeItem] = useState(null); // item from target to trade back
 
-  const targetPlayer = players.find(p => p.id === selectedPlayerId);
+  const targetPlayer = players.find(p => String(p.id) === String(selectedPlayerId));
 
   // Get items held by target unit (for trade selection)
   const targetUnitItems = targetPlayer && selectedUnitType

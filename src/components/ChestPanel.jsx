@@ -29,6 +29,7 @@ const blankChest = () => ({
 
 const ChestCreator = ({ onSave, onCancel, lootPool, initialChest = null }) => {
   const [chest, setChest] = useState(() => initialChest ? { ...initialChest } : blankChest());
+  const [preloadSearch, setPreloadSearch] = useState('');
 
   const set = (field, value) => setChest(prev => ({ ...prev, [field]: value }));
   const setWeight = (tier, value) => setChest(prev => ({
@@ -133,7 +134,7 @@ const ChestCreator = ({ onSave, onCancel, lootPool, initialChest = null }) => {
                 const pct = totalWeight > 0 ? Math.round((chest.tierWeights[tier] / totalWeight) * 100) : 0;
                 return (
                   <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ color: c.text, fontWeight: '800', fontSize: '0.78rem', minWidth: '60px', flexShrink: 0 }}>{tier}</span>
+                    <span style={{ color: c.text, fontWeight: '800', fontSize: '0.78rem', width: '72px' }}>{tier}</span>
                     <input type="number" min="0" max="100" value={chest.tierWeights[tier]}
                       onChange={e => setWeight(tier, e.target.value)}
                       style={{ ...inputStyle, width: '64px', padding: '0.35rem 0.5rem', textAlign: 'center' }} />
@@ -147,7 +148,7 @@ const ChestCreator = ({ onSave, onCancel, lootPool, initialChest = null }) => {
             </div>
             {lootPool.filter(i => !i.isQuestItem && i.effect?.type !== 'key').length === 0 && (
               <div style={{ color: '#ef4444', fontSize: '0.68rem', marginTop: '0.4rem' }}>
-                ⚠️ No non-quest items in loot pool — add items in the Loot tab first.
+                ⚠️ No Common/Rare/Legendary items in loot pool — add items in the Loot tab first.
               </div>
             )}
           </div>
@@ -158,11 +159,25 @@ const ChestCreator = ({ onSave, onCancel, lootPool, initialChest = null }) => {
       {chest.mode === 'preloaded' && (
         <div style={{ marginBottom: '0.75rem' }}>
           <label style={labelStyle}>Select Items ({chest.preloadedItems.length} selected)</label>
-          {lootPool.filter(i => !i.isQuestItem && i.effect?.type !== 'key').length === 0 ? (
-            <div style={{ color: '#ef4444', fontSize: '0.72rem' }}>⚠️ No non-quest items in loot pool yet.</div>
+          {lootPool.length === 0 ? (
+            <div style={{ color: '#ef4444', fontSize: '0.72rem' }}>⚠️ No items in loot pool yet.</div>
           ) : (
+            <>
+            <div style={{ position: 'relative', marginBottom: '0.4rem' }}>
+              <span style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.72rem', color: colors.textFaint, pointerEvents: 'none' }}>🔍</span>
+              <input value={preloadSearch} onChange={e => setPreloadSearch(e.target.value)} placeholder="Search items..." style={{ width: '100%', boxSizing: 'border-box', background: surfaces.inset, border: borders.default, borderRadius: '6px', padding: '0.4rem 0.6rem 0.4rem 1.8rem', color: colors.textPrimary, fontFamily: fonts.body, fontSize: '0.78rem', outline: 'none' }} />
+              {preloadSearch && <button onClick={() => setPreloadSearch('')} style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: colors.textFaint, cursor: 'pointer', fontSize: '0.72rem', padding: 0 }}>✕</button>}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', maxHeight: '200px', overflowY: 'auto' }}>
-              {lootPool.filter(item => !item.isQuestItem && item.effect?.type !== 'key').map(item => {
+              {[...lootPool]
+                .filter(item => !preloadSearch.trim() || item.name.toLowerCase().includes(preloadSearch.trim().toLowerCase()))
+                .sort((a, b) => {
+                  if (a.isQuestItem && !b.isQuestItem) return 1;
+                  if (!a.isQuestItem && b.isQuestItem) return -1;
+                  const order = { Common: 0, Rare: 1, Legendary: 2 };
+                  return (order[a.tier] ?? 0) - (order[b.tier] ?? 0);
+                })
+                .map(item => {
                 const c = TIER_COLORS[item.tier] || TIER_COLORS.Common;
                 const selected = chest.preloadedItems.includes(item.id);
                 return (
@@ -186,6 +201,7 @@ const ChestCreator = ({ onSave, onCancel, lootPool, initialChest = null }) => {
                 );
               })}
             </div>
+            </>
           )}
         </div>
       )}

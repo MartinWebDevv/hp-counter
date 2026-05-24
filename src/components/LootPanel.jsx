@@ -46,11 +46,27 @@ const TIER_COLORS = {
   Quest:     { border: 'rgba(234,179,8,0.6)',   text: '#fde68a', bg: 'rgba(234,179,8,0.1)'    },
 };
 
+// ── Item type tags ────────────────────────────────────────────────────────────
+const ITEM_TAGS = [
+  { value: 'reactive',   label: 'Reactive',   icon: '⚡', desc: 'Use any time during any turn',          color: '#a78bfa', bg: 'rgba(139,92,246,0.12)',  border: 'rgba(139,92,246,0.45)' },
+  { value: 'combat',     label: 'Combat',     icon: '🗡️', desc: 'Activates inside the roll calculator',  color: '#f87171', bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.45)'  },
+  { value: 'prebattle',  label: 'Pre-Battle', icon: '🌅', desc: 'Use before combat begins',              color: '#38bdf8', bg: 'rgba(56,189,248,0.12)',  border: 'rgba(56,189,248,0.45)' },
+  { value: 'quest',      label: 'Quest',      icon: '🗝️', desc: 'Carried only — cannot be used',        color: '#fde68a', bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.45)'  },
+];
+
+// Helper: get tag config by value (with fallback for legacy items)
+const getTag = (item) => {
+  if (item.tag) return ITEM_TAGS.find(t => t.value === item.tag) || ITEM_TAGS[0];
+  if (item.isQuestItem) return ITEM_TAGS.find(t => t.value === 'quest');
+  return ITEM_TAGS[0]; // default: reactive
+};
+
 const blankItem = () => ({
   id: `loot_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
   name: '',
   description: '',
   tier: 'Common',
+  tag: 'reactive',
   isQuestItem: false,
   effect: { type: 'manual', value: 0, uses: 1 },
 });
@@ -58,13 +74,26 @@ const blankItem = () => ({
 // ── Item Creator ─────────────────────────────────────────────────────────────
 
 const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
-  const [item, setItem] = useState(initialItem ? { ...initialItem } : blankItem());
+  const [item, setItem] = useState(initialItem
+    ? { ...initialItem, tag: initialItem.tag || (initialItem.isQuestItem ? 'quest' : 'reactive') }
+    : blankItem());
   const isEditing = !!initialItem;
 
   const set = (field, value) => setItem(prev => ({ ...prev, [field]: value }));
   const setEffect = (field, value) => setItem(prev => ({
     ...prev, effect: { ...prev.effect, [field]: value },
   }));
+
+  // Keep isQuestItem in sync with tag for backward compat
+  const setTag = (tag) => setItem(prev => ({
+    ...prev,
+    tag,
+    isQuestItem: tag === 'quest',
+    tier: tag === 'quest' ? 'Quest' : (prev.tier === 'Quest' ? 'Common' : prev.tier),
+  }));
+
+  const isQuest = item.tag === 'quest';
+  const currentTag = ITEM_TAGS.find(t => t.value === item.tag) || ITEM_TAGS[0];
 
   const needsValue = ['attackBonus', 'defenseBonus', 'heal', 'maxHP'].includes(item.effect.type);
   const isDestroyItem = item.effect.type === 'destroyItem';
@@ -104,8 +133,34 @@ const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
           placeholder="What does this item do?" />
       </div>
 
+      {/* Item Type Tag */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <label style={labelStyle}>Item Type</label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+          {ITEM_TAGS.map(t => {
+            const sel = item.tag === t.value;
+            return (
+              <div key={t.value} onClick={() => setTag(t.value)} style={{
+                display: 'flex', alignItems: 'center', gap: '0.45rem',
+                padding: '0.5rem 0.65rem', borderRadius: '7px', cursor: 'pointer',
+                background: sel ? t.bg : 'rgba(0,0,0,0.25)',
+                border: `2px solid ${sel ? t.border : 'rgba(90,74,58,0.3)'}`,
+                transition: 'all 0.15s',
+              }}>
+                <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>{t.icon}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: sel ? t.color : colors.textMuted, fontWeight: '800', fontSize: '0.78rem' }}>{t.label}</div>
+                  <div style={{ color: colors.textFaint, fontSize: '0.6rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.desc}</div>
+                </div>
+                {sel && <span style={{ color: t.color, fontSize: '0.65rem', marginLeft: 'auto', flexShrink: 0 }}>✓</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Tier — hidden for quest items */}
-      {!item.isQuestItem && (
+      {!isQuest && (
         <div style={{ marginBottom: '0.75rem' }}>
           <label style={labelStyle}>Tier</label>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -126,29 +181,31 @@ const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
           </div>
         </div>
       )}
-      {item.isQuestItem && (
+      {isQuest && (
         <div style={{ marginBottom: '0.75rem', padding: '0.4rem 0.75rem',
           background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)',
           borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.9rem' }}>🗝️</span>
-          <span style={{ color: '#fde68a', fontWeight: '800', fontSize: '0.78rem' }}>Quest Tier — no slot cost · cannot be in chests · cannot be destroyed</span>
+          <span style={{ color: '#fde68a', fontWeight: '800', fontSize: '0.78rem' }}>Quest — no slot cost · cannot be in chests · cannot be destroyed</span>
         </div>
       )}
 
-      {/* Effect type */}
-      <div style={{ marginBottom: '0.75rem' }}>
-        <label style={labelStyle}>Effect Type</label>
-        <select style={{ ...inputStyle, cursor: 'pointer' }}
-          value={item.effect.type}
-          onChange={e => setEffect('type', e.target.value)}>
-          {EFFECT_TYPES.map(et => (
-            <option key={et.value} value={et.value}>{et.label}</option>
-          ))}
-        </select>
-      </div>
+      {/* Effect type — hidden for quest items */}
+      {!isQuest && (
+        <div style={{ marginBottom: '0.75rem' }}>
+          <label style={labelStyle}>Effect Type</label>
+          <select style={{ ...inputStyle, cursor: 'pointer' }}
+            value={item.effect.type}
+            onChange={e => setEffect('type', e.target.value)}>
+            {EFFECT_TYPES.map(et => (
+              <option key={et.value} value={et.value}>{et.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Effect value + uses */}
-      {(needsValue || needsUses) && (
+      {!isQuest && (needsValue || needsUses) && (
         <div style={{ display: 'grid', gridTemplateColumns: needsValue && needsUses ? '1fr 1fr' : '1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
           {needsValue && (
             <div>
@@ -170,7 +227,7 @@ const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
       )}
 
       {/* DM config: Damage per Round + Debuff Amount + Duration */}
-      {(needsDamage || needsDebuffVal || needsDuration) && (
+      {!isQuest && (needsDamage || needsDebuffVal || needsDuration) && (
         <div style={{ display: 'grid', gridTemplateColumns: [needsDamage || needsDebuffVal, needsDuration].filter(Boolean).length > 1 ? '1fr 1fr' : '1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
           {needsDamage && (
             <div>
@@ -199,34 +256,6 @@ const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
         </div>
       )}
 
-      {/* Quest Item toggle */}
-      <div onClick={() => {
-        const next = !item.isQuestItem;
-        setItem(prev => ({ ...prev, isQuestItem: next, tier: next ? 'Quest' : 'Common' }));
-      }} style={{
-        display: 'flex', alignItems: 'center', gap: '0.75rem',
-        padding: '0.6rem 0.85rem', marginBottom: '0.75rem',
-        background: item.isQuestItem ? 'rgba(234,179,8,0.1)' : surfaces.inset,
-        border: `2px solid ${item.isQuestItem ? 'rgba(234,179,8,0.5)' : 'rgba(90,74,58,0.3)'}`,
-        borderRadius: '8px', cursor: 'pointer',
-      }}>
-        <div style={{
-          width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
-          border: `2px solid ${item.isQuestItem ? '#eab308' : colors.textFaint}`,
-          background: item.isQuestItem ? '#eab308' : 'transparent',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.7rem', color: '#000', fontWeight: '900',
-        }}>{item.isQuestItem && '✓'}</div>
-        <div>
-          <div style={{ color: item.isQuestItem ? '#fde68a' : colors.textMuted, fontWeight: '800', fontSize: '0.82rem' }}>
-            🗝️ Quest Item
-          </div>
-          <div style={{ color: colors.textFaint, fontSize: '0.65rem' }}>
-            Does not count toward carrying slots · Cannot be destroyed · Can be stolen if unit is killed
-          </div>
-        </div>
-      </div>
-
       {/* Buttons */}
       <div style={{ display: 'flex', gap: '0.75rem' }}>
         <button
@@ -239,7 +268,7 @@ const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
             color: item.name.trim() ? '#d1fae5' : '#4a3322',
             borderRadius: '8px', cursor: item.name.trim() ? 'pointer' : 'not-allowed',
             fontFamily: 'inherit', fontWeight: '800', fontSize: '0.875rem',
-          }}>✓ Create Item</button>
+          }}>{isEditing ? '✓ Save Changes' : '✓ Create Item'}</button>
         <button onClick={onCancel} style={{
           flex: 1, padding: '0.65rem',
           background: 'rgba(127,29,29,0.3)', border: '2px solid #7f1d1d',
@@ -250,8 +279,6 @@ const ItemCreator = ({ onSave, onCancel, initialItem = null }) => {
     </div>
   );
 };
-
-// ── Give to Player Modal ──────────────────────────────────────────────────────
 
 const GiveModal = ({ item, players, onConfirm, onClose }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
@@ -380,6 +407,7 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive, onEdit }) =>
   const [showGive, setShowGive] = useState(false);
   const c = item.isQuestItem ? TIER_COLORS.Quest : (TIER_COLORS[item.tier] || TIER_COLORS.Common);
   const effectLabel = EFFECT_TYPES.find(e => e.value === item.effect?.type)?.label || '📋 Manual';
+  const tag = getTag(item);
 
   return (
     <>
@@ -393,12 +421,23 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive, onEdit }) =>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.5rem' }}>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+              {/* Tag dot */}
+              <span title={`${tag.label} — ${tag.desc}`} style={{
+                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                background: tag.color, display: 'inline-block',
+                boxShadow: `0 0 4px ${tag.color}88`,
+              }} />
               <span style={{ color: c.text, fontWeight: '900', fontSize: '0.9rem' }}>{item.name}</span>
               <span style={{
                 padding: '0.1rem 0.45rem', background: c.bg, border: `1px solid ${c.border}`,
                 borderRadius: '4px', color: c.text, fontSize: '0.62rem', fontWeight: '800',
                 letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0,
               }}>{item.isQuestItem ? '🗝️ Quest' : item.tier}</span>
+              <span style={{
+                padding: '0.1rem 0.45rem', background: tag.bg, border: `1px solid ${tag.border}`,
+                borderRadius: '4px', color: tag.color, fontSize: '0.6rem', fontWeight: '800',
+                flexShrink: 0,
+              }}>{tag.icon} {tag.label}</span>
             </div>
             {item.description && (
               <div style={{ color: colors.textMuted, fontSize: '0.75rem', lineHeight: '1.4' }}>{item.description}</div>
@@ -414,12 +453,14 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive, onEdit }) =>
         {/* Effect badge */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-            <span style={{
-              padding: '0.15rem 0.5rem', background: 'rgba(0,0,0,0.4)',
-              border: '1px solid rgba(90,74,58,0.4)', borderRadius: '4px',
-              color: '#8b7355', fontSize: '0.68rem', fontWeight: '700',
-            }}>{effectLabel}</span>
-            {item.effect?.type !== 'manual' && (
+            {!item.isQuestItem && (
+              <span style={{
+                padding: '0.15rem 0.5rem', background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(90,74,58,0.4)', borderRadius: '4px',
+                color: '#8b7355', fontSize: '0.68rem', fontWeight: '700',
+              }}>{effectLabel}</span>
+            )}
+            {!item.isQuestItem && item.effect?.type !== 'manual' && (
               <>
                 {item.effect?.value > 0 && (
                   <span style={{
@@ -476,7 +517,6 @@ const LootItemCard = ({ item, players, onGive, onDelete, onArchive, onEdit }) =>
     </>
   );
 };
-
 // ── Main LootPanel ────────────────────────────────────────────────────────────
 
 const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {

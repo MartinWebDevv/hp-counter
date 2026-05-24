@@ -1161,11 +1161,10 @@ const CalculatorD20 = ({
             marginBottom: '1rem'
           }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
-                  Attacker Roll ({attackerDice}):
-                </label>
-                {/* Attacker reroll buttons — always shown when items exist, before typing */}
+
+              {/* ── ATTACKER COLUMN ── */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {/* Reroll / force-reroll chips — above the input */}
                 {(() => {
                   const allAtkRerolls = [
                     ...attackerRerollItems.map(it => ({ ...it, label: '⟳ REROLL MY ATTACK', color: '#86efac', owner: attacker })),
@@ -1196,9 +1195,37 @@ const CalculatorD20 = ({
                     </div>
                   );
                 })()}
-                {/* Attack bonus item buttons */}
+
+                {/* Label */}
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                  Attacker Roll ({attackerDice}):
+                </label>
+
+                {/* Input field */}
+                <input
+                  type="number"
+                  min="1"
+                  max={attackerDice === 'D20' ? 20 : 10}
+                  value={attackerRoll}
+                  onChange={(e) => setAttackerRoll(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#1a0f0a',
+                    color: colors.gold,
+                    padding: '0.75rem',
+                    borderRadius: '6px',
+                    border: borders.warm,
+                    fontSize: '1.5rem',
+                    textAlign: 'center',
+                    fontFamily: fonts.display,
+                    fontWeight: 'bold',
+                    boxSizing: 'border-box',
+                  }}
+                />
+
+                {/* Attack bonus item buttons — below the input */}
                 {attackBonusItems.length > 0 && (
-                  <div style={{ marginBottom: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                  <div style={{ marginTop: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                     {attackBonusItems.map(item => (
                       <button key={item.id} onClick={() => consumeBonusItem(item, attacker, 'attack')}
                         style={{
@@ -1220,67 +1247,12 @@ const CalculatorD20 = ({
                     ))}
                   </div>
                 )}
-                <input
-                  type="number"
-                  min="1"
-                  max={attackerDice === 'D20' ? 20 : 10}
-                  value={attackerRoll}
-                  onChange={(e) => setAttackerRoll(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: '#1a0f0a',
-                    color: colors.gold,
-                    padding: '0.75rem',
-                    borderRadius: '6px',
-                    border: borders.warm,
-                    fontSize: '1.5rem',
-                    textAlign: 'center',
-                    fontFamily: fonts.display,
-                    fontWeight: 'bold'
-                  }}
-                />
               </div>
 
-              {/* Defense bonus item buttons */}
-              {defenseBonusItems.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', margin: '0.4rem 0' }}>
-                  {defenseBonusItems.map(item => (
-                    <button key={item.id} onClick={() => consumeBonusItem(item, defender, 'defense')}
-                      style={{
-                        padding: '0.2rem 0.6rem',
-                        background: activeDefenseBonus > 0 ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)',
-                        border: `1px solid ${activeDefenseBonus > 0 ? 'rgba(59,130,246,0.7)' : 'rgba(59,130,246,0.4)'}`,
-                        borderRadius: '20px', cursor: 'pointer',
-                        color: '#93c5fd', fontFamily: fonts.body,
-                        fontWeight: '800', fontSize: '0.65rem',
-                      }}>
-                      🛡️ +{item.effect?.value} def
-                      <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
-                        {defender?.playerName || ''}
-                      </span>
-                      <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
-                        {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-
-
-              <div>
-                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
-                  Defender Roll ({defenderDice}):
-                </label>
-                {/* Guy unblockable — no defender roll, show label instead */}
-                {isGuyAttack ? (
-                  <div style={{ width: '100%', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', color: '#f97316', fontWeight: '900', fontSize: '0.85rem', letterSpacing: '0.05em' }}>
-                    🎯 UNBLOCKABLE — Armor floor only
-                  </div>
-                ) : (
-                  <>
-                {/* Defender reroll buttons — always shown when items exist, before typing */}
-                {(() => {
+              {/* ── DEFENDER COLUMN ── */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {/* Reroll / force-reroll chips — above the input */}
+                {!isGuyAttack && (() => {
                   const allDefRerolls = [
                     ...defenderRerollItems.map(it => ({ ...it, label: '⟳ REROLL MY DEFENSE', color: '#86efac', owner: defender })),
                     ...forceDefenseRerollItems.map(it => ({ ...it, label: '⚡ FORCE DEFENDER REROLL', color: '#fca5a5', owner: attacker })),
@@ -1310,28 +1282,66 @@ const CalculatorD20 = ({
                     </div>
                   );
                 })()}
-                <input
-                  type="number"
-                  min="1"
-                  max={defenderDice === 'D20' ? 20 : 10}
-                  value={defenderRoll}
-                  onChange={(e) => setDefenderRoll(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: '#1a0f0a',
-                    color: colors.gold,
-                    padding: '0.75rem',
-                    borderRadius: '6px',
-                    border: borders.warm,
-                    fontSize: '1.5rem',
-                    textAlign: 'center',
-                    fontFamily: fonts.display,
-                    fontWeight: 'bold'
-                  }}
-                />
-                  </>
+
+                {/* Label */}
+                <label style={{ color: colors.gold, fontSize: '0.875rem', display: 'block', marginBottom: '0.5rem' }}>
+                  Defender Roll ({defenderDice}):
+                </label>
+
+                {/* Input field or Guy unblockable placeholder */}
+                {isGuyAttack ? (
+                  <div style={{ width: '100%', background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.4)', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', color: '#f97316', fontWeight: '900', fontSize: '0.85rem', letterSpacing: '0.05em' }}>
+                    🎯 UNBLOCKABLE — Armor floor only
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    min="1"
+                    max={defenderDice === 'D20' ? 20 : 10}
+                    value={defenderRoll}
+                    onChange={(e) => setDefenderRoll(e.target.value)}
+                    style={{
+                      width: '100%',
+                      background: '#1a0f0a',
+                      color: colors.gold,
+                      padding: '0.75rem',
+                      borderRadius: '6px',
+                      border: borders.warm,
+                      fontSize: '1.5rem',
+                      textAlign: 'center',
+                      fontFamily: fonts.display,
+                      fontWeight: 'bold',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                )}
+
+                {/* Defense bonus item buttons — below the input */}
+                {!isGuyAttack && defenseBonusItems.length > 0 && (
+                  <div style={{ marginTop: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                    {defenseBonusItems.map(item => (
+                      <button key={item.id} onClick={() => consumeBonusItem(item, defender, 'defense')}
+                        style={{
+                          padding: '0.2rem 0.6rem',
+                          background: activeDefenseBonus > 0 ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)',
+                          border: `1px solid ${activeDefenseBonus > 0 ? 'rgba(59,130,246,0.7)' : 'rgba(59,130,246,0.4)'}`,
+                          borderRadius: '20px', cursor: 'pointer',
+                          color: '#93c5fd', fontFamily: fonts.body,
+                          fontWeight: '800', fontSize: '0.65rem',
+                        }}>
+                        🛡️ +{item.effect?.value} def
+                        <span style={{ color: colors.textMuted, marginLeft: '0.3rem', fontSize: '0.58rem', fontStyle: 'italic' }}>
+                          {defender?.playerName || ''}
+                        </span>
+                        <span style={{ color: colors.textFaint, marginLeft: '0.25rem', fontSize: '0.58rem' }}>
+                          {item.usesLeft === Infinity ? '∞' : item.usesLeft}✕
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
+
             </div>
 
             <button

@@ -17,12 +17,15 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
 
   const buildLootItem = (item) => {
     const effect = item.effect || { type: 'manual', uses: 1 };
+    // tag: use stored tag, fall back to 'quest' for isQuestItem, default 'reactive'
+    const tag = item.tag || (item.isQuestItem ? 'quest' : 'reactive');
     return {
       id: item.id || `loot_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
       name: item.name || 'Unknown Item',
       description: item.description || '',
       tier: item.tier || 'Common',
-      isQuestItem: item.isQuestItem || false,
+      tag,
+      isQuestItem: item.isQuestItem || tag === 'quest',
       // uses === 0 means unlimited; store 0 (not Infinity) so Firestore can serialize it
       effect: { ...effect, usesRemaining: effect.uses === 0 ? 0 : (effect.usesRemaining ?? effect.uses ?? 1) },
       heldBy: item.heldBy || null,
@@ -128,6 +131,7 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
       name: item.name,
       description: item.description,
       tier: item.tier || 'Common',
+      tag: item.tag || (item.isQuestItem ? 'quest' : 'reactive'),
       isQuestItem: item.isQuestItem || false,
       effect: { ...item.effect, usesRemaining: item.effect?.uses ?? 1 },
     }));
@@ -182,6 +186,7 @@ export const useLootHandlers = (players, updatePlayer, addLog, trackVP) => {
       name: item.name,
       description: item.description,
       tier: item.tier,
+      tag: item.tag || (item.isQuestItem ? 'quest' : 'reactive'),
       effect: item.effect,
       heldBy: unitType,
       isQuestItem: item.isQuestItem || false,

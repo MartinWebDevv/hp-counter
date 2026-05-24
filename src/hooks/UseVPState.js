@@ -5,8 +5,9 @@ const AWARD_CATS = [
   { id: 'pvpDamage',        label: 'The Reaper',      icon: '⚔️',  pts: 1, statKey: 'pvpDamage',     higher: true  },
   { id: 'damageTaken',      label: 'Punching Bag',    icon: '🛡️',  pts: 1, statKey: 'damageTaken',   higher: true  },
   { id: 'leastDamageTaken', label: 'Ghost Protocol',  icon: '🧊', pts: 1, statKey: 'damageTaken',   higher: false },
-  { id: 'leastDeaths',      label: 'Least Deaths',    icon: '💪', pts: 1, statKey: 'revivesUsed',   higher: false },
+  // Immortal MUST run before leastDeaths — players who get Immortal are excluded from leastDeaths
   { id: 'immortal',         label: 'Immortal',        icon: '✨', pts: 2, statKey: 'revivesUsed',   higher: false, zeroOnly: true },
+  { id: 'leastDeaths',      label: 'Least Deaths',    icon: '💪', pts: 1, statKey: 'revivesUsed',   higher: false },
   { id: 'itemsObtained',    label: 'Scavenger',       icon: '📦', pts: 1, statKey: 'itemsObtained', higher: true  },
   { id: 'finalBossKill',    label: 'Kingslayer',      icon: '👑', pts: 2, statKey: 'finalBossKill', higher: true  },
   { id: 'firstBlood',       label: 'First Blood',     icon: '🩸', pts: 1, statKey: 'firstBlood',    higher: true  },
@@ -89,6 +90,17 @@ export const useVPState = (players, addLog) => {
     // Absent players never receive VP awards
     const eligiblePlayers = sourcePlayers.filter(p => !p.isAbsent);
 
+    // Track Immortal winners so they are excluded from Least Deaths
+    const immortalWinners = new Set();
+
+    const grantAward = (cat, player, value) => {
+      awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value, sessionName });
+      const pid = player.id;
+      if (!newVpStats[pid]) newVpStats[pid] = {};
+      if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
+      newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value, awardedAt: new Date().toISOString() });
+    };
+
     AWARD_CATS.forEach(cat => {
       const scores = eligiblePlayers.map(p => {
         const s = sourceVpStats[p.id] || {};
@@ -96,41 +108,33 @@ export const useVPState = (players, addLog) => {
       });
       if (scores.length === 0) return;
 
+      // ── Immortal: all players with zero revives get it; they are excluded from Least Deaths ──
       if (cat.zeroOnly) {
         scores.filter(s => s.val === 0).forEach(({ player }) => {
-          awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: 0, sessionName });
-          const pid = player.id;
-          if (!newVpStats[pid]) newVpStats[pid] = {};
-          if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
-          newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value: 0, awardedAt: new Date().toISOString() });
+          immortalWinners.add(String(player.id));
+          grantAward(cat, player, 0);
         });
         return;
       }
 
+      // ── Least Deaths: exclude anyone who already received Immortal this session ──
+      const pool = cat.id === 'leastDeaths'
+        ? scores.filter(s => !immortalWinners.has(String(s.player.id)))
+        : scores;
+
+      if (pool.length === 0) return;
+
       const top = cat.higher
-        ? Math.max(...scores.map(s => s.val))
-        : Math.min(...scores.map(s => s.val));
+        ? Math.max(...pool.map(s => s.val))
+        : Math.min(...pool.map(s => s.val));
+
       if (cat.higher && top <= 0) return;
-      if (!cat.higher && scores.every(s => s.val === 0)) return;
+      if (!cat.higher && pool.every(s => s.val === 0)) return;
 
-      scores.filter(s => s.val === top).forEach(({ player }) => {
-        awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value: top, sessionName });
-        const pid = player.id;
-        if (!newVpStats[pid]) newVpStats[pid] = {};
-        if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
-        newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value: top, awardedAt: new Date().toISOString() });
-      });
-    });
-
-    // Manual awards — also skip absent players
-    eligiblePlayers.forEach(p => {
-      (sourceVpStats[p.id]?.manualAwards || []).forEach(a => {
-        awards.push({ categoryId: a.categoryId, label: a.reason, icon: '🏅', pts: a.points, playerId: p.id, playerName: p.playerName, playerColor: p.playerColor, value: a.points, sessionName, isManual: true });
-        const pid = p.id;
-        if (!newVpStats[pid]) newVpStats[pid] = {};
-        if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
-        newVpStats[pid].sessionAwards.push({ categoryId: a.categoryId, label: a.reason, icon: '🏅', pts: a.points, sessionName, awardedAt: a.awardedAt || new Date().toISOString() });
-      });
+      const winners = pool.filter(s => s.val === top);
+      // Award to all tied players (ties are valid — only skip if no clear winner
+      // because of zero-stat categories already handled above)
+      winners.forEach(({ player }) => grantAward(cat, player, top));
     });
 
     saveVpStats(newVpStats);

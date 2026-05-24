@@ -22,6 +22,15 @@ import { FACTION_STATS } from '../data/factionStats';
  * Read-only live view of the game state, synced from Firestore.
  * Tabs: My Character | Players | NPCs | Victory
  */
+const TAG_STYLES = {
+  reactive:  { color: '#a78bfa', label: 'Reactive',   icon: '⚡', desc: 'Use any time' },
+  combat:    { color: '#f87171', label: 'Combat',     icon: '🗡️', desc: 'Use inside calculator' },
+  prebattle: { color: '#38bdf8', label: 'Pre-Battle', icon: '🌅', desc: 'Use before battle' },
+  quest:     { color: '#fde68a', label: 'Quest',      icon: '🗝️', desc: 'Carried only' },
+};
+const getItemTag = (item) =>
+  TAG_STYLES[item.tag] || (item.isQuestItem ? TAG_STYLES.quest : TAG_STYLES.reactive);
+
 const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
   const [gameState,   setGameState]   = React.useState(null);
   const [activeTab,     setActiveTab]     = React.useState('mine');
@@ -92,7 +101,8 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
           return;
         }
 
-        // Normal choice screens target the item user
+        // Normal choice screens target the item user or trade participant
+        const tradeTypes = ['tradeRequest', 'tradeReview', 'tradeResult', 'giftNotice'];
         if (choice.targetPlayerUid === playerData.uid && choice.type !== 'destroyNotice') {
           seenChoices.current.add(choice.choiceId);
           setPendingChoice(choice);
@@ -174,7 +184,7 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
 
   const players     = gameState.players     || [];
   const allNpcs     = (gameState.npcs       || []).filter(n => !n.isDead);
-  const npcs        = allNpcs.filter(n => n.active); // active-only for attack modal
+  const npcs        = allNpcs.filter(n => n.active);
   const vpStats     = gameState.vpStats     || {};
   const currentRound = gameState.currentRound || 1;
 
@@ -673,6 +683,39 @@ const PlayerGameView = ({ lobbyCode, playerData, onLeaveGame = null }) => {
           onSubmit={() => setPendingChoice(null)}
         />
       )}
+      {pendingChoice && pendingChoice.type === 'tradeRequest' && (
+        <TradeRequestScreen
+          choice={pendingChoice}
+          lobbyCode={lobbyCode}
+          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.find(p => String(p.id) === String(playerData?.id)) || null}
+          allPlayers={gameState?.players || []}
+          onSubmit={() => setPendingChoice(null)}
+        />
+      )}
+      {pendingChoice && pendingChoice.type === 'tradeReview' && (
+        <TradeReviewScreen
+          choice={pendingChoice}
+          lobbyCode={lobbyCode}
+          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.find(p => String(p.id) === String(playerData?.id)) || null}
+          allPlayers={gameState?.players || []}
+          onSubmit={() => setPendingChoice(null)}
+        />
+      )}
+      {pendingChoice && pendingChoice.type === 'giftNotice' && (
+        <GiftNoticeScreen
+          choice={pendingChoice}
+          lobbyCode={lobbyCode}
+          myPlayer={gameState?.players?.find(p => p.uid === playerData?.uid) || gameState?.players?.find(p => String(p.id) === String(playerData?.id)) || null}
+          allPlayers={gameState?.players || []}
+          onSubmit={() => setPendingChoice(null)}
+        />
+      )}
+      {pendingChoice && pendingChoice.type === 'tradeResult' && (
+        <TradeResultScreen
+          choice={pendingChoice}
+          onSubmit={() => setPendingChoice(null)}
+        />
+      )}
       {pendingChoice && pendingChoice.type === 'guyTargetPick' && (
         <GuyTargetPickScreen
           choice={pendingChoice}
@@ -768,7 +811,7 @@ const ItemChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, npcs, onSub
         choiceId:          choice.choiceId,
         playerId:          myPlayer?.id,
         playerName:        myPlayer?.playerName,
-        itemIndex:         choice.itemIndex,
+        itemId:            choice.itemId,
         itemName:          choice.itemName,
         itemEffect:        effectType,
         targetType:        selectedTarget.type,
@@ -1017,7 +1060,8 @@ const ReadOnlyPlayerCard = ({
 }) => {
   const [showSquad,        setShowSquad]        = React.useState(true);
   const [attackModal,      setAttackModal]      = React.useState(null);
-  const [sending,          setSending]          = React.useState(false);
+  const [sendingId,        setSendingId]        = React.useState(null); // item.id currently being sent
+  const [sendingAttack,    setSendingAttack]    = React.useState(false); // attack request in-flight
   const [squadAttack,      setSquadAttack]      = React.useState(false);
   const [squadUnits,       setSquadUnits]       = React.useState([]);
   const [expandedTargetId, setExpandedTargetId] = React.useState(null);
@@ -1060,8 +1104,8 @@ const ReadOnlyPlayerCard = ({
   };
 
   const sendAttackRequest = async (target) => {
-    if (!lobbyCode || sending) return;
-    setSending(true);
+    if (!lobbyCode || sendingAttack) return;
+    setSendingAttack(true);
     try {
       const reqId = `atk_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const squadMembers = (!isCommanderAttack && squadAttack && squadUnits.length > 0)
@@ -1087,7 +1131,7 @@ const ReadOnlyPlayerCard = ({
         timestamp:        Date.now(),
       });
     } finally {
-      setSending(false);
+      setSendingAttack(false);
       setSquadAttack(false);
       setSquadUnits([]);
       setExpandedTargetId(null);
@@ -1321,37 +1365,49 @@ const ReadOnlyPlayerCard = ({
           <div style={{ color: colors.textFaint, fontSize: '0.75rem', textAlign: 'center', padding: '0.85rem' }}>No items</div>
         )}
         <div style={{ overflowX: 'hidden' }}>
-          {sortItems(inventory).map((item, i) => {
+          {sortItems(inventory).map((item, _i) => {
             const tc = item.isQuestItem ? tierColors.Quest : (tierColors[item.tier] || tierColors.Common);
             const usesLeft = item.effect?.uses === 0 ? 999 : (item.effect?.usesRemaining ?? item.effect?.uses ?? 1);
             const canUse = !item.effect || item.effect.type === 'manual' || usesLeft > 0;
             const isKey = item.effect?.type === 'key';
+            const tag = getItemTag(item);
+
+            // Combat items only usable inside the calculator — never show USE on tile
+            const isCombatOnly = item.tag === 'combat' || ['rerollAttack','rerollDefense','forceAttackReroll','forceDefenseReroll','diceSwap','closecall'].includes(item.effect?.type);
+            const isQuestTag   = item.isQuestItem || item.tag === 'quest';
+            const isPreBattle  = item.tag === 'prebattle';
+
             const isSelfTarget = ['cleanse','fullCleanse','shieldWall','counterStrike','resurrect'].includes(item.effect?.type);
             const isEnemyTarget = ['poisonVial','stunGrenade','attackDebuffItem','defenseDebuffItem','marked'].includes(item.effect?.type);
             const isGlobal = ['npcPlague','playerPlague','crownsFavor','nullify','mirror'].includes(item.effect?.type);
-            const showUseButton = !item.isQuestItem && !isKey && (
-              ['heal','maxHP','attackBonus','defenseBonus','manual','destroyItem','extraSlot','theGuy'].includes(item.effect?.type)
-              || isSelfTarget || isEnemyTarget || isGlobal
-            );
+            const hasUseLogic = ['heal','maxHP','attackBonus','defenseBonus','manual','destroyItem','extraSlot','theGuy'].includes(item.effect?.type) || isSelfTarget || isEnemyTarget || isGlobal;
+
+            // Pre-battle items behave the same as reactive — USE button always visible.
+            // The tag is informational; the DM enforces timing via the approval window.
+            const showUseButton = isOwnCard && !isQuestTag && !isCombatOnly && hasUseLogic;
+
+            const sending = sendingId === item.id;
 
             const sendItemRequest = async (action) => {
-              if (!isOwnCard || !lobbyCode || sending) return;
-              setSending(true);
+              if (!isOwnCard || !lobbyCode || sendingId) return;
+              setSendingId(item.id);
               try {
                 const reqId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
                 await writePendingRequest(lobbyCode, reqId, {
                   type: 'useItem',
                   reqId,
-                  playerId: player.id,
-                  playerName: player.playerName,
-                  itemIndex: i,
-                  itemName: item.name,
-                  itemEffect: item.effect?.type || 'none',
+                  playerId:        player.id,
+                  playerName:      player.playerName,
+                  itemId:          item.id,
+                  itemName:        item.name,
+                  itemDescription: item.description || '',
+                  itemEffect:      item.effect?.type || 'none',
+                  itemTag:         item.tag || (item.isQuestItem ? 'quest' : 'reactive'),
                   action,
                   timestamp: Date.now(),
                 });
               } finally {
-                setSending(false);
+                setSendingId(null);
               }
             };
 
@@ -1365,9 +1421,10 @@ const ReadOnlyPlayerCard = ({
                   })();
 
             return (
-              <div key={i} style={{ padding: '0.65rem 0.85rem', borderLeft: `3px solid ${tc.text}`, borderBottom: i < inventory.length - 1 ? '1px solid rgba(201,169,97,0.07)' : 'none', opacity: canUse ? 1 : 0.4 }}>
-                {/* Row 1: icon + name + description + tier badge */}
+              <div key={item.id} style={{ padding: '0.65rem 0.85rem', borderLeft: `3px solid ${tc.text}`, borderBottom: _i < inventory.length - 1 ? '1px solid rgba(201,169,97,0.07)' : 'none', opacity: canUse ? 1 : 0.4 }}>
+                {/* Row 1: tag dot + icon + name + description + tier badge */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                  <span title={`${tag.label} — ${tag.desc}`} style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, marginTop: '0.35rem', background: tag.color, boxShadow: `0 0 4px ${tag.color}88` }} />
                   <span style={{ fontSize: '0.95rem', flexShrink: 0, marginTop: '0.05rem' }}>{item.isQuestItem ? '🗝️' : '📦'}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: tc.text, fontWeight: '700', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
@@ -1382,10 +1439,12 @@ const ReadOnlyPlayerCard = ({
                     <span style={pill(tc.color || tc.text, tc.subtle || tc.bg, tc.border)}>{item.isQuestItem ? 'Quest' : item.tier}</span>
                   </div>
                 </div>
-                {/* Row 2: holder label + action buttons */}
+                {/* Row 2: holder label + type note + action buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <span style={{ color: colors.textFaint, fontSize: '0.6rem', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {heldByLabel}{item.effect?.uses !== 0 && usesLeft !== 999 && ` · ${usesLeft} use${usesLeft !== 1 ? 's' : ''} left`}
+                    {isCombatOnly && !isQuestTag && <span style={{ color: tag.color, marginLeft: '0.3rem' }}>· {tag.icon} calc only</span>}
+                    {isPreBattle && <span style={{ color: tag.color, marginLeft: '0.3rem' }}>· {tag.icon} pre-battle</span>}
                   </span>
                   {isOwnCard && (
                     <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
@@ -1409,13 +1468,9 @@ const ReadOnlyPlayerCard = ({
                         <button onClick={() => sendItemRequest('useKey')} disabled={sending}
                           style={{ ...pill(colors.amber, colors.amberSubtle, colors.amberBorder), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🔑 USE</button>
                       )}
-                      {!item.isQuestItem && (
+                      {(
                         <button onClick={() => sendItemRequest('pass')} disabled={sending}
                           style={{ ...pill(colors.textMuted, 'rgba(0,0,0,0.25)', 'rgba(90,74,58,0.35)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🤝 PASS</button>
-                      )}
-                      {!item.isQuestItem && (
-                        <button onClick={() => { if (window.confirm(`Drop "${item.name}"?`)) sendItemRequest('drop'); }} disabled={sending}
-                          style={{ ...pill('#f87171', 'rgba(239,68,68,0.08)', 'rgba(239,68,68,0.3)'), cursor: 'pointer', fontSize: '0.65rem', fontWeight: '800', fontFamily: fonts.body }}>🗑</button>
                       )}
                     </div>
                   )}
@@ -1493,7 +1548,7 @@ const ReadOnlyPlayerCard = ({
               <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Enemies</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
                 {npcs.map(npc => (
-                  <button key={npc.id} onClick={() => sendAttackRequest({ id: npc.id, type: 'npc', name: npc.name })} disabled={sending}
+                  <button key={npc.id} onClick={() => sendAttackRequest({ id: npc.id, type: 'npc', name: npc.name })} disabled={sendingAttack}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.65rem 0.85rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 5px #ef4444', flexShrink: 0 }} />
                     <div style={{ flex: 1, textAlign: 'left' }}>
@@ -1585,8 +1640,8 @@ const ReadOnlyPlayerCard = ({
                             <div style={{ padding: '0.5rem 0.85rem 0.65rem' }}>
                               <button
                                 onClick={() => sendAttackRequest({ id: enemyPlayer.id, type: 'player', name: enemyPlayer.playerName })}
-                                disabled={sending}
-                                style={{ width: '100%', padding: '0.6rem', background: pColor + '20', border: `1px solid ${pColor}50`, borderRadius: '7px', color: pColor, fontWeight: '800', fontSize: '0.78rem', fontFamily: fonts.body, cursor: sending ? 'not-allowed' : 'pointer' }}
+                                disabled={sendingAttack}
+                                style={{ width: '100%', padding: '0.6rem', background: pColor + '20', border: `1px solid ${pColor}50`, borderRadius: '7px', color: pColor, fontWeight: '800', fontSize: '0.78rem', fontFamily: fonts.body, cursor: sendingAttack ? 'not-allowed' : 'pointer' }}
                               >
                                 ⚔️ Attack {selectedForThisPlayer.length} unit{selectedForThisPlayer.length > 1 ? 's' : ''}
                               </button>
@@ -1655,24 +1710,24 @@ const ReadOnlyPlayerCard = ({
               <button
                 onClick={() => {
                   setConfirmItem(null);
-                  // Build a scoped sendItemRequest for this specific item index
                   (async () => {
-                    if (!isOwnCard || !lobbyCode || sending) return;
-                    setSending(true);
+                    if (!isOwnCard || !lobbyCode || sendingId) return;
+                    setSendingId(ci.id);
                     try {
                       const reqId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-                      const { writePendingRequest } = await import('../services/gameStateService');
                       await writePendingRequest(lobbyCode, reqId, {
                         type: 'useItem', reqId,
-                        playerId:   player.id,
-                        playerName: player.playerName,
-                        itemIndex:  ci_idx,
-                        itemName:   ci.name,
-                        itemEffect: ci.effect?.type || 'none',
-                        action:     'use',
-                        timestamp:  Date.now(),
+                        playerId:        player.id,
+                        playerName:      player.playerName,
+                        itemId:          ci.id,
+                        itemName:        ci.name,
+                        itemDescription: ci.description || '',
+                        itemEffect:      ci.effect?.type || 'none',
+                        itemTag:         ci.tag || (ci.isQuestItem ? 'quest' : 'reactive'),
+                        action:          'use',
+                        timestamp:       Date.now(),
                       });
-                    } finally { setSending(false); }
+                    } finally { setSendingId(null); }
                   })();
                 }}
                 style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
@@ -1716,8 +1771,8 @@ const ReadOnlyPlayerCard = ({
       const selectedOutcome = validRoll ? outcomes[rollNum - 1] : null;
 
       const handleSend = async () => {
-        if (!validRoll || sending) return;
-        setSending(true);
+        if (!validRoll || sendingId) return;
+        setSendingId(gi.id);
         try {
           const reqId = `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           await writePendingRequest(lobbyCode, reqId, {
@@ -1725,7 +1780,7 @@ const ReadOnlyPlayerCard = ({
             reqId,
             playerId: player.id,
             playerName: player.playerName,
-            itemIndex: gi_idx,
+            itemId: gi.id,
             itemName: gi.name,
             itemEffect: 'theGuy',
             itemTier: tier,
@@ -1736,7 +1791,7 @@ const ReadOnlyPlayerCard = ({
           });
           setGuyModal(null);
         } finally {
-          setSending(false);
+          setSendingId(null);
         }
       };
 
@@ -1782,7 +1837,7 @@ const ReadOnlyPlayerCard = ({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
               <button onClick={() => setGuyModal(null)} style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✕ Cancel</button>
-              <button onClick={handleSend} disabled={!validRoll || sending} style={{ padding: '0.85rem', background: validRoll ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${validRoll ? 'rgba(34,197,94,0.4)' : 'rgba(90,74,58,0.3)'}`, borderRadius: '10px', color: validRoll ? '#86efac' : colors.textDisabled, cursor: validRoll ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✦ Send to DM</button>
+              <button onClick={handleSend} disabled={!validRoll || sendingId} style={{ padding: '0.85rem', background: validRoll ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${validRoll ? 'rgba(34,197,94,0.4)' : 'rgba(90,74,58,0.3)'}`, borderRadius: '10px', color: validRoll ? '#86efac' : colors.textDisabled, cursor: validRoll ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✦ Send to DM</button>
             </div>
           </div>
         </div>
@@ -2112,75 +2167,25 @@ const GuyItemPickScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit }
 
 // ── Pass Choice Screen ────────────────────────────────────────────────────────
 // Shown to the item owner after the GM approves their pass request.
-// Player picks a target player + unit → auto-detects give vs trade → confirms.
-// Then writes an itemChoice back so the GM can do a final hand-off approval.
+// Step 1: pick who to pass to. Step 2: pick Give or Trade.
+// The recipient handles unit placement on their screen.
 const PassChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit }) => {
   const [selectedPlayerId, setSelectedPlayerId] = React.useState('');
-  const [selectedUnitType, setSelectedUnitType] = React.useState('');
-  const [tradeItem,        setTradeItem]        = React.useState(null);
+  const [mode,             setMode]             = React.useState(null); // 'give' | 'trade'
   const [sending,          setSending]          = React.useState(false);
 
-  // The item being passed (look it up from the live allPlayers snapshot for freshest inventory)
   const freshMe = allPlayers.find(p => String(p.id) === String(myPlayer?.id)) || myPlayer;
-  const item = freshMe ? (freshMe.inventory || [])[choice.itemIndex] : null;
+  const item = freshMe ? (freshMe.inventory || []).find(it => it.id === choice.itemId) || null : null;
 
-  // Unit helpers
-  const getAllUnits = (player) => {
-    const units = [{
-      unitType: 'commander',
-      label: player.commanderStats?.customName || player.commander || 'Commander',
-      hp: player.commanderStats?.hp || 0,
-      maxHp: player.commanderStats?.maxHp || 1,
-      isDead: (player.commanderStats?.hp || 0) === 0,
-    }];
-    (player.subUnits || []).forEach((u, idx) => {
-      units.push({
-        unitType: idx === 0 ? 'special' : `soldier${idx}`,
-        label: u.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`),
-        hp: u.hp, maxHp: u.maxHp, isDead: u.hp === 0,
-      });
-    });
-    return units;
+  const targetPlayer = allPlayers.find(p => String(p.id) === String(selectedPlayerId));
+  const canConfirm   = !!(selectedPlayerId && mode);
+
+  const tierColors2 = {
+    Common:    { text: '#d1d5db', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.35)' },
+    Rare:      { text: '#93c5fd', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+    Legendary: { text: '#fde68a', bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.35)'  },
   };
-
-  const getSlots = (p, unitType) => {
-    const fromItems = (p.inventory || []).filter(it => it.heldBy === unitType && it.effect?.type === 'extraSlot').length;
-    let fromUnit = 0;
-    if (unitType === 'commander') { fromUnit = p.commanderStats?.bonusSlots || 0; }
-    else { const idx = unitType === 'special' ? 0 : parseInt((unitType||'').replace('soldier','')); fromUnit = p.subUnits?.[idx]?.bonusSlots || 0; }
-    return 1 + fromItems + fromUnit;
-  };
-  const getHeld  = (p, unitType) => (p.inventory || []).filter(it => it.heldBy === unitType && !it.isQuestItem).length;
-  const isFull   = (p, unitType) => getHeld(p, unitType) >= getSlots(p, unitType);
-
-  const targetPlayer  = allPlayers.find(p => String(p.id) === String(selectedPlayerId));
-  const targetUnits   = targetPlayer ? getAllUnits(targetPlayer) : [];
-
-  // Items the selected unit already holds (for trade)
-  const unitHeldItems = targetPlayer && selectedUnitType
-    ? (targetPlayer.inventory || []).filter(it => it.heldBy === selectedUnitType && !it.isQuestItem)
-    : [];
-
-  const unitFull = targetPlayer && selectedUnitType ? isFull(targetPlayer, selectedUnitType) : false;
-
-  // Auto-mode: if target unit has no items → give; if it does → trade required
-  const mode = unitHeldItems.length === 0 ? 'give' : 'trade';
-
-  // Source unit label (where item currently lives)
-  const sourceUnitLabel = !item ? '' : (() => {
-    const ut = item.heldBy;
-    if (!ut || ut === 'commander') return freshMe?.commanderStats?.customName || freshMe?.commander || 'Commander';
-    if (ut === 'special') return freshMe?.subUnits?.[0]?.name?.trim() || 'Special';
-    const idx = parseInt(ut.replace('soldier', ''));
-    return freshMe?.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`;
-  })();
-
-  const canConfirm = !!(selectedPlayerId && selectedUnitType && (mode === 'give' || (mode === 'trade' && tradeItem)));
-
-  const handleSelectUnit = (unitType) => {
-    setSelectedUnitType(unitType);
-    setTradeItem(null);
-  };
+  const tc = item ? (tierColors2[item.tier] || tierColors2.Common) : tierColors2.Common;
 
   const handleSubmit = async () => {
     if (!canConfirm || sending) return;
@@ -2193,50 +2198,33 @@ const PassChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit })
         choiceId:           choice.choiceId,
         playerId:           myPlayer?.id,
         playerName:         myPlayer?.playerName,
-        itemIndex:          choice.itemIndex,
+        itemId:             choice.itemId || item?.id,
         itemName:           choice.itemName || item?.name,
-        itemEffect:         'passChoice',   // sentinel so GM routes to firstPassChoice
-        // Pass-specific fields
+        itemEffect:         'passChoice',
         passTargetPlayerId: selectedPlayerId,
-        passTargetUnitType: selectedUnitType,
         passMode:           mode,
-        passTradeItemId:    tradeItem?.id || null,
         timestamp:          Date.now(),
       });
       onSubmit();
-    } finally {
-      setSending(false);
-    }
+    } finally { setSending(false); }
   };
-
-  const tierColors2 = {
-    Common:    { text: '#d1d5db', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.35)' },
-    Rare:      { text: '#93c5fd', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
-    Legendary: { text: '#fde68a', bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.35)'  },
-  };
-  const tc = item ? (tierColors2[item.tier] || tierColors2.Common) : tierColors2.Common;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4000, padding: '1rem' }}>
-      <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+      <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(201,169,97,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
           <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🤝</div>
-          <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>
-            Pass Item
-          </div>
+          <div style={{ color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>Pass Item</div>
           <div style={{ color: colors.textFaint, fontSize: '0.7rem', marginTop: '0.25rem' }}>
-            Choose who receives <span style={{ color: tc.text, fontWeight: '800' }}>{item?.name || choice.itemName}</span>
-            {sourceUnitLabel && <span style={{ color: colors.textFaint }}> from {sourceUnitLabel}</span>}
+            Passing: <span style={{ color: tc.text, fontWeight: '800' }}>{item?.name || choice.itemName}</span>
           </div>
         </div>
 
         {/* Player picker */}
-        <div style={{ marginBottom: '1rem' }}>
-          <div style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
-            Receiving Player
-          </div>
+        <div style={{ marginBottom: '1.1rem' }}>
+          <div style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>Who receives this item?</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
             {allPlayers.filter(p => !p.isAbsent).map(p => {
               const isMe     = String(p.id) === String(myPlayer?.id);
@@ -2245,10 +2233,10 @@ const PassChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit })
               return (
                 <button
                   key={p.id}
-                  onClick={() => { setSelectedPlayerId(String(p.id)); setSelectedUnitType(''); setTradeItem(null); }}
+                  onClick={() => { setSelectedPlayerId(String(p.id)); setMode(null); }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '0.6rem',
-                    padding: '0.6rem 0.85rem',
+                    padding: '0.65rem 0.85rem',
                     background: selected ? `${pColor}18` : 'rgba(0,0,0,0.3)',
                     border: `1px solid ${selected ? pColor + '60' : 'rgba(255,255,255,0.08)'}`,
                     borderRadius: '8px', cursor: 'pointer', fontFamily: fonts.body, textAlign: 'left',
@@ -2256,7 +2244,7 @@ const PassChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit })
                   }}
                 >
                   <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: pColor, flexShrink: 0 }} />
-                  <span style={{ flex: 1, color: selected ? pColor : colors.textPrimary, fontWeight: '700', fontSize: '0.85rem' }}>
+                  <span style={{ flex: 1, color: selected ? pColor : colors.textPrimary, fontWeight: '700', fontSize: '0.88rem' }}>
                     {p.playerName}{isMe ? ' (you)' : ''}
                   </span>
                   {selected && <span style={{ color: pColor, fontSize: '0.65rem', fontWeight: '800' }}>▸</span>}
@@ -2266,76 +2254,336 @@ const PassChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit })
           </div>
         </div>
 
-        {/* Unit picker */}
-        {targetPlayer && (
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>
-              Receiving Unit
+        {/* Give / Trade — shown once a player is selected */}
+        {selectedPlayerId && (
+          <div style={{ marginBottom: '1.1rem' }}>
+            <div style={{ color: colors.textFaint, fontSize: '0.62rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>How?</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <button
+                onClick={() => setMode('give')}
+                style={{
+                  padding: '0.75rem', borderRadius: '8px', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem', cursor: 'pointer',
+                  background: mode === 'give' ? 'linear-gradient(135deg,#059669,#047857)' : 'rgba(0,0,0,0.35)',
+                  border: `2px solid ${mode === 'give' ? '#10b981' : 'rgba(90,74,58,0.3)'}`,
+                  color: mode === 'give' ? '#d1fae5' : colors.textSecondary,
+                }}>🎁 Give</button>
+              <button
+                onClick={() => setMode('trade')}
+                style={{
+                  padding: '0.75rem', borderRadius: '8px', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem', cursor: 'pointer',
+                  background: mode === 'trade' ? 'linear-gradient(135deg,#7c3aed,#6d28d9)' : 'rgba(0,0,0,0.35)',
+                  border: `2px solid ${mode === 'trade' ? '#a78bfa' : 'rgba(90,74,58,0.3)'}`,
+                  color: mode === 'trade' ? '#e9d5ff' : colors.textSecondary,
+                }}>⇄ Trade</button>
             </div>
+            {mode === 'give' && (
+              <div style={{ color: '#86efac', fontSize: '0.68rem', marginTop: '0.5rem', padding: '0.5rem 0.65rem', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '6px' }}>
+                🎁 <strong style={{ color: colors.gold }}>{targetPlayer?.playerName}</strong> will receive the item and choose which character to place it on.
+              </div>
+            )}
+            {mode === 'trade' && (
+              <div style={{ color: colors.amber, fontSize: '0.68rem', marginTop: '0.5rem', padding: '0.5rem 0.65rem', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '6px' }}>
+                ⇄ <strong style={{ color: colors.gold }}>{targetPlayer?.playerName}</strong> will see your item and pick one of theirs to offer back.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Confirm / Cancel */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+          <button onClick={onSubmit} style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>✕ Cancel</button>
+          <button onClick={handleSubmit} disabled={!canConfirm || sending} style={{ padding: '0.85rem', background: canConfirm ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${canConfirm ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '10px', color: canConfirm ? '#86efac' : colors.textDisabled, cursor: canConfirm && !sending ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>
+            {sending ? '⏳ Sending...' : '✓ Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trade & Gift screens — shown to the right player via pendingChoices routing
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Shown to the TRADE TARGET: "Player X wants to trade Y — pick what you offer back or deny"
+const TradeRequestScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit }) => {
+  const [selectedItemId, setSelectedItemId] = React.useState(null);
+  const [sending, setSending] = React.useState(false);
+
+  const freshMe = allPlayers.find(p => String(p.id) === String(myPlayer?.id)) || myPlayer;
+  const myItems = (freshMe?.inventory || []);
+
+  const tc = { Common: { text: '#d1d5db', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.35)' }, Rare: { text: '#93c5fd', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.35)' }, Legendary: { text: '#fde68a', bg: 'rgba(234,179,8,0.12)', border: 'rgba(234,179,8,0.35)' }, Quest: { text: '#fde68a', bg: 'rgba(234,179,8,0.12)', border: 'rgba(234,179,8,0.35)' } };
+
+  const respond = async (action, offeredItemId = null) => {
+    if (sending) return;
+    setSending(true);
+    try {
+      const reqId = `itemChoice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const offeredItem = myItems.find(it => it.id === offeredItemId);
+      await writePendingRequest(lobbyCode, reqId, {
+        type: 'itemChoice', reqId,
+        choiceId:            choice.choiceId,
+        playerId:            myPlayer?.id,
+        playerName:          myPlayer?.playerName,
+        itemId:              choice.offeredItemId,
+        itemName:            choice.offeredItemName,
+        itemEffect:          'passChoice',
+        passMode:            'trade',
+        passTargetPlayerId:  choice.initiatorPlayerId,
+        passTargetPlayerUid: choice.initiatorPlayerUid,
+        passTradeItemId:     offeredItemId || null,
+        passTradeItemName:   offeredItem?.name || null,
+        passTradeItemTier:   offeredItem?.tier || null,
+        passTradeItemDesc:   offeredItem?.description || null,
+        tradeAction:         action,
+        timestamp: Date.now(),
+      });
+      onSubmit();
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4200, padding: '1rem' }}>
+      <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(167,139,250,0.5)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '440px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>⇄</div>
+          <div style={{ color: '#a78bfa', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>Trade Request</div>
+          <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.3rem' }}>
+            <strong style={{ color: colors.gold }}>{choice.initiatorPlayerName}</strong> wants to trade with you
+          </div>
+        </div>
+
+        <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '0.85rem', marginBottom: '1.1rem' }}>
+          <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>They're offering</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.95rem' }}>{choice.offeredItemIsQuest ? '🗝️' : '📦'}</span>
+            <span style={{ color: colors.gold, fontWeight: '800', fontSize: '0.92rem', flex: 1 }}>{choice.offeredItemName}</span>
+            <span style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '700' }}>{choice.offeredItemTier}</span>
+          </div>
+          {choice.offeredItemDescription && <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.25rem', paddingLeft: '1.5rem' }}>{choice.offeredItemDescription}</div>}
+        </div>
+
+        <div style={{ marginBottom: '1.1rem' }}>
+          <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>Pick what you offer in return</div>
+          {myItems.length === 0 ? (
+            <div style={{ color: colors.textFaint, fontSize: '0.78rem', textAlign: 'center', padding: '1rem 0' }}>You have no items</div>
+          ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-              {targetUnits.map(u => {
-                const isSelf    = String(targetPlayer.id) === String(myPlayer?.id) && u.unitType === item?.heldBy;
-                const full      = !item?.isQuestItem && isFull(targetPlayer, u.unitType) && unitHeldItems.length === 0;
-                const selected  = selectedUnitType === u.unitType;
-                const unitItems = (targetPlayer.inventory || []).filter(it => it.heldBy === u.unitType && !it.isQuestItem);
-                const disabled  = u.isDead || isSelf;
+              {myItems.map(it => {
+                const c = it.isQuestItem ? tc.Quest : (tc[it.tier] || tc.Common);
+                const sel = selectedItemId === it.id;
+                const unitLabel = it.heldBy === 'commander' ? (freshMe?.commanderStats?.customName || freshMe?.commander || 'Commander')
+                  : it.heldBy === 'special' ? (freshMe?.subUnits?.[0]?.name?.trim() || 'Special')
+                  : (() => { const idx = parseInt((it.heldBy||'').replace('soldier','')); return freshMe?.subUnits?.[idx]?.name?.trim() || `Soldier ${idx}`; })();
                 return (
-                  <div
-                    key={u.unitType}
-                    onClick={() => !disabled && handleSelectUnit(u.unitType)}
-                    style={{
-                      padding: '0.6rem 0.85rem', borderRadius: '8px',
-                      background: selected ? 'rgba(201,169,97,0.1)' : 'rgba(0,0,0,0.3)',
-                      border: `1px solid ${selected ? 'rgba(201,169,97,0.5)' : 'rgba(255,255,255,0.08)'}`,
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                      opacity: disabled ? 0.35 : 1,
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ color: selected ? colors.gold : colors.textPrimary, fontWeight: '700', fontSize: '0.85rem', flex: 1 }}>
-                        {u.unitType === 'commander' ? '👑' : u.unitType === 'special' ? '⭐' : '🛡️'} {u.label}
-                      </span>
-                      {isSelf  && <span style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800' }}>SOURCE</span>}
-                      {u.isDead && <span style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800' }}>DEAD</span>}
-                      {unitItems.length > 0 && (
-                        <span style={{ color: colors.amber, fontSize: '0.65rem', fontWeight: '800' }}>
-                          {unitItems.length} item{unitItems.length > 1 ? 's' : ''}
-                        </span>
-                      )}
-                      {unitItems.length === 0 && !u.isDead && !isSelf && (
-                        <span style={{ color: '#4ade80', fontSize: '0.6rem', fontWeight: '800' }}>OPEN</span>
-                      )}
+                  <div key={it.id} onClick={() => setSelectedItemId(sel ? null : it.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', borderRadius: '8px', cursor: 'pointer', background: sel ? c.bg : 'rgba(0,0,0,0.3)', border: `1px solid ${sel ? c.border : 'rgba(255,255,255,0.07)'}`, transition: 'all 0.15s' }}>
+                    <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>{it.isQuestItem ? '🗝️' : '📦'}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: sel ? c.text : colors.textPrimary, fontWeight: '700', fontSize: '0.82rem' }}>{it.name}</div>
+                      <div style={{ color: colors.textFaint, fontSize: '0.6rem' }}>{it.isQuestItem ? 'Quest' : it.tier} · {unitLabel}</div>
                     </div>
-                    {/* Show items on this unit so player knows what they'd be trading */}
-                    {selected && unitItems.length > 0 && (
-                      <div style={{ marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.3rem' }}>
-                          ⇄ Trade required — select item to receive back
-                        </div>
-                        {unitItems.map(it => {
-                          const itc = tierColors2[it.tier] || tierColors2.Common;
-                          return (
-                            <div
-                              key={it.id}
-                              onClick={e => { e.stopPropagation(); setTradeItem(tradeItem?.id === it.id ? null : it); }}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                padding: '0.4rem 0.6rem', marginTop: '0.25rem',
-                                background: tradeItem?.id === it.id ? `${itc.bg}` : 'rgba(0,0,0,0.2)',
-                                border: `1px solid ${tradeItem?.id === it.id ? itc.border : 'rgba(255,255,255,0.06)'}`,
-                                borderRadius: '6px', cursor: 'pointer',
-                              }}
-                            >
-                              <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>📦</span>
-                              <span style={{ flex: 1, color: tradeItem?.id === it.id ? itc.text : colors.textPrimary, fontWeight: '700', fontSize: '0.8rem' }}>{it.name}</span>
-                              <span style={{ color: itc.text, fontSize: '0.62rem', fontWeight: '800', flexShrink: 0 }}>{it.tier}</span>
-                              {tradeItem?.id === it.id && <span style={{ color: '#4ade80', fontSize: '0.7rem', flexShrink: 0 }}>✓</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {sel && <span style={{ color: '#4ade80', fontSize: '0.75rem', flexShrink: 0 }}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <button onClick={() => selectedItemId && respond('offer', selectedItemId)} disabled={!selectedItemId || sending}
+            style={{ padding: '0.85rem', borderRadius: '10px', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem', cursor: selectedItemId && !sending ? 'pointer' : 'not-allowed', background: selectedItemId ? 'linear-gradient(135deg,rgba(124,58,237,0.3),rgba(109,40,217,0.3))' : 'rgba(0,0,0,0.2)', border: `1px solid ${selectedItemId ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.06)'}`, color: selectedItemId ? '#e9d5ff' : colors.textDisabled }}
+          >{sending ? '⏳ Sending...' : '⇄ Offer This Item'}</button>
+          <button onClick={() => respond('deny')} disabled={sending}
+            style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+          >✕ Deny Trade</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Shown to INITIATOR: their item vs what target offered — Accept or Deny
+const TradeReviewScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit }) => {
+  const [sending, setSending] = React.useState(false);
+  const tc = { Common: { text: '#d1d5db', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.35)' }, Rare: { text: '#93c5fd', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.35)' }, Legendary: { text: '#fde68a', bg: 'rgba(234,179,8,0.12)', border: 'rgba(234,179,8,0.35)' } };
+  const c = tc[choice.counterItemTier] || tc.Common;
+
+  const respond = async (action) => {
+    if (sending) return;
+    setSending(true);
+    try {
+      const reqId = `itemChoice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await writePendingRequest(lobbyCode, reqId, {
+        type: 'itemChoice', reqId,
+        choiceId:            choice.choiceId,
+        playerId:            myPlayer?.id,
+        playerName:          myPlayer?.playerName,
+        itemId:              choice.myItemId,
+        itemName:            choice.myItemName,
+        itemEffect:          'passChoice',
+        passMode:            'trade',
+        passTargetPlayerId:  choice.targetPlayerId2,
+        passTargetPlayerUid: choice.targetPlayerUid2,  // player2's uid (targetPlayerUid is player1's routing uid)
+        passTradeItemId:     choice.counterItemId || null,
+        tradeAction:         action,
+        timestamp: Date.now(),
+      });
+      onSubmit();
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4200, padding: '1rem' }}>
+      <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(251,191,36,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '440px', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>⇄</div>
+          <div style={{ color: colors.amber, fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>Trade Offer</div>
+          <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.3rem' }}>
+            <strong style={{ color: colors.purpleLight }}>{choice.targetPlayerName}</strong> is offering to trade
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.5rem', alignItems: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>
+            <div style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.3rem' }}>You give</div>
+            <div style={{ fontSize: '1rem', marginBottom: '0.2rem' }}>📦</div>
+            <div style={{ color: colors.gold, fontWeight: '800', fontSize: '0.8rem' }}>{choice.myItemName}</div>
+            <div style={{ color: colors.textFaint, fontSize: '0.6rem' }}>{choice.myItemTier}</div>
+          </div>
+          <div style={{ color: colors.textFaint, fontSize: '1.2rem', textAlign: 'center' }}>⇄</div>
+          <div style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>
+            <div style={{ color: colors.textFaint, fontSize: '0.58rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.3rem' }}>You receive</div>
+            <div style={{ fontSize: '1rem', marginBottom: '0.2rem' }}>📦</div>
+            <div style={{ color: c.text, fontWeight: '800', fontSize: '0.8rem' }}>{choice.counterItemName}</div>
+            <div style={{ color: colors.textFaint, fontSize: '0.6rem' }}>{choice.counterItemTier}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <button onClick={() => respond('accept')} disabled={sending}
+            style={{ padding: '0.85rem', background: 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))', border: '1px solid rgba(34,197,94,0.4)', borderRadius: '10px', color: '#86efac', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+          >{sending ? '⏳...' : '✓ Accept Trade'}</button>
+          <button onClick={() => respond('cancel')} disabled={sending}
+            style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
+          >✕ Deny Trade</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const GiftNoticeScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit }) => {
+  const [selectedUnitKey, setSelectedUnitKey] = React.useState('');
+  const [swapItemId, setSwapItemId] = React.useState(null);
+  const [sending, setSending] = React.useState(false);
+
+  const freshMe = allPlayers.find(p => String(p.id) === String(myPlayer?.id)) || myPlayer;
+
+  const getAllUnits = (p) => {
+    if (!p) return [];
+    const us = [{ key: 'commander', label: p.commanderStats?.customName || p.commander || 'Commander', hp: p.commanderStats?.hp || 0, maxHp: p.commanderStats?.maxHp || 1 }];
+    (p.subUnits || []).forEach((u, i) => us.push({ key: i === 0 ? 'special' : `soldier${i}`, label: u.name?.trim() || (i === 0 ? 'Special' : `Soldier ${i}`), hp: u.hp, maxHp: u.maxHp }));
+    return us;
+  };
+  const getSlots = (p, unitKey) => {
+    const fromItems = (p?.inventory || []).filter(it => it.heldBy === unitKey && it.effect?.type === 'extraSlot').length;
+    let fromUnit = 0;
+    if (unitKey === 'commander') { fromUnit = p?.commanderStats?.bonusSlots || 0; }
+    else { const idx = unitKey === 'special' ? 0 : parseInt((unitKey || '').replace('soldier', '')); fromUnit = p?.subUnits?.[idx]?.bonusSlots || 0; }
+    return 1 + fromItems + fromUnit;
+  };
+  const getHeld = (p, unitKey) => (p?.inventory || []).filter(it => it.heldBy === unitKey && !it.isQuestItem && it.effect?.type !== 'key').length;
+  const unitIsFull = (p, unitKey) => getHeld(p, unitKey) >= getSlots(p, unitKey);
+
+  const units = getAllUnits(freshMe);
+  const selectedUnitFull = selectedUnitKey ? unitIsFull(freshMe, selectedUnitKey) : false;
+  const heldBySelected = selectedUnitKey ? (freshMe?.inventory || []).filter(it => it.heldBy === selectedUnitKey && !it.isQuestItem && it.effect?.type !== 'key') : [];
+  const canConfirm = !!(selectedUnitKey && (!selectedUnitFull || swapItemId));
+
+  const tc = { Common: { text: '#d1d5db', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.35)' }, Rare: { text: '#93c5fd', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.35)' }, Legendary: { text: '#fde68a', bg: 'rgba(234,179,8,0.12)', border: 'rgba(234,179,8,0.35)' } };
+  const itemTc = tc[choice.offeredItemTier] || tc.Common;
+
+  const handleConfirm = async () => {
+    if (!canConfirm || sending) return;
+    setSending(true);
+    try {
+      const reqId = `itemChoice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await writePendingRequest(lobbyCode, reqId, {
+        type: 'itemChoice', reqId,
+        choiceId:           choice.choiceId,
+        playerId:           myPlayer?.id,
+        playerName:         myPlayer?.playerName,
+        itemId:             choice.offeredItemId,
+        itemName:           choice.offeredItemName,
+        itemEffect:         'passChoice',
+        passMode:           'give',
+        passTargetPlayerId: myPlayer?.id,
+        passTargetUnitType: selectedUnitKey,
+        swapItemId:         swapItemId || null,
+        tradeAction:        'giftPlaced',
+        timestamp:          Date.now(),
+      });
+      onSubmit();
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4200, padding: '1rem' }}>
+      <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '2px solid rgba(34,197,94,0.4)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '420px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>🎁</div>
+          <div style={{ color: '#86efac', fontFamily: '"Cinzel",Georgia,serif', fontWeight: '900', fontSize: '1rem', letterSpacing: '0.08em' }}>Item Received!</div>
+          <div style={{ color: colors.textMuted, fontSize: '0.72rem', marginTop: '0.3rem' }}>
+            <strong style={{ color: colors.gold }}>{choice.initiatorPlayerName}</strong> gave you an item
+          </div>
+        </div>
+
+        {/* The item */}
+        <div style={{ background: itemTc.bg, border: `1px solid ${itemTc.border}`, borderRadius: '10px', padding: '0.85rem', marginBottom: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <span style={{ fontSize: '1.2rem' }}>📦</span>
+          <div>
+            <div style={{ color: itemTc.text, fontWeight: '800', fontSize: '0.92rem' }}>{choice.offeredItemName}</div>
+            {choice.offeredItemDescription && <div style={{ color: colors.textFaint, fontSize: '0.65rem', marginTop: '0.15rem' }}>{choice.offeredItemDescription}</div>}
+            <div style={{ color: itemTc.text, fontSize: '0.62rem', fontWeight: '700', marginTop: '0.1rem' }}>{choice.offeredItemTier}</div>
+          </div>
+        </div>
+
+        {/* Unit picker */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' }}>Assign to which unit?</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+            {units.map(u => {
+              const full = unitIsFull(freshMe, u.key);
+              const sel = selectedUnitKey === u.key;
+              const dead = u.hp === 0;
+              return (
+                <div key={u.key} onClick={() => !dead && (setSelectedUnitKey(u.key), setSwapItemId(null))} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.55rem 0.85rem', borderRadius: '8px', cursor: dead ? 'not-allowed' : 'pointer', background: sel ? 'rgba(201,169,97,0.1)' : 'rgba(0,0,0,0.3)', border: `1px solid ${sel ? 'rgba(201,169,97,0.5)' : 'rgba(255,255,255,0.07)'}`, opacity: dead ? 0.35 : 1 }}>
+                  <span style={{ flex: 1, color: sel ? colors.gold : colors.textPrimary, fontWeight: '700', fontSize: '0.82rem' }}>{u.label}</span>
+                  {full && <span style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800' }}>FULL</span>}
+                  {!full && !dead && <span style={{ color: '#4ade80', fontSize: '0.6rem', fontWeight: '800' }}>OPEN</span>}
+                  {dead && <span style={{ color: colors.textFaint, fontSize: '0.6rem', fontWeight: '800' }}>DEAD</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Swap picker if unit is full */}
+        {selectedUnitKey && selectedUnitFull && heldBySelected.length > 0 && (
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ color: '#f97316', fontSize: '0.6rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.35rem' }}>⚠️ Unit full — drop one to make room</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              {heldBySelected.map(it => {
+                const c = tc[it.tier] || tc.Common;
+                const sel = swapItemId === it.id;
+                return (
+                  <div key={it.id} onClick={() => setSwapItemId(sel ? null : it.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.75rem', borderRadius: '7px', cursor: 'pointer', background: sel ? 'rgba(239,68,68,0.1)' : 'rgba(0,0,0,0.3)', border: `1px solid ${sel ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.07)'}` }}>
+                    <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>📦</span>
+                    <span style={{ flex: 1, color: sel ? '#fca5a5' : colors.textPrimary, fontWeight: '700', fontSize: '0.8rem' }}>{it.name}</span>
+                    <span style={{ color: c.text, fontSize: '0.62rem', fontWeight: '800', flexShrink: 0 }}>{it.tier}</span>
+                    {sel && <span style={{ color: '#f87171', fontSize: '0.7rem', flexShrink: 0 }}>🗑 Drop</span>}
                   </div>
                 );
               })}
@@ -2343,37 +2591,27 @@ const PassChoiceScreen = ({ choice, lobbyCode, myPlayer, allPlayers, onSubmit })
           </div>
         )}
 
-        {/* Summary box */}
-        {canConfirm && (
-          <div style={{ background: 'rgba(201,169,97,0.06)', border: '1px solid rgba(201,169,97,0.2)', borderRadius: '8px', padding: '0.7rem 0.85rem', marginBottom: '1rem', fontSize: '0.72rem' }}>
-            {mode === 'give' ? (
-              <span style={{ color: '#86efac' }}>
-                🎁 <strong style={{ color: colors.gold }}>{item?.name}</strong> will be given to <strong style={{ color: colors.purpleLight }}>{targetPlayer?.playerName}</strong>. Awaiting GM approval.
-              </span>
-            ) : (
-              <span style={{ color: colors.amber }}>
-                ⇄ <strong style={{ color: colors.gold }}>{item?.name}</strong> trades with <strong style={{ color: colors.amber }}>{tradeItem?.name}</strong> from <strong style={{ color: colors.purpleLight }}>{targetPlayer?.playerName}</strong>. Awaiting GM approval.
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Confirm / Cancel */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-          <button
-            onClick={onSubmit}
-            style={{ padding: '0.85rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px', color: '#fca5a5', cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
-          >✕ Cancel</button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canConfirm || sending}
-            style={{ padding: '0.85rem', background: canConfirm ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${canConfirm ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '10px', color: canConfirm ? '#86efac' : colors.textDisabled, cursor: canConfirm && !sending ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}
-          >{sending ? '⏳ Sending...' : '✓ Confirm Pass'}</button>
-        </div>
+        <button onClick={handleConfirm} disabled={!canConfirm || sending} style={{ width: '100%', padding: '0.85rem', background: canConfirm ? 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(21,128,61,0.2))' : 'rgba(0,0,0,0.2)', border: `1px solid ${canConfirm ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '10px', color: canConfirm ? '#86efac' : colors.textDisabled, cursor: canConfirm && !sending ? 'pointer' : 'not-allowed', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.88rem' }}>
+          {sending ? '⏳ Placing...' : '✓ Place Item'}
+        </button>
       </div>
     </div>
   );
 };
+
+// Shown to both players as a result notification (denied, cancelled, etc.)
+const TradeResultScreen = ({ choice, onSubmit }) => (
+  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4200, padding: '1rem' }}>
+    <div style={{ background: 'linear-gradient(145deg,#160e0e,#0e0808)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '1.5rem', width: '100%', maxWidth: '380px', textAlign: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.95)' }}>
+      <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>{choice.resultIcon || '❌'}</div>
+      <div style={{ color: colors.textPrimary, fontWeight: '800', fontSize: '0.95rem', marginBottom: '0.5rem' }}>{choice.resultTitle || 'Trade ended'}</div>
+      <div style={{ color: colors.textMuted, fontSize: '0.78rem', marginBottom: '1.25rem' }}>{choice.resultMessage || ''}</div>
+      <button onClick={onSubmit} style={{ width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: colors.textMuted, cursor: 'pointer', fontFamily: fonts.body, fontWeight: '800', fontSize: '0.85rem' }}>
+        OK
+      </button>
+    </div>
+  </div>
+);
 
 // ── End Turn Button ───────────────────────────────────────────────────────────
 const EndTurnButton = ({ lobbyCode, player, pColor }) => {
@@ -2605,9 +2843,24 @@ const NPCMovesetModal = ({ npc, onClose }) => {
           <div style={{ color: colors.textFaint, fontSize: '0.8rem', textAlign: 'center', padding: '1rem 0' }}>No moves defined</div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.1rem' }}>
-          {attacks.map((atk, i) => (
+          {attacks.map((atk, i) => {
+            const EFFECT_META = {
+              poison:        { icon: '🤢', label: 'Poison',      color: '#4ade80',  bg: 'rgba(74,222,128,0.12)',  border: 'rgba(74,222,128,0.4)'  },
+              burn:          { icon: '🔥', label: 'Burn',        color: '#fb923c',  bg: 'rgba(251,146,60,0.12)',  border: 'rgba(251,146,60,0.4)'  },
+              stun:          { icon: '💫', label: 'Stun',        color: '#fbbf24',  bg: 'rgba(251,191,36,0.12)',  border: 'rgba(251,191,36,0.4)'  },
+              attackDebuff:  { icon: '⚔️↓', label: 'Atk Debuff', color: '#f87171', bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.4)'   },
+              defenseDebuff: { icon: '🛡️↓', label: 'Def Debuff', color: '#f87171', bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.4)'   },
+            };
+            const ef   = atk.attackEffect;
+            const meta = ef ? EFFECT_META[ef.type] : null;
+            const isStun  = ef?.type === 'stun';
+            const valLine = meta && !isStun && ef.value ? `-${ef.value}hp/rd` : null;
+            const durLine = meta ? (ef.permanent ? 'permanent' : ef.duration ? `${ef.duration}rds` : null) : null;
+
+            return (
             <div key={atk.id || i} style={{ background: 'rgba(0,0,0,0.3)', border: `1px solid rgba(239,68,68,0.12)`, borderLeft: `3px solid ${typeColor(atk.attackType)}`, borderRadius: '8px', padding: '0.65rem 0.85rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: atk.range || atk.description ? '0.3rem' : 0 }}>
+              {/* Row 1: icon + name + dice */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
                 <span style={{ fontSize: '0.85rem', flexShrink: 0 }}>{typeIcon(atk.attackType)}</span>
                 <span style={{ flex: 1, color: typeColor(atk.attackType), fontWeight: '800', fontSize: '0.85rem' }}>{atk.name}</span>
                 {atk.numRolls > 0 && (
@@ -2626,6 +2879,19 @@ const NPCMovesetModal = ({ npc, onClose }) => {
                   </span>
                 )}
               </div>
+              {/* Row 2: effect + gate pills */}
+              {meta && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', paddingLeft: '1.35rem', marginBottom: '0.25rem' }}>
+                  <span style={{ padding: '0.15rem 0.55rem', background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: '20px', color: meta.color, fontSize: '0.63rem', fontWeight: '800' }}>
+                    {meta.icon} {meta.label}{valLine ? ` ${valLine}` : ''}{durLine ? ` · ${durLine}` : ''}
+                  </span>
+                  {ef.damageGate > 0 && (
+                    <span style={{ padding: '0.15rem 0.55rem', background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.35)', borderRadius: '20px', color: '#fb923c', fontSize: '0.63rem', fontWeight: '800' }}>
+                      triggers at {ef.damageGate}+ dmg
+                    </span>
+                  )}
+                </div>
+              )}
               {atk.range && (
                 <div style={{ color: colors.textMuted, fontSize: '0.65rem', paddingLeft: '1.35rem', marginBottom: atk.description ? '0.15rem' : 0 }}>
                   📍 {atk.range}
@@ -2642,7 +2908,8 @@ const NPCMovesetModal = ({ npc, onClose }) => {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <button onClick={onClose} style={{ width: '100%', padding: '0.7rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: colors.textFaint, cursor: 'pointer', fontFamily: fonts.body, fontSize: '0.82rem' }}>

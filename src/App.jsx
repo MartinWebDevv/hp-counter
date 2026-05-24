@@ -258,6 +258,7 @@ function App() {
     return (
       <CharacterCreator
         lobbyCode={lobbyCode}
+        onBack={() => setScreen('character-select')}
         onComplete={async (charData) => {
           const { auth } = await import('./firebase');
           const uid = auth.currentUser?.uid;

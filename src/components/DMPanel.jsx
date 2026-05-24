@@ -29,6 +29,7 @@ const DMPanel = ({
   deactivateNPC,
   onHPChange,
   onTriggerPhase,
+  onTriggerEvolution,
   onOpenNPCAttack,
   onOpenNPCSquadAttack,
   getNPCById,
@@ -290,6 +291,7 @@ const DMPanel = ({
               onRemove={removeNPC}
               onHPChange={onHPChange}
               onTriggerPhase={onTriggerPhase}
+              onTriggerEvolution={onTriggerEvolution}
               onOpenNPCAttack={onOpenNPCAttack}
               onSpawnAttack={onSpawnAttack}
               onIncrementAttack={onIncrementAttack}

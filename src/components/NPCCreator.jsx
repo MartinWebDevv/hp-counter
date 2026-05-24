@@ -1130,11 +1130,11 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
             {[
               { value: null,            label: 'None',            defaults: null },
-              { value: 'poison',        label: '🤢 Poison',       defaults: { value: 2, duration: 2, permanent: false } },
-              { value: 'burn',          label: '🔥 Burn',         defaults: { value: 2, duration: 2, permanent: false } },
-              { value: 'stun',          label: '💫 Stun',         defaults: { value: 0, duration: 1, permanent: false } },
-              { value: 'attackDebuff',  label: '⚔️↓ Atk Debuff',  defaults: { value: 2, duration: 2, permanent: false } },
-              { value: 'defenseDebuff', label: '🛡️↓ Def Debuff',  defaults: { value: 2, duration: 2, permanent: false } },
+              { value: 'poison',        label: '🤢 Poison',       defaults: { value: 2, duration: 2, permanent: false, damageGate: 1 } },
+              { value: 'burn',          label: '🔥 Burn',         defaults: { value: 2, duration: 2, permanent: false, damageGate: 1 } },
+              { value: 'stun',          label: '💫 Stun',         defaults: { value: 0, duration: 1, permanent: false, damageGate: 1 } },
+              { value: 'attackDebuff',  label: '⚔️↓ Atk Debuff',  defaults: { value: 2, duration: 2, permanent: false, damageGate: 1 } },
+              { value: 'defenseDebuff', label: '🛡️↓ Def Debuff',  defaults: { value: 2, duration: 2, permanent: false, damageGate: 1 } },
             ].map(opt => {
               const isActive = opt.value === null ? !attack.attackEffect : attack.attackEffect?.type === opt.value;
               return (
@@ -1179,6 +1179,29 @@ const AttackRow = ({ attack, index, canRemove, onChange, onRemove, inputStyle, l
                     <span style={{ color: ef.permanent ? colors.amber : colors.textMuted, fontSize: '0.72rem', fontWeight: '700' }}>Permanent (lasts until manually removed)</span>
                   </div>
                 )}
+
+                {/* Damage Gate — min damage for effect to trigger */}
+                <div style={{ marginTop: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
+                    <div
+                      onClick={() => onChange('attackEffect', { ...ef, damageGate: ef.damageGate === 0 ? 1 : 0 })}
+                      style={{ width: '14px', height: '14px', borderRadius: '3px', border: `2px solid ${ef.damageGate !== 0 ? '#fb923c' : colors.textFaint}`, background: ef.damageGate !== 0 ? '#fb923c' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', color: '#000', fontWeight: '900', cursor: 'pointer' }}>
+                      {ef.damageGate !== 0 && '✓'}
+                    </div>
+                    <label style={{ ...labelStyle, marginBottom: 0, cursor: 'pointer', color: ef.damageGate !== 0 ? '#fb923c' : colors.textFaint }}
+                      onClick={() => onChange('attackEffect', { ...ef, damageGate: ef.damageGate === 0 ? 1 : 0 })}>
+                      Damage Gate (effect only triggers if hit does at least X damage)
+                    </label>
+                  </div>
+                  {ef.damageGate !== 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <label style={{ ...labelStyle, marginBottom: 0, whiteSpace: 'nowrap', color: colors.textMuted }}>Min damage:</label>
+                      <input style={{ ...inputStyle, width: '80px' }} type='number' min='1' max='99'
+                        value={ef.damageGate || 1}
+                        onChange={e => onChange('attackEffect', { ...ef, damageGate: parseInt(e.target.value) || 1 })} />
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })()}
@@ -1227,7 +1250,7 @@ const EvolutionSection = ({
     )}
 
     {/* New stats */}
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
       <div>
         <label style={{ ...labelStyle, color: '#fb923c' }}>New Max HP</label>
         <input style={{ ...inputStyle, borderColor: '#fb923c60' }} type="number" min="1" value={evo.newMaxHP} onChange={e => onFieldChange('newMaxHP', e.target.value)} placeholder="20" />
@@ -1235,6 +1258,10 @@ const EvolutionSection = ({
       <div>
         <label style={labelStyle}>Armor Floor</label>
         <input style={inputStyle} type="number" min="0" value={evo.armor ?? ''} onChange={e => onFieldChange('armor', e.target.value)} placeholder="Inherits" />
+      </div>
+      <div>
+        <label style={labelStyle}>Atk Boost</label>
+        <input style={inputStyle} type="number" min="0" value={evo.attackBonus ?? ''} onChange={e => onFieldChange('attackBonus', e.target.value)} placeholder="Inherits" />
       </div>
       <div>
         <label style={labelStyle}>Walk</label>

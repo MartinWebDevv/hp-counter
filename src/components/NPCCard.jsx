@@ -373,6 +373,34 @@ const NPCCard = ({
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
                       {!isSpawn && !isAction && <span style={pill(colors.purpleLight, colors.purpleSubtle, colors.purpleBorder)}>{attack.dieType?.toUpperCase()} × {attack.numRolls}</span>}
                       {!isSpawn && !isAction && attack.range && <span style={pill(colors.tealLight, colors.tealSubtle, colors.tealBorder)}>📏 {attack.range}</span>}
+                      {!isSpawn && !isAction && attack.attackEffect && (() => {
+                        const ef = attack.attackEffect;
+                        const EFFECT_META = {
+                          poison:        { icon: '🤢', label: 'Poison',      color: '#4ade80',  bg: 'rgba(74,222,128,0.1)',  border: 'rgba(74,222,128,0.35)'  },
+                          burn:          { icon: '🔥', label: 'Burn',        color: '#fb923c',  bg: 'rgba(251,146,60,0.1)',  border: 'rgba(251,146,60,0.35)'  },
+                          stun:          { icon: '💫', label: 'Stun',        color: '#fbbf24',  bg: 'rgba(251,191,36,0.1)',  border: 'rgba(251,191,36,0.35)'  },
+                          attackDebuff:  { icon: '⚔️↓', label: 'Atk Debuff', color: '#f87171', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.35)'   },
+                          defenseDebuff: { icon: '🛡️↓', label: 'Def Debuff', color: '#f87171', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.35)'   },
+                        };
+                        const meta = EFFECT_META[ef.type];
+                        if (!meta) return null;
+                        const isDoT    = ef.type === 'poison' || ef.type === 'burn';
+                        const isStun   = ef.type === 'stun';
+                        const valLine  = !isStun && ef.value ? `-${ef.value}hp/rd` : null;
+                        const durLine  = ef.permanent ? 'perm' : ef.duration ? `${ef.duration}rds` : null;
+                        return (
+                          <>
+                            <span style={{ padding: '0.15rem 0.5rem', background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: '20px', color: meta.color, fontSize: '0.62rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                              {meta.icon} {meta.label}{valLine ? ` ${valLine}` : ''}{durLine ? ` · ${durLine}` : ''}
+                            </span>
+                            {ef.damageGate > 0 && (
+                              <span style={{ padding: '0.15rem 0.5rem', background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.3)', borderRadius: '20px', color: '#fb923c', fontSize: '0.62rem', fontWeight: '800' }}>
+                                ≥{ef.damageGate} dmg
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                       {isSpawn && attack.spawnText && <span style={pill('#86efac', 'rgba(74,222,128,0.08)', 'rgba(74,222,128,0.22)')}>🐣 {attack.spawnText}</span>}
                       {isSpawn && attack.spawnDieType && <span style={pill('#86efac', 'rgba(74,222,128,0.08)', 'rgba(74,222,128,0.18)')}>{attack.spawnDieType.toUpperCase()} × {attack.spawnNumRolls || 1}</span>}
                       {(isAction || isSpawn) && attack.description && <span style={{ color: colors.textMuted, fontSize: '0.68rem', fontStyle: 'italic' }}>{attack.description}</span>}

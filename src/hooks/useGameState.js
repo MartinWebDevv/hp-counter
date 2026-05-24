@@ -160,7 +160,6 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
   const undo = () => {
     if (actionHistory.length === 0) {
       return;
-      return;
     }
     
     const lastState = actionHistory[actionHistory.length - 1];
@@ -381,7 +380,6 @@ export const useGameState = (onRoundAdvance = null, onPlayerTurnEnd = null) => {
 
   const startGame = () => {
     if (players.length === 0) {
-      return;
       return;
     }
     setGameStarted(true);

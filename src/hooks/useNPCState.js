@@ -332,12 +332,14 @@ export const useNPCState = (addLog, onNPCKilled) => {
       name:        newName,
       maxHp:       newMaxHP,
       hp:          newMaxHP,
+      isDead:      false,
+      active:      npc.isDead ? true : npc.active,
       armor:       nextEvo.armor !== null && nextEvo.armor !== '' ? parseInt(nextEvo.armor) : npc.armor,
       attackBonus: nextEvo.attackBonus !== null && nextEvo.attackBonus !== '' ? parseInt(nextEvo.attackBonus) : npc.attackBonus,
       walk:        nextEvo.walk?.trim() ? nextEvo.walk : npc.walk,
       run:         nextEvo.run?.trim()  ? nextEvo.run  : npc.run,
       attacks:     evoAttacksFilled ? nextEvo.attacks : npc.attacks,
-      currentPhase: 0, // reset phase on evolution
+      currentPhase: 0,
       phases:      nextEvo.phases?.length ? nextEvo.phases : [],
       hasPhases:   !!(nextEvo.phases?.length),
       evolutions:  npc.evolutions.map(e => e.id === nextEvo.id ? { ...e, triggered: true } : e),
@@ -346,6 +348,10 @@ export const useNPCState = (addLog, onNPCKilled) => {
 
     addLog(`⚡ "${oldName}" evolved into "${newName}"! HP reset to ${newMaxHP}/${newMaxHP}!`, 'combat');
     if (onEvolve) onEvolve({ oldName, newName, newMaxHP });
+    // Clear the flag after a tick so it doesn't persist in Firestore
+    setTimeout(() => {
+      setNpcs(prev => prev.map(n => n.evolutionJustTriggered ? { ...n, evolutionJustTriggered: false } : n));
+    }, 0);
     return updated;
   };
 
@@ -369,6 +375,8 @@ export const useNPCState = (addLog, onNPCKilled) => {
         name:        newName,
         maxHp:       newMaxHP,
         hp:          newMaxHP,
+        isDead:      false,   // evolution revives dead NPCs
+        active:      n.isDead ? true : n.active, // re-activate if was dead
         armor:       nextEvo.armor !== null && nextEvo.armor !== '' ? parseInt(nextEvo.armor) : n.armor,
         attackBonus: nextEvo.attackBonus !== null && nextEvo.attackBonus !== '' ? parseInt(nextEvo.attackBonus) : n.attackBonus,
         walk:        nextEvo.walk?.trim() ? nextEvo.walk : n.walk,
@@ -381,7 +389,9 @@ export const useNPCState = (addLog, onNPCKilled) => {
       };
 
       addLog(`⚡ DM triggered: "${oldName}" evolved into "${newName}"! HP reset to ${newMaxHP}/${newMaxHP}!`, 'combat');
-      if (onEvolve) onEvolve({ oldName, newName, newMaxHP });
+      // Use the ref so modal fires even when called from NPCCard with no callback
+      if (onEvolveRef.current) onEvolveRef.current({ oldName, newName, newMaxHP });
+      else if (onEvolve) onEvolve({ oldName, newName, newMaxHP });
       return updated;
     }));
   };

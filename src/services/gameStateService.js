@@ -1,5 +1,5 @@
 import { db } from '../firebase';
-import { doc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { getModeConfig } from '../data/gameModes';
 
 // ── Convert a lobby player (from CharacterCreator) → game player object ────────

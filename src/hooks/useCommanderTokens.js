@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { generateId } from '../utils/idUtils';
 
-const STORAGE_KEY = 'hpCounterCommanderTokens';
+const STORAGE_KEY = 'bt_commanderTokens';
 
 /**
  * useCommanderTokens
@@ -20,7 +21,7 @@ export const useCommanderTokens = (addLog) => {
 
   const [tokenNotifications, setTokenNotifications] = useState([]);
   const [tokensEnabled, setTokensEnabled] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('hpCounterTokensEnabled') || 'false'); }
+    try { return JSON.parse(localStorage.getItem('bt_tokensEnabled') || 'false'); }
     catch { return false; }
   });
 
@@ -29,7 +30,7 @@ export const useCommanderTokens = (addLog) => {
   }, [tokens]);
 
   useEffect(() => {
-    try { localStorage.setItem('hpCounterTokensEnabled', JSON.stringify(tokensEnabled)); } catch {}
+    try { localStorage.setItem('bt_tokensEnabled', JSON.stringify(tokensEnabled)); } catch {}
   }, [tokensEnabled]);
 
   // Auto-dismiss notifications after 4s
@@ -43,7 +44,7 @@ export const useCommanderTokens = (addLog) => {
     setTokenNotifications(prev => [...prev, { id: Date.now(), message, icon }]);
   };
 
-  const generateId = () => `token_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  
 
   // ── Token creation ────────────────────────────────────────────────────────
 

@@ -107,7 +107,7 @@ const HandOffModal = ({ sourcePlayer, sourceUnitType, item, players, onConfirm, 
             <label style={labelStyle}>Receiving Unit</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
               {getAllUnits(targetPlayer).map(u => {
-                const isFull = !item.isQuestItem && unitIsFull(targetPlayer, u.unitType);
+                const isFull = !item.isQuestItem && item.effect?.type !== 'key' && unitIsFull(targetPlayer, u.unitType);
                 const selected = selectedUnitType === u.unitType;
                 const isSelf = targetPlayer.id === sourcePlayer.id && u.unitType === sourceUnitType;
                 return (

@@ -1,6 +1,6 @@
 import React from 'react';
 import { fonts, colors } from '../theme';
-import { createLobby, subscribeLobby, updateLobbyMeta } from '../services/lobbyService';
+import { createLobby, createLobbyWithCode, subscribeLobby, updateLobbyMeta } from '../services/lobbyService';
 import { writeGameState } from '../services/gameStateService';
 import { getModeConfig } from '../data/gameModes';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -12,17 +12,32 @@ import { db } from '../firebase';
  * Phases: 'pick' → 'preview' → 'waiting' (lobby with save slots)
  */
 const LoadGameLobby = ({ onGameStart, onBack }) => {
-  const [phase,      setPhase]      = React.useState('pick');   // 'pick' | 'preview' | 'creating' | 'waiting' | 'error'
+  const [phase,      setPhase]      = React.useState('pick');   // 'pick' | 'preview' | 'code' | 'creating' | 'waiting' | 'error'
   const [saveData,   setSaveData]   = React.useState(null);
   const [fileName,   setFileName]   = React.useState('');
   const [error,      setError]      = React.useState('');
   const [lobbyCode,  setLobbyCode]  = React.useState('');
   const [gmUid,      setGmUid]      = React.useState('');
   const [lobbyData,  setLobbyData]  = React.useState({});
-  const [saveSlots,  setSaveSlots]  = React.useState({}); // { [playerId]: { playerData, claimedByUid, isAbsent, isManual } }
+  const [saveSlots,  setSaveSlots]  = React.useState({});
   const [copied,     setCopied]     = React.useState(false);
+  // Custom code picker state
+  const [generated,    setGenerated]    = React.useState('');
+  const [customCode,   setCustomCode]   = React.useState('');
+  const [useCustom,    setUseCustom]    = React.useState(false);
+  const [codeError,    setCodeError]    = React.useState('');
+  const [creating,     setCreating]     = React.useState(false);
   const fileInputRef = React.useRef(null);
   const unsubRef     = React.useRef(null);
+
+  // Generate a code when entering the code-pick phase
+  const generateCode = React.useCallback(() => {
+    const words    = ['BEAR','WOLF','IRON','FIRE','GOLD','DARK','STORM','BLADE','CROW','VIPER','RUNE','FROST','EMBER','TITAN','SHADOW','DRAGON','OAK','STEEL','BONE','DUSK','MOON','SUN','VOID','BLOOD'];
+    const digits   = '23456789';
+    const word     = words[Math.floor(Math.random() * words.length)];
+    const nums     = Array.from({ length: 4 }, () => digits[Math.floor(Math.random() * digits.length)]).join('');
+    setGenerated(`${word}-${nums}`);
+  }, []);
 
   // ── File reading ───────────────────────────────────────────────────────────
   const handleFileDrop = (e) => {
@@ -53,11 +68,26 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
     reader.readAsText(file);
   };
 
+  const validateCode = (raw) => {
+    if (!raw.trim()) return 'Enter a lobby code.';
+    if (raw.length < 4)  return 'Code must be at least 4 characters.';
+    if (raw.length > 10) return 'Code must be 10 characters or fewer.';
+    if (!/^[A-Z0-9-]+$/.test(raw)) return 'Letters, numbers, and hyphens only.';
+    return '';
+  };
+
   // ── Create lobby with save data ────────────────────────────────────────────
   const handleCreateLobby = async () => {
+    const finalCode = useCustom ? customCode : generated;
+    if (useCustom) {
+      const err = validateCode(customCode);
+      if (err) { setCodeError(err); return; }
+    }
+    setCreating(true);
+    setCodeError('');
     setPhase('creating');
     try {
-      const { code, uid } = await createLobby();
+      const { code, uid } = await createLobbyWithCode(finalCode);
       setLobbyCode(code);
       setGmUid(uid);
 
@@ -93,8 +123,9 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
         if (data.saveSlots) setSaveSlots(data.saveSlots);
       });
     } catch (err) {
-      setError(err.message);
-      setPhase('preview');
+      setCodeError(err.message || 'Failed to create lobby.');
+      setCreating(false);
+      setPhase('code');
     }
   };
 
@@ -323,8 +354,8 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
 
           {error && <div style={errorText}>{error}</div>}
 
-          <button onClick={handleCreateLobby} style={primaryBtn}>
-            ✓ Create Lobby with this Save
+          <button onClick={() => { generateCode(); setPhase('code'); }} style={primaryBtn}>
+            ✓ Continue — Choose Lobby Code
             <div style={{ fontSize: '0.62rem', fontWeight: '600', opacity: 0.7, marginTop: '0.2rem', textTransform: 'none' }}>
               Players will join and claim their characters
             </div>
@@ -332,6 +363,61 @@ const LoadGameLobby = ({ onGameStart, onBack }) => {
           <button onClick={() => { setPhase('pick'); setSaveData(null); setError(''); }} style={backBtn}>
             ← Choose Different File
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Code picker ────────────────────────────────────────────────────────────
+  if (phase === 'code') {
+    return (
+      <div style={page}>
+        <div style={card}>
+          <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>🔑</div>
+            <h2 style={heading}>CHOOSE LOBBY CODE</h2>
+            <div style={subText}>Use the generated code or enter your own</div>
+          </div>
+
+          {/* Code display / input */}
+          <div style={{ background: 'rgba(0,0,0,0.3)', border: `2px solid ${codeError ? '#ef4444' : 'rgba(201,169,97,0.35)'}`, borderRadius: '14px', padding: '1.5rem', textAlign: 'center', marginBottom: '1rem' }}>
+            <div style={{ color: colors.textFaint, fontSize: '0.62rem', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.6rem' }}>Lobby Code</div>
+            {useCustom ? (
+              <input
+                autoFocus
+                value={customCode}
+                onChange={e => { setCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '')); setCodeError(''); }}
+                placeholder="e.g. SERAVAHN"
+                maxLength={10}
+                onKeyDown={e => e.key === 'Enter' && handleCreateLobby()}
+                style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(0,0,0,0.4)', border: `2px solid ${codeError ? '#ef4444' : 'rgba(201,169,97,0.4)'}`, borderRadius: '10px', padding: '0.7rem', color: colors.gold, fontFamily: '"Cinzel",Georgia,serif', fontSize: '1.6rem', fontWeight: '900', textAlign: 'center', letterSpacing: '0.18em', outline: 'none', marginBottom: '0.5rem' }}
+              />
+            ) : (
+              <div style={{ fontFamily: '"Cinzel",Georgia,serif', color: colors.gold, fontSize: '2rem', fontWeight: '900', letterSpacing: '0.18em', textShadow: `0 0 20px ${colors.amber}50`, marginBottom: '0.6rem' }}>
+                {generated}
+              </div>
+            )}
+            {codeError && <div style={{ color: '#f87171', fontSize: '0.7rem', marginBottom: '0.4rem' }}>{codeError}</div>}
+            <button onClick={() => { setUseCustom(u => !u); setCustomCode(''); setCodeError(''); }}
+              style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontFamily: fonts.body, fontSize: '0.7rem', textDecoration: 'underline', padding: '0.2rem' }}>
+              {useCustom ? '← Use generated code' : '✏️ Use my own code'}
+            </button>
+          </div>
+
+          {useCustom && (
+            <div style={{ background: 'rgba(201,169,97,0.04)', border: '1px solid rgba(201,169,97,0.12)', borderRadius: '8px', padding: '0.6rem 0.85rem', marginBottom: '0.85rem', color: colors.textFaint, fontSize: '0.63rem', lineHeight: '1.6' }}>
+              4–10 characters · Letters, numbers, hyphens only · Auto-uppercased
+            </div>
+          )}
+
+          <button
+            onClick={handleCreateLobby}
+            disabled={creating || (useCustom && !customCode.trim())}
+            style={{ ...primaryBtn, background: creating || (useCustom && !customCode.trim()) ? 'rgba(0,0,0,0.3)' : 'linear-gradient(135deg, #7c1d1d, #6b1a1a)', border: `2px solid ${creating || (useCustom && !customCode.trim()) ? 'rgba(255,255,255,0.08)' : '#ef4444'}`, color: creating || (useCustom && !customCode.trim()) ? colors.textFaint : '#fecaca', cursor: creating || (useCustom && !customCode.trim()) ? 'not-allowed' : 'pointer' }}
+          >
+            {creating ? '⏳ Creating...' : '👑 Create Lobby'}
+          </button>
+          <button onClick={() => { setPhase('preview'); setCodeError(''); setUseCustom(false); setCustomCode(''); }} style={backBtn}>← Back to Preview</button>
         </div>
       </div>
     );

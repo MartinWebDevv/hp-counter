@@ -1,33 +1,27 @@
-import React from "react";
-import HPCounter from "./components/HPCounter";
-import HomeScreen from "./components/HomeScreen";
-import CreateLobby from "./components/CreateLobby";
-import LoadGameLobby from "./components/LoadGameLobby";
-import CharacterCreator from "./components/CharacterCreator";
-import PlayerCharacterSelect from "./components/PlayerCharacterSelect";
-import PlayerWaitingRoom from "./components/PlayerWaitingRoom";
-import PlayerGameView from "./components/PlayerGameView";
+import React from 'react';
+import HPCounter             from './components/HPCounter';
+import HomeScreen            from './components/HomeScreen';
+import CreateLobby           from './components/CreateLobby';
+import LoadGameLobby         from './components/LoadGameLobby';
+import CharacterCreator      from './components/CharacterCreator';
+import PlayerCharacterSelect from './components/PlayerCharacterSelect';
+import PlayerWaitingRoom     from './components/PlayerWaitingRoom';
+import PlayerGameView        from './components/PlayerGameView';
 import './styles/fullscreen.css';
 import './styles/scrollbar.css';
 import './styles/mobileResponsive.css';
-import { joinLobby, addPlayerToLobby, ensureAuth, subscribeGameEnded } from "./services/lobbyService";
-import { getDoc, doc } from "firebase/firestore";
-import { db } from "./firebase";
 
-// ── Session persistence helpers ───────────────────────────────────────────────
+// FIXED: was dynamically imported 4+ times — now a single static import
+import { joinLobby, addPlayerToLobby, ensureAuth, subscribeGameEnded, endGame } from './services/lobbyService';
+import { getDoc, doc } from 'firebase/firestore';
+import { db }          from './firebase';
+
+// ── Session persistence ────────────────────────────────────────────────────────
 const SESSION_KEY = 'bt_session';
 
-const saveSession = (data) => {
-  try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {}
-};
-
-const loadSession = () => {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; }
-};
-
-const clearSession = () => {
-  try { localStorage.removeItem(SESSION_KEY); } catch {}
-};
+const saveSession  = (data)  => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {} };
+const loadSession  = ()      => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); }    catch { return null; } };
+const clearSession = ()      => { try { localStorage.removeItem(SESSION_KEY); }                    catch {} };
 
 // screens: 'home'|'offline'|'create'|'load-game'|'character-create'|'character-select'|'player-waiting'|'gm-game'|'player-game'|'restoring'
 function App() {
@@ -40,7 +34,8 @@ function App() {
   const [joining,      setJoining]      = React.useState(false);
   const [myUid,        setMyUid]        = React.useState(null);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Shared helpers ────────────────────────────────────────────────────────
+
   const goHome = React.useCallback(() => {
     clearSession();
     setLobbyCode(null); setGmUid(null); setPlayerData(null);
@@ -48,94 +43,104 @@ function App() {
     setScreen('home');
   }, []);
 
-  // ── When GM closes/refreshes the tab, mark the session ended so players don't get stuck ──
+  const tryEndGame = React.useCallback(async (code) => {
+    if (!code) return;
+    try { await endGame(code); } catch {}
+  }, []);
+
+  // ── Tab close: end game so players don't get stuck ───────────────────────
   React.useEffect(() => {
-    const handleUnload = async () => {
-      if (screen !== 'gm-game' || !lobbyCode) return;
-      try {
-        const { endGame } = await import('./services/lobbyService');
-        await endGame(lobbyCode);
-      } catch {}
+    const handleUnload = () => {
+      if (screen === 'gm-game' && lobbyCode) endGame(lobbyCode).catch(() => {});
     };
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, [screen, lobbyCode]);
 
-  const persistAndSet = React.useCallback((screenName, extras = {}) => {
-    saveSession({ screen: screenName, lobbyCode, gmUid, playerData, myUid, ...extras });
-    setScreen(screenName);
-  }, [lobbyCode, gmUid, playerData, myUid]);
-
-  // ── Subscribe to gameEnded whenever we have a lobbyCode ──────────────────
+  // ── Subscribe to gameEnded when we have a lobbyCode ──────────────────────
   React.useEffect(() => {
     if (!lobbyCode || screen === 'home' || screen === 'restoring') return;
-    const unsub = subscribeGameEnded(lobbyCode, () => { goHome(); });
+    const unsub = subscribeGameEnded(lobbyCode, goHome);
     return () => unsub();
   }, [lobbyCode, screen, goHome]);
 
-  // ── On mount: attempt to restore last session ─────────────────────────────
+  // ── Session restore on mount ──────────────────────────────────────────────
   React.useEffect(() => {
     const restore = async () => {
       const session = loadSession();
-      if (!session?.lobbyCode || !session?.screen) {
-        setScreen('home');
-        return;
-      }
+      if (!session?.lobbyCode || !session?.screen) { setScreen('home'); return; }
 
       try {
         await ensureAuth();
         const { auth } = await import('./firebase');
-        const uid = auth.currentUser?.uid;
+        const uid      = auth.currentUser?.uid;
 
-        // Check lobby still exists and hasn't ended
         const snap = await getDoc(doc(db, 'campaigns', session.lobbyCode));
-        if (!snap.exists() || snap.data().gameEnded) {
-          clearSession();
-          setScreen('home');
-          return;
-        }
+        if (!snap.exists() || snap.data().gameEnded) { clearSession(); setScreen('home'); return; }
 
-        // Restore state
         setLobbyCode(session.lobbyCode);
         if (session.gmUid)     setGmUid(session.gmUid);
         if (session.playerData) setPlayerData(session.playerData);
-        if (session.myUid)     setMyUid(session.myUid || uid);
+        setMyUid(session.myUid || uid);
 
-        // Route to the right screen
         const s = session.screen;
-        if (s === 'gm-game')       setScreen('gm-game');
+        if      (s === 'gm-game')        setScreen('gm-game');
         else if (s === 'player-game')    setScreen('player-game');
         else if (s === 'player-waiting') setScreen('player-waiting');
-        else setScreen('home');
-
+        else                             setScreen('home');
       } catch {
         clearSession();
         setScreen('home');
       }
     };
-
     restore();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── End Game (GM triggers, all clients redirect) ──────────────────────────
-  const handleEndGame = React.useCallback(async () => {
-    if (!lobbyCode) return;
-    const { endGame } = await import('./services/lobbyService');
-    await endGame(lobbyCode);
-    goHome();
-  }, [lobbyCode, goHome]);
+  // ── End game handlers ─────────────────────────────────────────────────────
 
-  // ── GM navigates home within the app — also end the session ──────────────
-  const handleGMGoHome = React.useCallback(async () => {
-    if (lobbyCode) {
-      try {
-        const { endGame } = await import('./services/lobbyService');
-        await endGame(lobbyCode);
-      } catch {}
-    }
+  const handleEndGame = React.useCallback(async () => {
+    await tryEndGame(lobbyCode);
     goHome();
-  }, [lobbyCode, goHome]);
+  }, [lobbyCode, tryEndGame, goHome]);
+
+  const handleGMGoHome = React.useCallback(async () => {
+    await tryEndGame(lobbyCode);
+    goHome();
+  }, [lobbyCode, tryEndGame, goHome]);
+
+  // ── Join lobby handler ────────────────────────────────────────────────────
+
+  const handleJoinLobby = React.useCallback(async (code) => {
+    setJoinError('');
+    setJoining(true);
+    try {
+      await ensureAuth();
+      const { auth } = await import('./firebase');
+      const uid = auth.currentUser?.uid;
+      setMyUid(uid);
+
+      const { isGM, code: validCode, data } = await joinLobby(code);
+      setLobbyCode(validCode);
+
+      if (isGM) {
+        setGmUid(uid);
+        saveSession({ screen: 'gm-game', lobbyCode: validCode, gmUid: uid });
+        setScreen('gm-game');
+      } else if (data?.isLoadedGame) {
+        saveSession({ screen: 'character-select', lobbyCode: validCode, myUid: uid });
+        setScreen('character-select');
+      } else {
+        // FIXED: duplicate branch — gameStarted and default were identical
+        saveSession({ screen: 'character-create', lobbyCode: validCode, myUid: uid });
+        setScreen('character-create');
+      }
+    } catch (err) {
+      setJoinError(err.message);
+    } finally {
+      setJoining(false);
+    }
+  }, []);
 
   // ── Screens ───────────────────────────────────────────────────────────────
 
@@ -154,38 +159,7 @@ function App() {
       <HomeScreen
         onCreateLobby={() => setScreen('create')}
         onLoadGame={() => setScreen('load-game')}
-        onJoinLobby={async (code) => {
-          setJoinError('');
-          setJoining(true);
-          try {
-            await ensureAuth();
-            const { auth } = await import('./firebase');
-            const uid = auth.currentUser?.uid;
-            setMyUid(uid);
-            const { isGM, code: validCode, data } = await joinLobby(code);
-            setLobbyCode(validCode);
-            if (isGM) {
-              saveSession({ screen: 'gm-game', lobbyCode: validCode, gmUid: uid });
-              setGmUid(uid);
-              setScreen('gm-game');
-            } else if (data?.isLoadedGame) {
-              // Loaded game — pick a saved character (works mid-session too)
-              saveSession({ screen: 'character-select', lobbyCode: validCode, myUid: uid });
-              setScreen('character-select');
-            } else if (data?.gameStarted) {
-              // Game already in progress (fresh lobby) — create character then jump straight in
-              saveSession({ screen: 'character-create', lobbyCode: validCode, myUid: uid });
-              setScreen('character-create');
-            } else {
-              saveSession({ screen: 'character-create', lobbyCode: validCode, myUid: uid });
-              setScreen('character-create');
-            }
-          } catch (err) {
-            setJoinError(err.message);
-          } finally {
-            setJoining(false);
-          }
-        }}
+        onJoinLobby={handleJoinLobby}
         onPlayOffline={() => setScreen('offline')}
         joinError={joinError}
         joining={joining}
@@ -198,12 +172,7 @@ function App() {
   if (screen === 'create') {
     return (
       <CreateLobby
-        onBack={async () => {
-          if (lobbyCode) {
-            try { const { endGame } = await import('./services/lobbyService'); await endGame(lobbyCode); } catch {}
-          }
-          goHome();
-        }}
+        onBack={async () => { await tryEndGame(lobbyCode); goHome(); }}
         onGameStart={({ lobbyCode: code, gmUid: uid, initialState: state }) => {
           setLobbyCode(code); setGmUid(uid); setInitialState(state);
           saveSession({ screen: 'gm-game', lobbyCode: code, gmUid: uid });
@@ -216,12 +185,7 @@ function App() {
   if (screen === 'load-game') {
     return (
       <LoadGameLobby
-        onBack={async () => {
-          if (lobbyCode) {
-            try { const { endGame } = await import('./services/lobbyService'); await endGame(lobbyCode); } catch {}
-          }
-          goHome();
-        }}
+        onBack={async () => { await tryEndGame(lobbyCode); goHome(); }}
         onGameStart={({ lobbyCode: code, gmUid: uid, initialState: state }) => {
           setLobbyCode(code); setGmUid(uid); setInitialState(state);
           saveSession({ screen: 'gm-game', lobbyCode: code, gmUid: uid });
@@ -236,15 +200,15 @@ function App() {
       <PlayerCharacterSelect
         lobbyCode={lobbyCode}
         myUid={myUid}
-        onClaimCharacter={async (claimedPlayer) => {
+        onClaimCharacter={async (claimed) => {
           await addPlayerToLobby(lobbyCode, myUid, {
-            playerName:    claimedPlayer.playerName,
-            commanderName: claimedPlayer.playerName,
-            faction:       claimedPlayer.faction,
-            commander:     claimedPlayer.commander,
-            playerColor:   claimedPlayer.playerColor,
+            playerName:    claimed.playerName,
+            commanderName: claimed.playerName,
+            faction:       claimed.faction,
+            commander:     claimed.commander,
+            playerColor:   claimed.playerColor,
           });
-          const pd = { ...claimedPlayer, uid: myUid };
+          const pd = { ...claimed, uid: myUid };
           setPlayerData(pd);
           saveSession({ screen: 'player-game', lobbyCode, myUid, playerData: pd });
           setScreen('player-waiting');
@@ -261,7 +225,7 @@ function App() {
         onBack={() => setScreen('character-select')}
         onComplete={async (charData) => {
           const { auth } = await import('./firebase');
-          const uid = auth.currentUser?.uid;
+          const uid      = auth.currentUser?.uid;
           await addPlayerToLobby(lobbyCode, uid, charData);
           const pd = { ...charData, uid };
           setPlayerData(pd);

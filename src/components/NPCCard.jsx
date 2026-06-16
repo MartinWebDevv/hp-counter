@@ -119,16 +119,19 @@ const NPCCard = ({
     <div style={{ minWidth: 0, maxWidth: '100%', width: '100%', boxSizing: 'border-box' }}>
     <div style={{
       background: npc.active && !npc.isDead
-        ? 'linear-gradient(145deg, #160e0e, #0e0808)'
+        ? 'linear-gradient(145deg, #120808, #0a0404)'
         : surfaces.card,
       borderRadius: '12px', padding: '1rem', fontFamily: fonts.body,
       width: '100%', boxSizing: 'border-box', overflow: 'hidden',
       boxShadow: isCurrentTurn
-        ? `0 0 20px ${colors.red}50, 0 8px 32px rgba(0,0,0,0.7)`
-        : '0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03)',
+        ? `0 0 28px ${colors.red}70, 0 0 8px ${colors.red}40, 0 8px 32px rgba(0,0,0,0.8)`
+        : npc.active && !npc.isDead
+          ? `0 0 14px rgba(239,68,68,0.14), 0 4px 24px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02)`
+          : '0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03)',
       border: cardBorder,
-      opacity: npc.isDead ? 0.5 : 1,
+      opacity: npc.isDead ? 0.45 : 1,
       transition: 'all 0.3s',
+      animation: isCurrentTurn ? 'npcTurnPulse 2s ease-in-out infinite' : npc.active && !npc.isDead ? 'npcActivePulse 6s ease-in-out infinite' : 'none',
     }}>
 
       {/* Header */}

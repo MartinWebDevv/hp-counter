@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { unitNameByType } from '../utils/unitUtils';
 
 /**
  * useCampaignTurn
@@ -10,7 +11,7 @@ export const useCampaignTurn = (
   getNPCById,
   playersWhoActedThisRound,
   currentRound,
-  endTurn,
+  endTurn,           // now = endTurnSideEffectsOnly — fires cooldowns + timer callbacks only
   addLog,
   updatePlayer,
   setNpcs,
@@ -19,8 +20,10 @@ export const useCampaignTurn = (
   onRoundAdvance = null,
   onUnitDied = null,
   onCreateTimer = null,
-  onTurnStart = null,   // fires with playerId when a player's turn begins
-  onGuyCloseCall = null // fires with { playerName, damage } when The Guy absorbs a hit
+  onTurnStart = null,
+  onGuyCloseCall = null,
+  setPlayersWhoActedThisRound = null,  // direct setter — avoids double-accounting with endTurn
+  setCurrentRound = null               // direct setter — campaign owns round advancement
 ) => {
   // Store callbacks in refs so closures always call the latest version
   const onRoundAdvanceRef = useRef(onRoundAdvance);
@@ -156,6 +159,8 @@ export const useCampaignTurn = (
           // All non-rebuttal NPCs done — reset round
           setCampaignTurnIndex(0);
           setNpcsWhoActedThisRound([]);
+          if (setPlayersWhoActedThisRound) setPlayersWhoActedThisRound([]);
+          if (setCurrentRound) setCurrentRound(prev => prev + 1);
           addLog(`----- Round ${currentRound + 1} -----`, 'system');
           if (onRoundAdvanceRef.current) onRoundAdvanceRef.current();
           const firstPlayer = freshOrder.find(e => e.type === 'player');
@@ -167,8 +172,10 @@ export const useCampaignTurn = (
 
     // current is a player — normal flow
     const freshOrder = buildTurnOrder();
-    // Include the current player in the acted set (endTurn adds them, but we check first)
+    // Add current player to acted set immediately (no longer relying on endTurn to do this)
     const playersWhoActedIncludingCurrent = [...playersWhoActedThisRound, current.id];
+    if (setPlayersWhoActedThisRound) setPlayersWhoActedThisRound(playersWhoActedIncludingCurrent);
+
     const allPlayersActed = freshOrder
       .filter(e => e.type === 'player')
       .every(e => playersWhoActedIncludingCurrent.includes(e.id));
@@ -176,42 +183,39 @@ export const useCampaignTurn = (
     let nextIndex = (campaignTurnIndex + 1) % Math.max(freshOrder.length, 1);
 
     if (allPlayersActed) {
-      // Check if there are non-rebuttal NPCs after the current index that haven't gone yet
       const pendingNonRebuttalNPCs = freshOrder
         .map((e, i) => ({ ...e, idx: i }))
         .filter(e => e.type === 'npc' && e.isRebuttal === false && e.idx > campaignTurnIndex);
 
       if (pendingNonRebuttalNPCs.length > 0) {
-        // Stop at the first pending non-rebuttal NPC — round doesn't reset yet
         setCampaignTurnIndex(pendingNonRebuttalNPCs[0].idx);
       } else {
-        // All players AND all non-rebuttal NPCs done — reset round
         setCampaignTurnIndex(0);
         setNpcsWhoActedThisRound([]);
+        if (setPlayersWhoActedThisRound) setPlayersWhoActedThisRound([]);
+        if (setCurrentRound) setCurrentRound(prev => prev + 1);
         addLog(`----- Round ${currentRound + 1} -----`, 'system');
         if (onRoundAdvanceRef.current) onRoundAdvanceRef.current();
         const firstPlayer = freshOrder.find(e => e.type === 'player');
         if (firstPlayer && onTurnStartRef.current) onTurnStartRef.current(firstPlayer.id);
       }
     } else {
-      // Skip rebuttal NPC slots and already-acted players — stop at non-rebuttal NPCs too
       let attempts = 0;
       while (attempts < freshOrder.length) {
         const candidate = freshOrder[nextIndex];
         if (!candidate) break;
-        // Stop at: unacted player OR non-rebuttal NPC (they hold real turns)
-        if (candidate.type === 'player' && !playersWhoActedThisRound.includes(candidate.id)) break;
+        if (candidate.type === 'player' && !playersWhoActedIncludingCurrent.includes(candidate.id)) break;
         if (candidate.type === 'npc' && candidate.isRebuttal === false) break;
         nextIndex = (nextIndex + 1) % freshOrder.length;
         attempts++;
       }
       setCampaignTurnIndex(nextIndex);
-      // Tick status for the incoming player at the start of their turn
       const nextPlayer = freshOrder[nextIndex];
       if (nextPlayer?.type === 'player' && onTurnStartRef.current) onTurnStartRef.current(nextPlayer.id);
     }
 
-    endTurn(); // fires onPlayerTurnEnd (round timers, tokens) — status tick moved to onTurnStart
+    // Fire side effects only (cooldown decrement + timer callbacks)
+    endTurn(current.id);
   };
 
   // ── NPC Attack ────────────────────────────────────────────────────────────
@@ -269,12 +273,6 @@ export const useCampaignTurn = (
     setShowNPCCalculator(true);
   };
 
-  const unitNameByType = (player, unitType) => {
-    if (!unitType || unitType === 'commander') return player?.commanderStats?.customName || player?.commander || 'Commander';
-    if (unitType === 'special') return player?.subUnits?.[0]?.name || 'Special';
-    const idx = parseInt(unitType.replace('soldier', ''));
-    return player?.subUnits?.[idx]?.name || `Unit ${idx}`;
-  };
 
   const applyNPCDamage = (distributionOverride) => {
     if (!npcAttackData) return;
@@ -339,7 +337,7 @@ export const useCampaignTurn = (
           cmdUpdated = true;
           const newHp = Math.max(0, newCmdStats.hp - dmg);
           newCmdStats = { ...newCmdStats, hp: newHp };
-          if (attackEffect) {
+          if (attackEffect && (attackEffect.damageGate === 0 || !attackEffect.damageGate || dmg >= attackEffect.damageGate)) {
             if (attackEffect.type === 'poison') {
               newCmdStats.statusEffects = [...(newCmdStats.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];
               if (onCreateTimer) onCreateTimer(`🤢 Poison — ${newCmdStats?.customName || player.commander}`, attackEffect.duration || 2, [{ type: 'player', playerId: player.id, unitType: 'commander' }]);
@@ -370,7 +368,7 @@ export const useCampaignTurn = (
           const newHp = unit ? Math.max(0, unit.hp - dmg) : 0;
           const justDied = unit && unit.hp > 0 && newHp === 0;
           let updatedUnit = { ...(newSubs[idx] || {}), hp: newHp };
-          if (attackEffect) {
+          if (attackEffect && (attackEffect.damageGate === 0 || !attackEffect.damageGate || dmg >= attackEffect.damageGate)) {
             const uLabel = unit?.name?.trim() || (idx === 0 ? 'Special' : `Soldier ${idx}`);
             if (attackEffect.type === 'poison') {
               updatedUnit.statusEffects = [...(updatedUnit.statusEffects || []), { type: 'poison', value: attackEffect.value || 2, duration: attackEffect.duration || 2 }];

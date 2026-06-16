@@ -248,11 +248,11 @@ const OpenChestModal = ({ chest, players, lootPool, onConfirm, onClose }) => {
     let dropped = [];
 
     if (chest.mode === 'preloaded') {
-      // All pre-loaded items drop
+      // All pre-loaded items drop — including keys if DM explicitly placed them
       dropped = chest.preloadedItems
         .map(id => lootPool.find(i => i.id === id))
         .filter(Boolean)
-        .filter(it => !it.isQuestItem && it.effect?.type !== 'key');
+        .filter(it => !it.isQuestItem);
     } else {
       // Weighted random roll
       const tiers = ['Common', 'Rare', 'Legendary'];

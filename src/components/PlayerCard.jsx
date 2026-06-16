@@ -138,6 +138,35 @@ const PlayerCard = ({
   };
 
   const cmdHP    = player.commanderStats.hp;
+  const prevHPRef = React.useRef({});
+  const [deathFlashing, setDeathFlashing] = React.useState({});
+
+  React.useEffect(() => {
+    const prev = prevHPRef.current;
+    const newFlashing = {};
+    // Commander
+    const cmdKey = 'commander';
+    if ((prev[cmdKey] ?? cmdHP) > 0 && cmdHP === 0) {
+      newFlashing[cmdKey] = true;
+    }
+    // Sub-units
+    (player.subUnits || []).forEach((u, i) => {
+      const key = `unit_${i}`;
+      if ((prev[key] ?? u.hp) > 0 && u.hp === 0) {
+        newFlashing[key] = true;
+      }
+    });
+    if (Object.keys(newFlashing).length > 0) {
+      setDeathFlashing(prev => ({ ...prev, ...newFlashing }));
+      const timer = setTimeout(() => setDeathFlashing({}), 750);
+      return () => clearTimeout(timer);
+    }
+    // Update prev
+    prevHPRef.current = {
+      commander: cmdHP,
+      ...(player.subUnits || []).reduce((acc, u, i) => ({ ...acc, [`unit_${i}`]: u.hp }), {}),
+    };
+  });
   const cmdMaxHP = player.commanderStats.maxHp;
   const cmdHPPct = cmdMaxHP > 0 ? (cmdHP / cmdMaxHP) * 100 : 0;
   const cmdDead  = cmdHP === 0;
@@ -447,14 +476,23 @@ const PlayerCard = ({
             const unitHPPct = unit.maxHp > 0 ? (unit.hp / unit.maxHp) * 100 : 0;
 
             return (
-              <div key={index} style={{
+              <div key={index}
+                className={deathFlashing[`unit_${index}`] ? 'unit-death-flash' : ''}
+                style={{
                 padding: '0.6rem 0.75rem',
                 background: isPermaDead ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.25)',
                 borderBottom: index < player.subUnits.length - 1 ? `1px solid ${colors.purpleBorder}` : 'none',
                 opacity: isPermaDead ? 0.3 : isDead ? 0.55 : 1,
                 filter: isPermaDead ? 'grayscale(1)' : 'none',
                 transition: 'all 0.3s',
+                position: 'relative',
               }}>
+                {/* Death skull overlay — permadead only */}
+                {isPermaDead && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '8px', marginBottom: '8px', pointerEvents: 'none' }}>
+                    <span style={{ fontSize: '2rem', opacity: 1 }}>💀</span>
+                  </div>
+                )}
                 {/* Unit top row */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.4rem' }}>
                   <input
@@ -1182,7 +1220,7 @@ const UnitPickerModal = ({ title, subtitle, icon, accentColor, units, onPick, on
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.2rem' }}>
                   <div style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '2px', overflow: 'hidden' }}>
-                    <div style={{ width: `${hpPct}%`, height: '100%', background: hpBarColor(hpPct), borderRadius: '2px' }} />
+                    <div style={{ width: `${hpPct}%`, height: '100%', background: hpBarColor(hpPct), borderRadius: '2px', transition: 'width 220ms ease-out' }} />
                   </div>
                   <span style={{ color: colors.textMuted, fontSize: '0.7rem', fontWeight: '600', flexShrink: 0 }}>{u.hp}/{u.maxHp}</span>
                 </div>

@@ -16,12 +16,14 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
   const [manualAward, setManualAward] = useState({ playerId: '', points: 1, reason: '', categoryId: 'finalBossKill' });
   const [showManual, setShowManual] = useState(false);
   const [showDeleteSession, setShowDeleteSession] = useState(false);
-  const [deleteSessionConfirm, setDeleteSessionConfirm] = useState(null); // sessionName
+  const [deleteSessionConfirm, setDeleteSessionConfirm] = useState(null);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [selectedSession, setSelectedSession] = useState({});
-  const [editingVP, setEditingVP] = useState({}); // { [playerId]: draftValue }
-  const [addBubbleModal, setAddBubbleModal] = useState(null); // playerId
+  const [editingVP, setEditingVP] = useState({});
+  const [addBubbleModal, setAddBubbleModal] = useState(null);
+  const [displayVP, setDisplayVP] = useState({});
+  const animatedRef = React.useRef(false);
 
   if (!players || players.length === 0) {
     return (
@@ -51,6 +53,32 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
   };
 
   const ranked = [...players].sort((a, b) => getTotalVP(b) - getTotalVP(a));
+
+  // VP count-up animation on first render
+  React.useEffect(() => {
+    if (animatedRef.current || !players.length) return;
+    animatedRef.current = true;
+    const targets = {};
+    players.forEach(p => { targets[p.id] = getTotalVP(p); });
+    const maxVP = Math.max(...Object.values(targets), 1);
+    const duration = 900;
+    const steps = 30;
+    const interval = duration / steps;
+    let step = 0;
+    const tick = setInterval(() => {
+      step++;
+      const progress = step / steps;
+      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      setDisplayVP(() => {
+        const d = {};
+        players.forEach(p => { d[p.id] = Math.round((targets[p.id] || 0) * eased); });
+        return d;
+      });
+      if (step >= steps) clearInterval(tick);
+    }, interval);
+    return () => clearInterval(tick);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // All unique session names across all players
   const allSessionNames = [...new Set(
@@ -107,12 +135,19 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
 
           return (
             <div key={player.id} style={{
-              background: ri === 0 ? 'rgba(251,191,36,0.05)' : 'rgba(0,0,0,0.3)',
-              border: `1px solid ${ri === 0 ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)'}`,
+              background: ri === 0 ? 'rgba(251,191,36,0.07)' : 'rgba(0,0,0,0.3)',
+              border: `1px solid ${ri === 0 ? 'rgba(251,191,36,0.35)' : 'rgba(255,255,255,0.06)'}`,
               borderRadius: '10px', padding: '0.8rem 0.9rem', marginBottom: '0.5rem',
+              boxShadow: ri === 0 ? '0 0 18px rgba(251,191,36,0.1), 0 4px 20px rgba(0,0,0,0.5)' : 'none',
+              animation: ri === 0 ? 'vpGoldGlow 4s ease-in-out infinite' : 'none',
+              transition: 'all 0.3s',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>{rankBadge[ri] || `#${ri+1}`}</span>
+                <span style={{
+                  fontSize: '1.2rem', flexShrink: 0,
+                  display: 'inline-block',
+                  animation: ri === 0 ? 'crownPulse 2.5s ease-in-out infinite' : 'none',
+                }}>{rankBadge[ri] || `#${ri+1}`}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: player.playerColor || colors.gold, fontWeight: '900', fontSize: '0.92rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{player.playerName}</div>
                   <div style={{ color: colors.textFaint, fontSize: '0.65rem', fontWeight: '600' }}>{sessionAwards.length} award{sessionAwards.length !== 1 ? 's' : ''} across {sessions.length} session{sessions.length !== 1 ? 's' : ''}</div>
@@ -129,11 +164,18 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
                         if (!isNaN(newTotal) && onUpdateVpStats) {
                           const diff = newTotal - vp;
                           if (diff !== 0) {
-                            onUpdateVpStats(prev => {
-                              const next = { ...prev, [player.id]: { ...(prev[player.id] || {}), manualAwards: [...(prev[player.id]?.manualAwards || []), { points: diff, reason: 'Manual VP adjustment', awardedAt: new Date().toISOString() }] } };
-                              try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
-                              return next;
-                            });
+                            const currentStats = vpStats[player.id] || {};
+                            const updatedStats = {
+                              ...vpStats,
+                              [player.id]: {
+                                ...currentStats,
+                                manualAwards: [
+                                  ...(currentStats.manualAwards || []),
+                                  { points: diff, reason: 'Manual VP adjustment', awardedAt: new Date().toISOString() },
+                                ],
+                              },
+                            };
+                            onUpdateVpStats(updatedStats);
                           }
                         }
                         setEditingVP(prev => { const n = { ...prev }; delete n[player.id]; return n; });
@@ -146,7 +188,7 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
                       onClick={() => setEditingVP(prev => ({ ...prev, [player.id]: String(vp) }))}
                       title="Click to edit VP total"
                       style={{ color, fontWeight: '900', fontSize: '1.5rem', lineHeight: 1, cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: '3px' }}
-                    >{vp}</div>
+                    >{displayVP[player.id] ?? vp}</div>
                   )}
                   <div style={{ color: colors.textFaint, fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em' }}>VP TOTAL</div>
                 </div>
@@ -165,7 +207,7 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
                         const playerStats = prev[player.id] || {};
                         const updated = { ...playerStats, sessionAwards: (playerStats.sessionAwards || []).filter((_, idx) => idx !== i) };
                         const next = { ...prev, [player.id]: updated };
-                        try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+                        try { localStorage.setItem('bt_vpStats', JSON.stringify(next)); } catch {}
                         return next;
                       });
                     }}
@@ -181,7 +223,7 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
                         const playerStats = prev[player.id] || {};
                         const updated = { ...playerStats, manualAwards: (playerStats.manualAwards || []).filter((_, idx) => idx !== i) };
                         const next = { ...prev, [player.id]: updated };
-                        try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+                        try { localStorage.setItem('bt_vpStats', JSON.stringify(next)); } catch {}
                         return next;
                       });
                     }}
@@ -417,7 +459,7 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
                     const playerStats = prev[pid] || {};
                     const newAward = { label: cat.label, icon: cat.icon, pts: cat.pts, sessionName: 'Manual', categoryId: cat.id, awardedAt: new Date().toISOString() };
                     const next = { ...prev, [pid]: { ...playerStats, sessionAwards: [...(playerStats.sessionAwards || []), newAward] } };
-                    try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+                    try { localStorage.setItem('bt_vpStats', JSON.stringify(next)); } catch {}
                     return next;
                   });
                   setAddBubbleModal(null);
@@ -435,5 +477,23 @@ const VictoryPanel = ({ players, vpStats, onAwardPoints, onDeleteSession, onUpda
     </div>
   );
 };
+
+// Injected ceremony styles
+const _ceremonyStyle = typeof document !== 'undefined' && (() => {
+  if (document.getElementById('vp-ceremony-style')) return;
+  const s = document.createElement('style');
+  s.id = 'vp-ceremony-style';
+  s.textContent = `
+    @keyframes vpGoldGlow {
+      0%, 100% { box-shadow: 0 0 14px rgba(251,191,36,0.08), 0 4px 20px rgba(0,0,0,0.5); }
+      50%       { box-shadow: 0 0 26px rgba(251,191,36,0.18), 0 4px 28px rgba(0,0,0,0.6); }
+    }
+    @keyframes crownPulse {
+      0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 2px rgba(251,191,36,0.4)); }
+      50%       { transform: scale(1.15); filter: drop-shadow(0 0 8px rgba(251,191,36,0.8)); }
+    }
+  `;
+  document.head.appendChild(s);
+})();
 
 export default VictoryPanel;

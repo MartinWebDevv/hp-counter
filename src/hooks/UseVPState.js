@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-const AWARD_CATS = [
+// ── Award categories ──────────────────────────────────────────────────────────
+export const AWARD_CATS = [
   { id: 'npcDamage',        label: 'Monster Hunter',  icon: '🐉', pts: 1, statKey: 'npcDamage',      higher: true  },
   { id: 'pvpDamage',        label: 'The Reaper',      icon: '⚔️',  pts: 1, statKey: 'pvpDamage',     higher: true  },
   { id: 'damageTaken',      label: 'Punching Bag',    icon: '🛡️',  pts: 1, statKey: 'damageTaken',   higher: true  },
   { id: 'leastDamageTaken', label: 'Ghost Protocol',  icon: '🧊', pts: 1, statKey: 'damageTaken',   higher: false },
-  // Immortal MUST run before leastDeaths — players who get Immortal are excluded from leastDeaths
+  // Immortal MUST run before leastDeaths — Immortal winners are excluded from leastDeaths
   { id: 'immortal',         label: 'Immortal',        icon: '✨', pts: 2, statKey: 'revivesUsed',   higher: false, zeroOnly: true },
   { id: 'leastDeaths',      label: 'Least Deaths',    icon: '💪', pts: 1, statKey: 'revivesUsed',   higher: false },
   { id: 'itemsObtained',    label: 'Scavenger',       icon: '📦', pts: 1, statKey: 'itemsObtained', higher: true  },
@@ -14,41 +15,52 @@ const AWARD_CATS = [
   { id: 'warmonger',        label: 'Warmonger',       icon: '⚡', pts: 1, statKey: 'warmonger',     higher: true  },
 ];
 
-export { AWARD_CATS };
+const LS_STATS = 'bt_vpStats';
+const LS_COUNT = 'bt_sessionCount';
 
+const LIVE_STAT_KEYS = ['npcDamage', 'pvpDamage', 'damageTaken', 'revivesUsed', 'finalBossKill', 'warmonger', 'firstBlood', 'itemsObtained'];
+
+/**
+ * useVPState
+ * Tracks per-player stats, runs end-of-session award ceremonies, and manages the VP archive.
+ * Renamed from UseVPState (uppercase U was a naming convention violation).
+ */
 export const useVPState = (players, addLog) => {
   const [vpStats, setVpStats] = useState(() => {
-    try { const s = localStorage.getItem('hpCounterVPStats'); return s ? JSON.parse(s) : {}; }
+    try { const s = localStorage.getItem(LS_STATS); return s ? JSON.parse(s) : {}; }
     catch { return {}; }
   });
 
-  const [sessionCount, setSessionCount] = useState(() => {
-    try { return parseInt(localStorage.getItem('hpCounterSessionCount') || '0'); } catch { return 0; }
+  const [sessionCount,       setSessionCount]       = useState(() => {
+    try { return parseInt(localStorage.getItem(LS_COUNT) || '0', 10); } catch { return 0; }
   });
 
-  const [firstBloodAwarded, setFirstBloodAwarded] = useState(false);
-  const [awardShowcase, setAwardShowcase]       = useState(null);
-  const [endSessionModal, setEndSessionModal]   = useState(false);
-  const [sessionNameInput, setSessionNameInput] = useState('');
-  const [manualStatsModal, setManualStatsModal] = useState(null);
+  const [firstBloodAwarded,  setFirstBloodAwarded]  = useState(false);
+  const [awardShowcase,      setAwardShowcase]       = useState(null);
+  const [endSessionModal,    setEndSessionModal]     = useState(false);
+  const [vpCeremonyActive,   setVpCeremonyActive]   = useState(false);
+  const [vpCeremonyFinished, setVpCeremonyFinished] = useState(false);
+  const [vpCeremonySession,  setVpCeremonySession]  = useState('');
+  const [sessionNameInput,   setSessionNameInput]   = useState('');
+  const [manualStatsModal,   setManualStatsModal]   = useState(null);
 
-  // Persist vpStats
-  const saveVpStats = (next) => {
+  // Single source of truth for persistence — all internal mutations go through here
+  const persistVpStats = (next) => {
     setVpStats(next);
-    try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+    try { localStorage.setItem(LS_STATS, JSON.stringify(next)); } catch {}
   };
 
-  const saveSessionCount = (n) => {
+  const persistSessionCount = (n) => {
     setSessionCount(n);
-    try { localStorage.setItem('hpCounterSessionCount', String(n)); } catch {}
+    try { localStorage.setItem(LS_COUNT, String(n)); } catch {}
   };
 
   // ── Stat tracking ──────────────────────────────────────────────────────────
 
   const trackVP = (playerId, statKey, delta) => {
-    // Don't award VP to absent players
     const player = players.find(p => String(p.id) === String(playerId));
     if (player?.isAbsent) return;
+
     setVpStats(prev => {
       const next = {
         ...prev,
@@ -57,12 +69,16 @@ export const useVPState = (players, addLog) => {
           [statKey]: ((prev[playerId]?.[statKey]) || 0) + delta,
         },
       };
-      try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+      // Persist here so we don't need a separate useEffect watching vpStats
+      try { localStorage.setItem(LS_STATS, JSON.stringify(next)); } catch {}
       return next;
     });
   };
 
   const awardVPPoints = (playerId, points, reason, categoryId) => {
+    // FIXED: was using loose `==` which could silently match wrong types
+    const player = players.find(p => String(p.id) === String(playerId));
+
     setVpStats(prev => {
       const next = {
         ...prev,
@@ -74,41 +90,51 @@ export const useVPState = (players, addLog) => {
           ],
         },
       };
-      try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem(LS_STATS, JSON.stringify(next)); } catch {}
       return next;
     });
-    const player = players.find(p => p.id == playerId);
+
     addLog(`🏅 ${player?.playerName || 'Player'} awarded ${points} VP — ${reason}`, 'vp');
   };
 
   // ── Awards engine ──────────────────────────────────────────────────────────
 
   const runAwardsFromData = (sourcePlayers, sourceVpStats, sessionName) => {
-    const awards = [];
-    const newVpStats = JSON.parse(JSON.stringify(vpStats));
+    const awards     = [];
+    const newVpStats = JSON.parse(JSON.stringify(sourceVpStats));
 
-    // Absent players never receive VP awards
+    // Stamp any unsessioned manual awards with the session name
+    Object.keys(newVpStats).forEach(pid => {
+      if (newVpStats[pid].manualAwards) {
+        newVpStats[pid].manualAwards = newVpStats[pid].manualAwards.map(a =>
+          a.sessionName ? a : { ...a, sessionName }
+        );
+      }
+    });
+
     const eligiblePlayers = sourcePlayers.filter(p => !p.isAbsent);
-
-    // Track Immortal winners so they are excluded from Least Deaths
     const immortalWinners = new Set();
 
     const grantAward = (cat, player, value) => {
-      awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, playerId: player.id, playerName: player.playerName, playerColor: player.playerColor, value, sessionName });
+      awards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts,
+                    playerId: player.id, playerName: player.playerName,
+                    playerColor: player.playerColor, value, sessionName });
       const pid = player.id;
       if (!newVpStats[pid]) newVpStats[pid] = {};
       if (!newVpStats[pid].sessionAwards) newVpStats[pid].sessionAwards = [];
-      newVpStats[pid].sessionAwards.push({ categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts, sessionName, value, awardedAt: new Date().toISOString() });
+      newVpStats[pid].sessionAwards.push({
+        categoryId: cat.id, label: cat.label, icon: cat.icon, pts: cat.pts,
+        sessionName, value, awardedAt: new Date().toISOString(),
+      });
     };
 
     AWARD_CATS.forEach(cat => {
-      const scores = eligiblePlayers.map(p => {
-        const s = sourceVpStats[p.id] || {};
-        return { player: p, val: s[cat.statKey] || 0 };
-      });
+      const scores = eligiblePlayers.map(p => ({
+        player: p,
+        val:    (sourceVpStats[p.id]?.[cat.statKey]) || 0,
+      }));
       if (scores.length === 0) return;
 
-      // ── Immortal: all players with zero revives get it; they are excluded from Least Deaths ──
       if (cat.zeroOnly) {
         scores.filter(s => s.val === 0).forEach(({ player }) => {
           immortalWinners.add(String(player.id));
@@ -117,7 +143,6 @@ export const useVPState = (players, addLog) => {
         return;
       }
 
-      // ── Least Deaths: exclude anyone who already received Immortal this session ──
       const pool = cat.id === 'leastDeaths'
         ? scores.filter(s => !immortalWinners.has(String(s.player.id)))
         : scores;
@@ -128,17 +153,14 @@ export const useVPState = (players, addLog) => {
         ? Math.max(...pool.map(s => s.val))
         : Math.min(...pool.map(s => s.val));
 
-      if (cat.higher && top <= 0) return;
-      if (!cat.higher && pool.every(s => s.val === 0)) return;
+      if (cat.higher  && top <= 0)                       return;
+      if (!cat.higher && pool.every(s => s.val === 0))   return;
 
-      const winners = pool.filter(s => s.val === top);
-      // Award to all tied players (ties are valid — only skip if no clear winner
-      // because of zero-stat categories already handled above)
-      winners.forEach(({ player }) => grantAward(cat, player, top));
+      pool.filter(s => s.val === top).forEach(({ player }) => grantAward(cat, player, top));
     });
 
-    saveVpStats(newVpStats);
-    saveSessionCount(sessionCount + 1);
+    persistVpStats(newVpStats);
+    persistSessionCount(sessionCount + 1);
     setEndSessionModal(false);
     setSessionNameInput('');
 
@@ -146,7 +168,11 @@ export const useVPState = (players, addLog) => {
       alert('No tracked stats to award — try entering stats manually.');
       return;
     }
+
     setAwardShowcase({ awards, index: 0, sessionName });
+    setVpCeremonyActive(true);
+    setVpCeremonyFinished(false);
+    setVpCeremonySession(sessionName);
   };
 
   const handleEndSession = () => {
@@ -155,13 +181,13 @@ export const useVPState = (players, addLog) => {
   };
 
   const handleEndSessionFromFile = (state, fileName) => {
-    const sessionName = sessionNameInput.trim() || fileName.replace('.json', '') || 'Imported Session';
-    const importedVpStats = state.vpStats || {};
-    const importedPlayers = state.players || [];
+    const sessionName      = sessionNameInput.trim() || fileName.replace('.json', '') || 'Imported Session';
+    const importedVpStats  = state.vpStats  || {};
+    const importedPlayers  = state.players  || [];
 
     const hasAnyStats = importedPlayers.some(p => {
       const s = importedVpStats[p.id] || {};
-      return (s.npcDamage || 0) + (s.pvpDamage || 0) + (s.damageTaken || 0) + (s.revivesUsed || 0) + (s.finalBossKill || 0) + (s.warmonger || 0) > 0;
+      return LIVE_STAT_KEYS.some(k => (s[k] || 0) > 0);
     });
 
     setEndSessionModal(false);
@@ -184,50 +210,38 @@ export const useVPState = (players, addLog) => {
           next[id].sessionAwards = next[id].sessionAwards.filter(a => a.sessionName !== sessionName);
         }
       });
-      try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem(LS_STATS, JSON.stringify(next)); } catch {}
       return next;
     });
   };
 
   const resetLiveVPTrackers = () => {
     setVpStats(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(id => {
-        next[id] = {
-          ...next[id],
-          npcDamage: 0, pvpDamage: 0, damageTaken: 0,
-          revivesUsed: 0, finalBossKill: 0, warmonger: 0,
-          firstBlood: 0, itemsObtained: 0,
-        };
+      const next = {};
+      Object.keys(prev).forEach(id => {
+        next[id] = { ...prev[id] };
+        LIVE_STAT_KEYS.forEach(k => { next[id][k] = 0; });
       });
-      try { localStorage.setItem('hpCounterVPStats', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem(LS_STATS, JSON.stringify(next)); } catch {}
       return next;
     });
     setFirstBloodAwarded(false);
   };
 
   return {
-    vpStats,
-    setVpStats,
-    saveVpStats,
+    vpStats, setVpStats: persistVpStats, saveVpStats: persistVpStats,
     sessionCount,
-    firstBloodAwarded,
-    setFirstBloodAwarded,
-    awardShowcase,
-    setAwardShowcase,
-    endSessionModal,
-    setEndSessionModal,
-    sessionNameInput,
-    setSessionNameInput,
-    manualStatsModal,
-    setManualStatsModal,
-    trackVP,
-    awardVPPoints,
-    runAwardsFromData,
-    handleEndSession,
-    handleEndSessionFromFile,
-    resetLiveVPTrackers,
-    deleteSession,
+    firstBloodAwarded, setFirstBloodAwarded,
+    awardShowcase,     setAwardShowcase,
+    endSessionModal,   setEndSessionModal,
+    vpCeremonyActive,  setVpCeremonyActive,
+    vpCeremonyFinished,setVpCeremonyFinished,
+    vpCeremonySession,
+    sessionNameInput,  setSessionNameInput,
+    manualStatsModal,  setManualStatsModal,
+    trackVP, awardVPPoints,
+    runAwardsFromData, handleEndSession, handleEndSessionFromFile,
+    resetLiveVPTrackers, deleteSession,
     AWARD_CATS,
   };
 };

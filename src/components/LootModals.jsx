@@ -79,13 +79,13 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
     currentAssignments.forEach((a, idx) => {
       if (!a || idx === excludeIndex) return;
       const ut = typeof a === 'object' ? a.unitType : a;
-      if (!lootTable[idx]?.isQuestItem) counts[ut] = (counts[ut] || 0) + 1;
+      if (!lootTable[idx]?.isQuestItem && lootTable[idx]?.effect?.type !== 'key') counts[ut] = (counts[ut] || 0) + 1;
     });
     return counts;
   };
 
-  const isUnitFullWithPending = (unitType, excludeIndex, isQuestItem) => {
-    if (isQuestItem) return false;
+  const isUnitFullWithPending = (unitType, excludeIndex, isQuestItem, isKey) => {
+    if (isQuestItem || isKey) return false;
     const pending = getPendingCounts(assignments, excludeIndex);
     const slotCount = getSlotCount(player, unitType);
     const heldCount = getHeldCount(player, unitType);
@@ -96,7 +96,8 @@ export const NpcLootModal = ({ npc, player: initPlayer, players, onConfirm, onCl
 
   const assign = (itemIndex, unitType, droppedItemId = null) => {
     const isQuestItem = lootTable[itemIndex]?.isQuestItem;
-    const isFull = isUnitFullWithPending(unitType, itemIndex, isQuestItem);
+    const isKey       = lootTable[itemIndex]?.effect?.type === 'key';
+    const isFull = isUnitFullWithPending(unitType, itemIndex, isQuestItem, isKey);
     if (isFull && droppedItemId === null) {
       // Unit is full — open the swap picker instead of auto-assigning
       setSwapPickerOpen(`${itemIndex}-${unitType}`);

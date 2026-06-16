@@ -525,13 +525,13 @@ const LootPanel = ({ players, lootPool = [], setLootPool, onGiveItem }) => {
   const [filterTier, setFilterTier] = useState('All');
   const [search, setSearch] = useState('');
   const [archivedItems, setArchivedItems] = useState(() => {
-    try { const s = localStorage.getItem('hpCounterArchivedLoot'); return s ? JSON.parse(s) : []; }
+    try { const s = localStorage.getItem('bt_archivedLoot'); return s ? JSON.parse(s) : []; }
     catch { return []; }
   });
 
   // Persist archived items across sessions
   React.useEffect(() => {
-    try { localStorage.setItem('hpCounterArchivedLoot', JSON.stringify(archivedItems)); } catch {}
+    try { localStorage.setItem('bt_archivedLoot', JSON.stringify(archivedItems)); } catch {}
   }, [archivedItems]);
 
   const handleSave = (item) => {

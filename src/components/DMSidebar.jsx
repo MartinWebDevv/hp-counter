@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { id: 'loot',    label: 'Loot',    icon: '🎁', color: colors.purpleLight,  activeBg: 'rgba(76,29,149,0.5)',  activeBorder: colors.purple },
   { id: 'chests',  label: 'Chests',  icon: '📦', color: '#fde68a',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#eab308'     },
   { id: 'vp',      label: 'Victory', icon: '🏆', color: colors.amber,        activeBg: 'rgba(30,58,138,0.5)',  activeBorder: colors.blue   },
-  { id: 'rooms',   label: 'DM Tools', icon: '🛠️', color: '#fcd34d',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#d97706'     },
+  { id: 'tools',    label: 'DM Tools', icon: '🛠️', color: '#fcd34d',           activeBg: 'rgba(120,53,15,0.5)',  activeBorder: '#d97706'     },
   { id: 'timers',   label: 'Timers',   icon: '⏱️', color: colors.purpleLight,  activeBg: 'rgba(76,29,149,0.5)',  activeBorder: colors.purple },
   { id: 'settings', label: 'Settings', icon: '⚙️', color: '#94a3b8',           activeBg: 'rgba(30,41,59,0.6)',   activeBorder: '#64748b'     },
 ];
@@ -37,7 +37,7 @@ const DMSidebar = ({ activePanel, setActivePanel, activeNPCsCount = 0, unopenedC
     if (id === 'dm'     && activeNPCsCount    > 0) return activeNPCsCount;
     if (id === 'chests' && unopenedChestCount > 0) return unopenedChestCount;
     if (id === 'timers' && activeTimersCount  > 0) return activeTimersCount;
-    if (id === 'rooms') return null;
+    if (id === 'tools') return null;
     return null;
   };
 
@@ -119,7 +119,7 @@ const DMSidebar = ({ activePanel, setActivePanel, activeNPCsCount = 0, unopenedC
             {badge !== null && (
               <span style={{
                 position: 'absolute', top: '3px', right: '3px',
-                background: item.id === 'chests' ? '#eab308' : item.id === 'timers' ? colors.purple : item.id === 'rooms' ? '#d97706' : colors.red,
+                background: item.id === 'chests' ? '#eab308' : item.id === 'timers' ? colors.purple : item.id === 'tools' ? '#d97706' : colors.red,
                 color: item.id === 'chests' ? '#1a0f0a' : '#fff',
                 borderRadius: '50%', width: '15px', height: '15px',
                 fontSize: '0.55rem', fontWeight: '900',

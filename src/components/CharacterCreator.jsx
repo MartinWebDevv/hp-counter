@@ -378,7 +378,7 @@ const cardStyle = {
   // the scroll area grows, the button never gets pushed off screen
   display: 'flex',
   flexDirection: 'column',
-  maxHeight: 'calc(100vh - 2rem)',
+  maxHeight: 'calc(100svh - 2rem)',
   boxSizing: 'border-box',
 };
 

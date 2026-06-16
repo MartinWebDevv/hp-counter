@@ -58,7 +58,40 @@ export const createLobby = async () => {
   return { code, uid: user.uid };
 };
 
-// ── Join an existing lobby (Player) ──────────────────────────────────────────
+// ── Create a lobby with a specific code (GM custom code) ─────────────────────
+export const createLobbyWithCode = async (customCode) => {
+  const user = await ensureAuth();
+  const code = customCode.trim().toUpperCase();
+
+  // Check if lobby exists and is actively in use by a different GM
+  const existingDoc = await getDoc(doc(db, 'campaigns', code));
+  if (existingDoc.exists()) {
+    const data = existingDoc.data();
+    const sameGM = data.gmId === user.uid;
+    const activeSession = data.gameStarted && Object.keys(data.players || {}).length > 0;
+    // Block only if a different GM has an active session running on this code
+    if (!sameGM && activeSession) {
+      throw new Error(`Lobby code "${code}" is currently in use by another session.`);
+    }
+    // Otherwise overwrite — reusing your own code or a stale lobby is fine
+  }
+
+  const campaignRef = doc(db, 'campaigns', code);
+  await setDoc(campaignRef, {
+    lobbyCode:       code,
+    gmId:            user.uid,
+    createdAt:       serverTimestamp(),
+    gameStarted:     false,
+    gameMode:        'campaign',
+    players:         {},
+    gameState:       null,
+    pendingRequests: {},
+  });
+
+  return { code, uid: user.uid };
+};
+
+
 export const joinLobby = async (lobbyCode) => {
   const user = await ensureAuth();
   const code = lobbyCode.trim().toUpperCase();
